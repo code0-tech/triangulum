@@ -1,0 +1,23 @@
+{
+  "name": "triangulum",
+  "version": "0.0.0",
+  "description": "",
+  "homepage": "https://github.com/code0-tech/triangulum#readme",
+  "bugs": {
+    "url": "https://github.com/code0-tech/triangulum/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code0-tech/triangulum.git"
+  },
+  "license": "ISC",
+  "author": "CodeZero",
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}
