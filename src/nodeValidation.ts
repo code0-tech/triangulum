@@ -1,33 +1,7 @@
 import ts from "typescript";
 import {Flow, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
-import {getParameterCode} from "./utils";
-
-export interface ValidationResult {
-    isValid: boolean;
-    inferredType: string;
-    errors: Array<{
-        message: string;
-        code: number;
-        severity: "error" | "warning";
-    }>;
-    sourceCode?: string;
-}
-
-const DATA_TYPES = [
-    {identifier: "LIST", signature: "T[]", genericKeys: ["T"]},
-    {identifier: "NUMBER", signature: "number"},
-    {identifier: "STRING", signature: "string"},
-    {identifier: "CONSUMER", signature: "(item:R) => void", genericKeys: ["R"]},
-    {identifier: "PREDICATE", signature: "(item:R) => T", genericKeys: ["R", "T"]},
-];
-
-const FUNCTION_SIGNATURES = [
-    {identifier: "std::list::at", signature: "<R>(list: LIST<R>, index: NUMBER): R"},
-    {identifier: "std::math::add", signature: "(a: NUMBER, b: NUMBER): NUMBER"},
-    {identifier: "std::control::for_each", signature: "<R>(a: LIST<R>, b: CONSUMER<R>): void"},
-    {identifier: "std::control::find", signature: "<R>(a: LIST<R>, b: PREDICATE<R, boolean>): R"},
-    {identifier: "std::control::return", signature: "<R>(a: R): R"},
-];
+import {getParameterCode, MINIMAL_LIB} from "./utils";
+import {DATA_TYPES, FUNCTION_SIGNATURES, ValidationResult} from "./data";
 
 export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationResult => {
     const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.identifier);
@@ -43,30 +17,23 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
     const paramCodes = params.map(param => getParameterCode(param, flow, getNodeValidation));
     const funcCallArgs = paramCodes.join(", ");
 
+    // Build the function signature string from the new structure
+    let signature = "";
+    if (funcDef.genericKeys && funcDef.genericKeys.length > 0) {
+        signature += `<${funcDef.genericKeys.join(",")}>`;
+    }
+    signature += `(`;
+    signature += funcDef.parameters.nodes.map((p) => `${p.identifier}: ${p.type}`).join(", ");
+    signature += `): ${funcDef.returnType}`;
+
     const sourceCode = `
-        ${DATA_TYPES.map(dt => `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.signature};`).join('\n')}
-        declare function testFunc${funcDef.signature};
+        ${DATA_TYPES.map(dt => `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`).join('\n')}
+        declare function testFunc${signature};
         const result = testFunc(${funcCallArgs});
     `;
 
     const fileName = "virtual.ts";
     const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-
-    const MINIMAL_LIB = `
-        interface Array<T> { 
-            [n: number]: T; 
-            length: number; 
-        }
-        interface String { readonly length: number; }
-        interface Number { }
-        interface Boolean { }
-        interface Object { }
-        interface Function { }
-        interface CallableFunction extends Function {}
-        interface NewableFunction extends Function {}
-        interface IArguments { }
-        interface RegExp { }
-    `;
 
     const host: ts.CompilerHost = {
         getSourceFile: name => {
