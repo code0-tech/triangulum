@@ -30,7 +30,7 @@ const FUNCTION_SIGNATURES = [
 ];
 
 export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationResult => {
-    const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.id);
+    const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.identifier);
     if (!funcDef) {
         return {
             isValid: false,

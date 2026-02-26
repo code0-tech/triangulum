@@ -1,5 +1,11 @@
 // Utility functions for node validation
-import {NodeParameter, Flow, NodeFunction, ReferencePath} from "@code0-tech/sagittarius-graphql-types";
+import {
+    Flow,
+    NodeFunction,
+    NodeFunctionIdWrapper,
+    NodeParameter,
+    ReferencePath
+} from "@code0-tech/sagittarius-graphql-types";
 import {ValidationResult} from "./nodeValidation";
 
 /**
@@ -44,17 +50,24 @@ export function getParameterCode(
         return `({} as ${refType})`;
     } else if (param?.value && param.value.__typename === "NodeFunctionIdWrapper") {
         const wrapperValue = param.value as { __typename: "NodeFunctionIdWrapper"; id: string };
-        const refNode = flow.nodes && Array.isArray(flow.nodes)
-            ? flow.nodes.find((n: any) => n.id === wrapperValue.id)
-            : flow.nodes?.nodes?.find((n: any) => n.id === wrapperValue.id);
-
+        const refNode: NodeFunction | undefined = flow?.nodes?.nodes?.find(lNode => lNode?.id === (param.value as NodeFunctionIdWrapper).id)!
         if (!refNode) return '(() => undefined)';
 
-        const validation = getNodeValidation(flow, refNode);
+        const findReturnNode = (node: NodeFunction, flow: Flow): NodeFunction | undefined => {
+            if (node?.functionDefinition?.identifier === "std::control::return")
+                return node
 
-        // WICHTIG: Keine Argument-Namen raten.
-        // Wir geben eine Funktion zurück, die "irgendwelche" Argumente nimmt
-        // und den inferredType zurückgibt.
+            const lNode = flow?.nodes?.nodes?.find(lNode => lNode?.id === node?.nextNodeId)
+            if (lNode)
+                return findReturnNode(lNode, flow)
+
+            return undefined
+        }
+
+        const returnNode = findReturnNode(refNode, flow);
+        if (!returnNode) return '(() => undefined)';
+
+        const validation = getNodeValidation(flow, returnNode);
         return `(() => ({} as ${validation.inferredType}))`;
     } else if (param?.value && param.value.__typename === "LiteralValue") {
         return JSON.stringify(param.value.value);
