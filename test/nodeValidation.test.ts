@@ -449,6 +449,55 @@ describe('getNodeValidation', () => {
             }
         });
 
+        console.log(result);
+
+        expect(result.isValid).toBe(true);
+        expect(result.inferredType).toBeDefined();
+        expect(result.errors.filter(e => e.severity === 'error').length).toBe(0);
+    })
+
+    it('11', () => {
+        const result = getNodeValidation({
+            nodes: {
+                nodes: [{
+                    id: "gid://sagittarius/NodeFunction/1",
+                    functionDefinition: {
+                        identifier: "std::list::at" as any
+                    },
+                    parameters: {
+                        nodes: [{
+                            value: {
+                                __typename: "LiteralValue",
+                                value: [1, 2, 3]
+                            }
+                        }, {
+                            value: {
+                                __typename: "LiteralValue",
+                                value: 1
+                            }
+                        }]
+                    }
+                }]
+            }
+        }, {
+            functionDefinition: {
+                identifier: "std::math::add" as any
+            },
+            parameters: {
+                nodes: [{
+                    value: {
+                        __typename: "ReferenceValue",
+                        nodeFunctionId: "gid://sagittarius/NodeFunction/1"
+                    }
+                }, {
+                    value: {
+                        __typename: "LiteralValue",
+                        value: 1
+                    }
+                }]
+            }
+        });
+
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
         expect(result.errors.filter(e => e.severity === 'error').length).toBe(0);
