@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2342308809-931efb40b4bf3245999c53abbdd9164cea82e82d",
+    "@types/node": "^25.3.2",
     "vitest": "^4.0.18"
   }
 }
