@@ -15,9 +15,13 @@
   "type": "module",
   "main": "index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "dependencies": {
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2342308809-931efb40b4bf3245999c53abbdd9164cea82e82d",
+    "vitest": "^4.0.18"
   }
 }
