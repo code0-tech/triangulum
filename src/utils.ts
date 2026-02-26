@@ -6,7 +6,23 @@ import {
     NodeParameter,
     ReferencePath
 } from "@code0-tech/sagittarius-graphql-types";
-import {ValidationResult} from "./nodeValidation";
+import {ValidationResult} from "./data";
+
+export const MINIMAL_LIB = `
+        interface Array<T> { 
+            [n: number]: T; 
+            length: number; 
+        }
+        interface String { readonly length: number; }
+        interface Number { }
+        interface Boolean { }
+        interface Object { }
+        interface Function { }
+        interface CallableFunction extends Function {}
+        interface NewableFunction extends Function {}
+        interface IArguments { }
+        interface RegExp { }
+    `;
 
 /**
  * Determines the type along a reference path (for objects, not arrays).
@@ -49,7 +65,6 @@ export function getParameterCode(
         }
         return `({} as ${refType})`;
     } else if (param?.value && param.value.__typename === "NodeFunctionIdWrapper") {
-        const wrapperValue = param.value as { __typename: "NodeFunctionIdWrapper"; id: string };
         const refNode: NodeFunction | undefined = flow?.nodes?.nodes?.find(lNode => lNode?.id === (param.value as NodeFunctionIdWrapper).id)!
         if (!refNode) return '(() => undefined)';
 
