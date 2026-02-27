@@ -1,6 +1,7 @@
 import ts from "typescript";
+import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 
-export const getValueSuggestions = (typeString: string): string[] => {
+export const getValueSuggestions = (typeString: string): LiteralValue[] => {
     if (!typeString) return [];
 
     // Wir bauen ein virtuelles File. Das ist stabil und braucht keine echten Libs.
@@ -56,5 +57,8 @@ export const getValueSuggestions = (typeString: string): string[] => {
     }
 
     // Wir nutzen Set für Einzigartigkeit (z.B. bei boolean)
-    return [...new Set(extractValues(type))];
+    return [...new Set(extractValues(type))].map(value => ({
+        __typename: "LiteralValue",
+        value
+    }));
 }
