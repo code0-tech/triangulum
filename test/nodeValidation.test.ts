@@ -119,6 +119,7 @@ describe('getNodeValidation', () => {
         const result = getNodeValidation({
             nodes: {
                 nodes: [{
+                    nextNodeId: "gid://sagittarius/NodeFunction/2",
                     id: "gid://sagittarius/NodeFunction/1",
                     functionDefinition: {
                         identifier: "std::list::at" as any
@@ -136,9 +137,28 @@ describe('getNodeValidation', () => {
                             }
                         }]
                     }
+                }, {
+                    id: "gid://sagittarius/NodeFunction/2",
+                    functionDefinition: {
+                        identifier: "std::math::add" as any
+                    },
+                    parameters: {
+                        nodes: [{
+                            value: {
+                                __typename: "ReferenceValue",
+                                nodeFunctionId: "gid://sagittarius/NodeFunction/1"
+                            }
+                        }, {
+                            value: {
+                                __typename: "LiteralValue",
+                                value: 1
+                            }
+                        }]
+                    }
                 }]
             }
         }, {
+            id: "gid://sagittarius/NodeFunction/2",
             functionDefinition: {
                 identifier: "std::math::add" as any
             },
@@ -166,6 +186,7 @@ describe('getNodeValidation', () => {
         const result = getNodeValidation({
             nodes: {
                 nodes: [{
+                    nextNodeId: "gid://sagittarius/NodeFunction/2",
                     id: "gid://sagittarius/NodeFunction/1",
                     functionDefinition: {
                         identifier: "std::list::at" as any
@@ -183,9 +204,31 @@ describe('getNodeValidation', () => {
                             }
                         }]
                     }
+                }, {
+                    id: "gid://sagittarius/NodeFunction/2",
+                    functionDefinition: {
+                        identifier: "std::math::add" as any
+                    },
+                    parameters: {
+                        nodes: [{
+                            value: {
+                                __typename: "ReferenceValue",
+                                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                                referencePath: [{
+                                    path: "test",
+                                }]
+                            }
+                        }, {
+                            value: {
+                                __typename: "LiteralValue",
+                                value: 1
+                            }
+                        }]
+                    }
                 }]
             }
         }, {
+            id: "gid://sagittarius/NodeFunction/2",
             functionDefinition: {
                 identifier: "std::math::add" as any
             },
@@ -224,7 +267,7 @@ describe('getNodeValidation', () => {
                         nodes: [{
                             value: {
                                 __typename: "ReferenceValue",
-                                nodeFunctionId: "gid://sagittarius/NodeFunction/2",
+                                nodeFunctionId: "gid://sagittarius/NodeFunction/10",
                                 parameterIndex: 1,
                                 inputIndex: 0
                             }
@@ -232,6 +275,24 @@ describe('getNodeValidation', () => {
                             value: {
                                 __typename: "LiteralValue",
                                 value: 1
+                            }
+                        }]
+                    }
+                }, {
+                    id: "gid://sagittarius/NodeFunction/2",
+                    functionDefinition: {
+                        identifier: "std::control::for_each" as any
+                    },
+                    parameters: {
+                        nodes: [{
+                            value: {
+                                __typename: "LiteralValue",
+                                value: [[1], [1], [1]]
+                            }
+                        }, {
+                            value: {
+                                __typename: "NodeFunctionIdWrapper",
+                                id: "gid://sagittarius/NodeFunction/1"
                             }
                         }]
                     }
@@ -449,8 +510,6 @@ describe('getNodeValidation', () => {
             }
         });
 
-        console.log(result);
-
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
         expect(result.errors.filter(e => e.severity === 'error').length).toBe(0);
@@ -467,8 +526,10 @@ describe('getNodeValidation', () => {
                     parameters: {
                         nodes: [{
                             value: {
-                                __typename: "LiteralValue",
-                                value: [1, 2, 3]
+                                __typename: "ReferenceValue",
+                                nodeFunctionId: "gid://sagittarius/NodeFunction/10",
+                                parameterIndex: 1,
+                                inputIndex: 0
                             }
                         }, {
                             value: {
@@ -477,17 +538,38 @@ describe('getNodeValidation', () => {
                             }
                         }]
                     }
+                }, {
+                    id: "gid://sagittarius/NodeFunction/2",
+                    functionDefinition: {
+                        identifier: "std::control::for_each" as any
+                    },
+                    parameters: {
+                        nodes: [{
+                            value: {
+                                __typename: "LiteralValue",
+                                value: [[1], [1], [1]]
+                            }
+                        }, {
+                            value: {
+                                __typename: "NodeFunctionIdWrapper",
+                                id: "gid://sagittarius/NodeFunction/1"
+                            }
+                        }]
+                    }
                 }]
             }
         }, {
+            id: "gid://sagittarius/NodeFunction/1",
             functionDefinition: {
-                identifier: "std::math::add" as any
+                identifier: "std::list::at" as any
             },
             parameters: {
                 nodes: [{
                     value: {
                         __typename: "ReferenceValue",
-                        nodeFunctionId: "gid://sagittarius/NodeFunction/1"
+                        nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                        parameterIndex: 1,
+                        inputIndex: 0
                     }
                 }, {
                     value: {
@@ -497,6 +579,8 @@ describe('getNodeValidation', () => {
                 }]
             }
         });
+
+        console.log(result)
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
