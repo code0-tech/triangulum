@@ -49,7 +49,7 @@ describe('getFlowValidation - Integrationstest', () => {
                                         __typename: "ReferenceValue",
                                         nodeFunctionId: "gid://sagittarius/NodeFunction/2",
                                         parameterIndex: 1,
-                                        inputIndex: 0,
+                                        inputIndex: 0, //TODO: Das wird gerade einfach nicht berücksichtigt
                                         referencePath: [{ path: "test" }]
                                     }
                                 },
