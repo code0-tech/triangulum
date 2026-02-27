@@ -4,7 +4,7 @@ import {
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
-    ReferencePath
+    ReferencePath, ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
 import {ValidationResult} from "./data";
 
@@ -89,3 +89,83 @@ export function getParameterCode(
     }
     return 'undefined';
 }
+
+/**
+ * Sucht die Parent-Node, die diesen Sub-Tree via NodeFunctionIdWrapper gestartet hat.
+ */
+const getParentScopeNode = (flow: Flow, currentNodeId: NodeFunction['id']): NodeFunction | undefined => {
+    return flow.nodes?.nodes?.find(n =>
+        n?.parameters?.nodes?.some(p =>
+            p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id === currentNodeId
+        )
+    )!;
+};
+
+/**
+ * Prüft, ob eine Node (targetId) im Pfad vor der aktuellen Node (currentId) liegt.
+ * Dies deckt Szenario 1 ab.
+ */
+const isNodeReachable = (flow: Flow, currentNode: NodeFunction, targetId: string, visited = new Set<string>()): boolean => {
+    const currentId = currentNode.id;
+    if (!currentId || visited.has(currentId)) return false;
+    visited.add(currentId);
+
+    // --- SZENARIO 1: Liegt die Node im selben Tree davor? ---
+    // Wir suchen alle Nodes, die direkt oder indirekt zur aktuellen Node führen
+    const isPredecessor = (startId: string): boolean => {
+        const pred = flow.nodes?.nodes?.find(n => n?.nextNodeId === startId);
+        if (!pred) return false;
+        if (pred.id === targetId) return true;
+        return isPredecessor(pred.id!);
+    };
+
+    if (isPredecessor(currentId)) return true;
+
+    // --- SZENARIO 2: Sind wir in einem Sub-Tree und die Target-Node ist der Parent? ---
+    // Wenn wir z.B. in einer "forEach"-Schleife sind, ist die "forEach"-Node selbst
+    // und alles vor ihr erreichbar.
+    const parentNode = getParentScopeNode(flow, currentId);
+    if (parentNode) {
+        if (parentNode.id === targetId) return true;
+        // Rekursiv prüfen, ob die Target-Node vom Parent aus erreichbar ist
+        return isNodeReachable(flow, parentNode, targetId, visited);
+    }
+
+    return false;
+};
+
+export const validateReference = (flow: Flow, currentNode: NodeFunction, ref: ReferenceValue): { isValid: boolean, error?: string } => {
+    // SZENARIO 3: Globaler Flow-Input
+    if (!ref.nodeFunctionId) {
+        return { isValid: true };
+    }
+
+    // SZENARIO 2: Input eines Parameters (z.B. "item" in CONSUMER)
+    if (ref.parameterIndex !== undefined && ref.inputIndex !== undefined) {
+        // KORREKTUR: Die Node darf sich selbst referenzieren,
+        // wenn sie der Einstiegspunkt des Scopes ist.
+        if (currentNode.id === ref.nodeFunctionId) return { isValid: true };
+
+        // Die Node, die den Input definiert (ref.nodeFunctionId),
+        // muss ein Parent-Scope der aktuellen Node sein.
+        let tempParent = getParentScopeNode(flow, currentNode.id!);
+        while (tempParent) {
+            if (tempParent.id === ref.nodeFunctionId) return { isValid: true };
+            tempParent = getParentScopeNode(flow, tempParent.id!);
+        }
+        return {
+            isValid: false,
+            error: `Input-Referenz ungültig: Node ${currentNode.id} befindet sich nicht im Scope von Node ${ref.nodeFunctionId}.`
+        };
+    }
+
+    // SZENARIO 1: Normaler Return-Wert
+    if (!isNodeReachable(flow, currentNode, ref.nodeFunctionId)) {
+        return {
+            isValid: false,
+            error: `Die Node ${ref.nodeFunctionId} wurde noch nicht ausgeführt oder ist in diesem Scope nicht sichtbar.`
+        };
+    }
+
+    return { isValid: true };
+};
