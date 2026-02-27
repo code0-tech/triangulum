@@ -1,6 +1,6 @@
 import ts from "typescript";
 
-export function getLanguageServiceSuggestions(typeString: string): string[] {
+export const getValueSuggestions = (typeString: string): string[] => {
     if (!typeString) return [];
 
     // Wir bauen ein virtuelles File. Das ist stabil und braucht keine echten Libs.
