@@ -1,6 +1,6 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
-import {getParameterCode, MINIMAL_LIB} from "./utils";
+import {Flow, NodeFunction, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {getParameterCode, MINIMAL_LIB, validateReference} from "./utils";
 import {DATA_TYPES, FUNCTION_SIGNATURES, ValidationResult} from "./data";
 
 export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationResult => {
@@ -14,8 +14,31 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
     }
 
     const params = node.parameters?.nodes as NodeParameter[];
+    const scopeErrors: ValidationResult["errors"] = [];
     const paramCodes = params.map(param => getParameterCode(param, flow, getNodeValidation));
     const funcCallArgs = paramCodes.join(", ");
+
+    for (const param of params) {
+        if (param.value?.__typename === "ReferenceValue") {
+            const validation = validateReference(flow, node, param.value as ReferenceValue);
+            if (!validation.isValid) {
+                scopeErrors.push({
+                    message: validation.error || "Scope error",
+                    code: 403, // Forbidden/Invalid Scope
+                    severity: "error"
+                });
+            }
+        }
+    }
+
+    // Wenn Scope-Fehler vorliegen, können wir hier abbrechen
+    if (scopeErrors.length > 0) {
+        return {
+            isValid: false,
+            inferredType: "any",
+            errors: scopeErrors,
+        };
+    }
 
     // Build the function signature string from the new structure
     let signature = "";
