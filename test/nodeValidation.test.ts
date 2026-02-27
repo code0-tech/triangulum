@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {getNodeValidation} from '../src/nodeValidation';
+import {getNodeValidation} from '../src/getNodeValidation';
 
 describe('getNodeValidation', () => {
     it('1', () => {
