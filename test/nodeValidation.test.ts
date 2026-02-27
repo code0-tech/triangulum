@@ -580,8 +580,6 @@ describe('getNodeValidation', () => {
             }
         });
 
-        console.log(result)
-
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
         expect(result.errors.filter(e => e.severity === 'error').length).toBe(0);
