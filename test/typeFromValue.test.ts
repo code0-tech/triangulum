@@ -31,9 +31,6 @@ describe('getTypeFromValue', () => {
         const list = ["A", "B"];
         const result = getTypeFromValue(list);
 
-        console.log(result)
-
-        // Result will be: ("A" | "B")[]
         expect(result).toBe("string[]");
     });
 
