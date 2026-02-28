@@ -69,7 +69,8 @@ export const getFlowValidation = (flow: Flow): ValidationResult => {
         const varName = `node_${sanitizeId(node.id!)}`;
         const funcName = `fn_${funcDef?.identifier?.replace(/::/g, '_')}`;
 
-        let code = `${indent}const ${varName} = ${funcName}(${args});\n`;
+        //TODO: as any cast nur wenn wirklich nötig, aktuell könnte es sein, dass z.B. generische Funktionen mit undefined als Argumenten fälschlicherweise als gültig angesehen werden
+        let code = `${indent}const ${varName} = ${funcName}(${args}) ${args.includes("undefined") && (funcDef?.genericKeys?.length ?? 0) > 0 ? "as any" : ""};\n`;
 
         // REKURSION: Folgt dem nextNodeId Pfad im gleichen Scope
         if (node.nextNodeId) {

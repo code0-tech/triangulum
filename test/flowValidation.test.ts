@@ -65,6 +65,51 @@ describe('getFlowValidation - Integrationstest', () => {
 
         const result = getFlowValidation(flow);
 
+        console.log(result)
+
+        expect(result.isValid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+    });
+
+    it('sollte einen komplexen Flow mit verschachtelten Scopes und Generics validieren', () => {
+
+        const flow: Flow = {
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: { identifier: "std::list::at" },
+                        parameters: {
+                            nodes: [
+                                { value: null },
+                                { value: { __typename: "LiteralValue", value: 0 } }
+                            ]
+                        },
+                        nextNodeId: "gid://sagittarius/NodeFunction/2"
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: { identifier: "std::math::add" },
+                        parameters: {
+                            nodes: [
+                                {
+                                    value: {
+                                        __typename: "ReferenceValue",
+                                        nodeFunctionId: "gid://sagittarius/NodeFunction/1"
+                                    }
+                                },
+                                {
+                                    value: null
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        const result = getFlowValidation(flow);
+
         expect(result.isValid).toBe(true);
         expect(result.errors).toHaveLength(0);
     });
