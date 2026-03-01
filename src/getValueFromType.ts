@@ -1,14 +1,17 @@
 import ts from "typescript";
 import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "./utils";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ExtendedDataType} from "./utils";
 
 /**
  * Generates a sample LiteralValue from a TypeScript type string.
  */
-export const getValueFromType = (targetType: string): LiteralValue => {
+export const getValueFromType = (
+    targetType: string,
+    dataTypes: ExtendedDataType[]
+): LiteralValue => {
     // 1. Prepare declarations.
     const sourceCode = `
-        ${getSharedTypeDeclarations()}
+        ${getSharedTypeDeclarations(dataTypes)}
         type Target = ${targetType};
     `;
 

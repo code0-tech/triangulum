@@ -1,14 +1,26 @@
 // Utility functions for node validation
 import {
+    DataType,
     Flow,
+    FunctionDefinition,
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
     ReferencePath,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {DATA_TYPES, ValidationResult} from "./data";
+import {ValidationResult} from "./data";
 import ts from "typescript";
+
+// Define the shape of ExtendedDataType and ExtendedFunction to use in types
+export interface ExtendedDataType extends DataType {
+    type: string;
+}
+
+export interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
+    returnType: string;
+    parameters: { nodes: ExtendedDataType[] };
+}
 
 /**
  * Minimal TypeScript library definitions for the virtual compiler environment.
@@ -70,12 +82,12 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
-export function getSharedTypeDeclarations(): string {
-    const genericDeclarations = Array.from(new Set(DATA_TYPES.flatMap(dt => dt.genericKeys || [])))
+export function getSharedTypeDeclarations(dataTypes: ExtendedDataType[]): string {
+    const genericDeclarations = Array.from(new Set(dataTypes.flatMap(dt => dt.genericKeys || [])))
         .map(g => `type ${g} = any;`)
         .join("\n");
 
-    const typeAliasDeclarations = DATA_TYPES.map(dt =>
+    const typeAliasDeclarations = dataTypes.map(dt =>
         `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 

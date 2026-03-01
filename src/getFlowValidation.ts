@@ -1,16 +1,22 @@
 import ts from "typescript";
 import {Flow, NodeFunctionIdWrapper, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "./utils";
-import {FUNCTION_SIGNATURES, ValidationResult} from "./data";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ExtendedFunction, ExtendedDataType} from "./utils";
+import {ValidationResult} from "./data";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
 /**
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
  */
-export const getFlowValidation = (flow: Flow): ValidationResult => {
+export const getFlowValidation = (
+    flow: Flow,
+    functionSignatures: ExtendedFunction[],
+    dataTypes: ExtendedDataType[]
+): ValidationResult => {
     const visited = new Set<string>();
     const nodes = flow.nodes?.nodes || [];
+
+    const funcMap = new Map(functionSignatures.map(f => [f.identifier, f]));
 
     /**
      * Recursive function to generate TypeScript code for a node and its execution path.
@@ -26,7 +32,7 @@ export const getFlowValidation = (flow: Flow): ValidationResult => {
 
         visited.add(nodeId);
 
-        const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.identifier);
+        const funcDef = funcMap.get(node.functionDefinition?.identifier);
         if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
 
         const params = node.parameters?.nodes as NodeParameter[] || [];
@@ -79,12 +85,12 @@ export const getFlowValidation = (flow: Flow): ValidationResult => {
     };
 
     // 1. Generate Declarations
-    const typeDefs = getSharedTypeDeclarations();
+    const typeDefs = getSharedTypeDeclarations(dataTypes);
 
-    const funcDeclarations = FUNCTION_SIGNATURES.map(funcDef => {
+    const funcDeclarations = functionSignatures.map(funcDef => {
         let sig = `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}`;
         if (funcDef.genericKeys && funcDef.genericKeys.length > 0) sig += `<${funcDef.genericKeys.join(",")}>`;
-        sig += `(` + funcDef.parameters.nodes.map((p) => `${p.identifier}: ${p.type}`).join(", ") + `): ${funcDef.returnType};`;
+        sig += `(` + funcDef.parameters.nodes.map((p) => `${p?.identifier}: ${p.type}`).join(", ") + `): ${funcDef.returnType};`;
         return sig;
     }).join('\n');
 

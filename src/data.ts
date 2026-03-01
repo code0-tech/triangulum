@@ -1,4 +1,5 @@
 import {DataType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
+import {ExtendedFunction} from "./utils";
 
 /**
  * Result of a node or flow validation.
@@ -14,24 +15,9 @@ export interface ValidationResult {
 }
 
 /**
- * Internal representation of a DataType with its TypeScript equivalent.
- */
-interface ExtendedDataType extends DataType {
-    type: string;
-}
-
-/**
- * Internal representation of a FunctionDefinition with TypeScript-specific fields.
- */
-interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
-    returnType: string;
-    parameters: { nodes: ExtendedDataType[] };
-}
-
-/**
  * Available data types and their TypeScript mappings.
  */
-export const DATA_TYPES: ExtendedDataType[] = [
+export const DATA_TYPES: any[] = [
     {identifier: "LIST", type: "T[]", genericKeys: ["T"]},
     {identifier: "NUMBER", type: "number"},
     {identifier: "STRING", type: "string"},

@@ -5,15 +5,23 @@ import {
     DEFAULT_COMPILER_OPTIONS,
     getParameterCode,
     getSharedTypeDeclarations,
-    validateReference
+    validateReference,
+    ExtendedFunction,
+    ExtendedDataType
 } from "./utils";
-import {FUNCTION_SIGNATURES, ValidationResult} from "./data";
+import {ValidationResult} from "./data";
 
 /**
  * Validates a single node's parameters and scope, then infers its return type.
  */
-export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationResult => {
-    const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.identifier);
+export const getNodeValidation = (
+    flow: Flow,
+    node: NodeFunction,
+    functionSignatures: ExtendedFunction[],
+    dataTypes: ExtendedDataType[]
+): ValidationResult => {
+    const funcMap = new Map(functionSignatures.map(f => [f.identifier, f]));
+    const funcDef = funcMap.get(node.functionDefinition?.identifier);
     if (!funcDef) {
         return {
             isValid: false,
@@ -49,7 +57,7 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
     }
 
     // 2. Code generation for type inference
-    const paramCodes = params.map(param => getParameterCode(param, flow, getNodeValidation));
+    const paramCodes = params.map(param => getParameterCode(param, flow, (f, n) => getNodeValidation(f, n, functionSignatures, dataTypes)));
     const funcCallArgs = paramCodes.map(code =>
         code === 'undefined' ? '({} as any)' : code
     ).join(", ");
@@ -63,7 +71,7 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
     signature += `): ${funcDef.returnType}`;
 
     const sourceCode = `
-        ${getSharedTypeDeclarations()}
+        ${getSharedTypeDeclarations(dataTypes)}
         declare function testFunc${signature};
         const result = testFunc(${funcCallArgs});
     `;

@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {getNodeValidation} from '../src/getNodeValidation';
+import {FUNCTION_SIGNATURES, DATA_TYPES} from "../src/data";
 
 describe('getNodeValidation', () => {
     it('1', () => {
@@ -20,7 +21,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
         expect(result.errors.filter(e => e.severity === 'error').length).toBe(0);
@@ -82,7 +83,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
 
         expect(result.isValid).toBe(true);
@@ -108,7 +109,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(false);
         expect(result.inferredType).toBeDefined();
@@ -175,7 +176,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
@@ -248,7 +249,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
@@ -316,7 +317,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
@@ -359,7 +360,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBe("number");
@@ -403,7 +404,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(false);
         expect(result.inferredType).toBeDefined();
@@ -446,7 +447,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
@@ -508,7 +509,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
@@ -578,7 +579,7 @@ describe('getNodeValidation', () => {
                     }
                 }]
             }
-        });
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
         expect(result.inferredType).toBeDefined();
