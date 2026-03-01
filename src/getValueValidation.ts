@@ -24,9 +24,7 @@ export const getValueValidation = (targetType: string, literal: LiteralValue): V
 
     // 2. Setup virtual host and compile.
     const host = createCompilerHost(fileName, sourceCode, sourceFile);
-
     const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
-
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
     if (diagnostics.length > 0) {
