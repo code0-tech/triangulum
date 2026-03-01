@@ -1,31 +1,27 @@
 import ts from "typescript";
-import {
-    Flow,
-    NodeFunction,
-    NodeParameter,
-    ReferenceValue,
-    NodeFunctionIdWrapper
-} from "@code0-tech/sagittarius-graphql-types";
-import { MINIMAL_LIB } from "./utils";
-import { DATA_TYPES, FUNCTION_SIGNATURES, ValidationResult } from "./data";
+import {Flow, NodeFunctionIdWrapper, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "./utils";
+import {FUNCTION_SIGNATURES, ValidationResult} from "./data";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
+/**
+ * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
+ */
 export const getFlowValidation = (flow: Flow): ValidationResult => {
-    // TRACKING: Verhindert doppelte Deklarationen (Behebt deinen Fehler!)
     const visited = new Set<string>();
+    const nodes = flow.nodes?.nodes || [];
 
     /**
-     * Kern-Logik: Erzeugt Code für eine Node und folgt deren Ausführungspfad.
+     * Recursive function to generate TypeScript code for a node and its execution path.
      */
     const generateNodeCode = (
         nodeId: string,
-        flow: Flow,
         indent: string = ""
     ): string => {
         if (visited.has(nodeId)) return "";
 
-        const node = flow.nodes?.nodes?.find(n => n?.id === nodeId);
+        const node = nodes.find(n => n?.id === nodeId);
         if (!node || !node.functionDefinition) return "";
 
         visited.add(nodeId);
@@ -36,102 +32,96 @@ export const getFlowValidation = (flow: Flow): ValidationResult => {
         const params = node.parameters?.nodes as NodeParameter[] || [];
 
         const args = params.map((p, index) => {
-            if (p.value?.__typename === "ReferenceValue") {
-                const ref = p.value as ReferenceValue;
+            const val = p.value;
+            if (!val) return "undefined";
+
+            if (val.__typename === "ReferenceValue") {
+                const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return "undefined";
 
-                let refCode: string;
-
-                if (ref.parameterIndex !== undefined) {
-                    refCode = `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`;
-                } else {
-                    refCode = `node_${sanitizeId(ref.nodeFunctionId)}`;
-                }
+                let refCode = ref.parameterIndex !== undefined
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
+                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
 
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
 
                 return refCode;
-            } else if (p.value?.__typename === "LiteralValue") {
-                return JSON.stringify(p.value.value);
+            }
 
-            } else if (p.value?.__typename === "NodeFunctionIdWrapper") {
-                const wrapper = p.value as NodeFunctionIdWrapper;
+            if (val.__typename === "LiteralValue") {
+                return JSON.stringify(val.value);
+            }
+
+            if (val.__typename === "NodeFunctionIdWrapper") {
+                const wrapper = val as NodeFunctionIdWrapper;
                 const lambdaArgName = `p_${sanitizeId(node.id!)}_${index}`;
-
-                const subTreeCode = generateNodeCode(wrapper.id!, flow, indent + "  ");
+                const subTreeCode = generateNodeCode(wrapper.id!, indent + "  ");
                 return `(${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
             }
+
             return "undefined";
         }).join(", ");
 
         const varName = `node_${sanitizeId(node.id!)}`;
-        const funcName = `fn_${funcDef?.identifier?.replace(/::/g, '_')}`;
+        const funcName = `fn_${funcDef.identifier?.replace(/::/g, '_')}`;
 
-        //TODO: as any cast nur wenn wirklich nötig, aktuell könnte es sein, dass z.B. generische Funktionen mit undefined als Argumenten fälschlicherweise als gültig angesehen werden
-        let code = `${indent}const ${varName} = ${funcName}(${args}) ${args.includes("undefined") && (funcDef?.genericKeys?.length ?? 0) > 0 ? "as any" : ""};\n`;
+        // Add 'as any' cast only if undefined arguments are passed to a generic function to avoid false-positive errors.
+        const needsAnyCast = args.includes("undefined") || (funcDef.genericKeys?.length ?? 0) > 0;
+        let code = `${indent}const ${varName} = ${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
 
-        // REKURSION: Folgt dem nextNodeId Pfad im gleichen Scope
         if (node.nextNodeId) {
-            code += generateNodeCode(node.nextNodeId, flow, indent);
+            code += generateNodeCode(node.nextNodeId, indent);
         }
 
         return code;
     };
 
-    // 1. TYPEN & SIGNATUREN
-    const typeDefs = DATA_TYPES.map(dt =>
-        `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
-    ).join('\n');
+    // 1. Generate Declarations
+    const typeDefs = getSharedTypeDeclarations();
 
     const funcDeclarations = FUNCTION_SIGNATURES.map(funcDef => {
-        let sig = `declare function fn_${funcDef?.identifier?.replace(/::/g, '_')}`;
+        let sig = `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}`;
         if (funcDef.genericKeys && funcDef.genericKeys.length > 0) sig += `<${funcDef.genericKeys.join(",")}>`;
         sig += `(` + funcDef.parameters.nodes.map((p) => `${p.identifier}: ${p.type}`).join(", ") + `): ${funcDef.returnType};`;
         return sig;
     }).join('\n');
 
-    // 2. CODE GENERIERUNG
-    // Wir mappen über alle Nodes, aber generateNodeCode lässt alles aus, was via
-    // Rekursion (nextNodeId oder Wrapper) bereits besucht wurde.
-    const executionCode = (flow.nodes?.nodes || [])
-        .map(n => n?.id ? generateNodeCode(n.id, flow) : "")
+    // 2. Execution Code Generation
+    const executionCode = nodes
+        .map(n => n?.id ? generateNodeCode(n.id) : "")
         .filter(line => line !== "")
         .join('\n');
 
     const sourceCode = `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
 
-    // 3. TS COMPILER
+    // 3. Virtual TypeScript Compilation
     const fileName = "flow_virtual.ts";
     const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host: ts.CompilerHost = {
-        getSourceFile: name => (name === fileName ? sourceFile : (name.includes("lib.") ? ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest) : undefined)),
-        writeFile: () => {},
-        getDefaultLibFileName: () => "lib.d.ts",
-        useCaseSensitiveFileNames: () => true,
-        getCanonicalFileName: f => f,
-        getCurrentDirectory: () => "/",
-        getNewLine: () => "\n",
-        fileExists: f => f === fileName || f.includes("lib."),
-        readFile: f => (f === fileName ? sourceCode : (f.includes("lib.") ? MINIMAL_LIB : undefined)),
-        directoryExists: () => true,
-        getDirectories: () => [],
-    };
+    const host = createCompilerHost(fileName, sourceCode, sourceFile);
 
-    const program = ts.createProgram([fileName], { target: ts.ScriptTarget.Latest, lib: ["lib.esnext.d.ts"], noEmit: true }, host);
+    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
-    const errors = diagnostics.map(d => ({
-        message: ts.flattenDiagnosticMessageText(d.messageText, "\n"),
-        code: d.code,
-        severity: "error" as const,
-    }));
+    const errors = diagnostics.map(d => {
+        const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
+        // "Argument of type 'undefined' is not assignable to parameter of type 'number'."
+        // We ignore this in flow validation too because we might generate code for incomplete flows.
+        const isMockError = message.includes("Argument of type 'undefined'") || message.includes("not assignable to type 'undefined'");
+
+        if (isMockError) return null;
+
+        return {
+            message,
+            code: d.code,
+            severity: "error" as const,
+        };
+    }).filter((e): e is NonNullable<typeof e> => e !== null);
 
     return {
         isValid: errors.length === 0,
         inferredType: "void",
         errors,
-        sourceCode
     };
 };

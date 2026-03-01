@@ -1,5 +1,8 @@
 import {DataType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
 
+/**
+ * Result of a node or flow validation.
+ */
 export interface ValidationResult {
     isValid: boolean;
     inferredType: string;
@@ -8,19 +11,27 @@ export interface ValidationResult {
         code: number;
         severity: "error" | "warning";
     }>;
-    sourceCode?: string;
 }
 
-interface LDataType extends DataType {
+/**
+ * Internal representation of a DataType with its TypeScript equivalent.
+ */
+interface ExtendedDataType extends DataType {
     type: string;
 }
 
-interface LFunction extends Omit<FunctionDefinition, 'returnType'> {
+/**
+ * Internal representation of a FunctionDefinition with TypeScript-specific fields.
+ */
+interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
     returnType: string;
-    parameters: { nodes: LDataType[] };
+    parameters: { nodes: ExtendedDataType[] };
 }
 
-export const DATA_TYPES: LDataType[] = [
+/**
+ * Available data types and their TypeScript mappings.
+ */
+export const DATA_TYPES: ExtendedDataType[] = [
     {identifier: "LIST", type: "T[]", genericKeys: ["T"]},
     {identifier: "NUMBER", type: "number"},
     {identifier: "STRING", type: "string"},
@@ -28,21 +39,18 @@ export const DATA_TYPES: LDataType[] = [
     {identifier: "PREDICATE", type: "(item:R) => T", genericKeys: ["R", "T"]},
 ];
 
-export const FUNCTION_SIGNATURES: LFunction[] = [
+/**
+ * Built-in function signatures for validation and type inference.
+ */
+export const FUNCTION_SIGNATURES: ExtendedFunction[] = [
     {
         identifier: "std::list::at",
         returnType: "R",
         genericKeys: ["R"],
         parameters: {
             nodes: [
-                {
-                    identifier: "list",
-                    type: "LIST<R>"
-                },
-                {
-                    identifier: "index",
-                    type: "NUMBER"
-                }
+                {identifier: "list", type: "LIST<R>"},
+                {identifier: "index", type: "NUMBER"}
             ]
         }
     },
@@ -52,14 +60,8 @@ export const FUNCTION_SIGNATURES: LFunction[] = [
         genericKeys: [],
         parameters: {
             nodes: [
-                {
-                    identifier: "a",
-                    type: "NUMBER"
-                },
-                {
-                    identifier: "b",
-                    type: "NUMBER"
-                }
+                {identifier: "a", type: "NUMBER"},
+                {identifier: "b", type: "NUMBER"}
             ]
         }
     },
@@ -69,14 +71,8 @@ export const FUNCTION_SIGNATURES: LFunction[] = [
         genericKeys: ["R"],
         parameters: {
             nodes: [
-                {
-                    identifier: "a",
-                    type: "LIST<R>"
-                },
-                {
-                    identifier: "b",
-                    type: "CONSUMER<R>"
-                }
+                {identifier: "a", type: "LIST<R>"},
+                {identifier: "b", type: "CONSUMER<R>"}
             ]
         }
     },
@@ -86,14 +82,8 @@ export const FUNCTION_SIGNATURES: LFunction[] = [
         genericKeys: ["R"],
         parameters: {
             nodes: [
-                {
-                    identifier: "a",
-                    type: "LIST<R>"
-                },
-                {
-                    identifier: "b",
-                    type: "PREDICATE<R, boolean>"
-                }
+                {identifier: "a", type: "LIST<R>"},
+                {identifier: "b", type: "PREDICATE<R, boolean>"}
             ]
         }
     },
@@ -103,10 +93,7 @@ export const FUNCTION_SIGNATURES: LFunction[] = [
         genericKeys: ["R"],
         parameters: {
             nodes: [
-                {
-                    identifier: "a",
-                    type: "R"
-                }
+                {identifier: "a", type: "R"}
             ]
         }
     }

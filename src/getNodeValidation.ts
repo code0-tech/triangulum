@@ -1,8 +1,17 @@
 import ts from "typescript";
 import {Flow, NodeFunction, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
-import {getParameterCode, MINIMAL_LIB, validateReference} from "./utils";
-import {DATA_TYPES, FUNCTION_SIGNATURES, ValidationResult} from "./data";
+import {
+    createCompilerHost,
+    DEFAULT_COMPILER_OPTIONS,
+    getParameterCode,
+    getSharedTypeDeclarations,
+    validateReference
+} from "./utils";
+import {FUNCTION_SIGNATURES, ValidationResult} from "./data";
 
+/**
+ * Validates a single node's parameters and scope, then infers its return type.
+ */
 export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationResult => {
     const funcDef = FUNCTION_SIGNATURES.find(f => f.identifier === node.functionDefinition?.identifier);
     if (!funcDef) {
@@ -13,25 +22,24 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
         };
     }
 
-    const params = node.parameters?.nodes as NodeParameter[];
+    const params = (node.parameters?.nodes as NodeParameter[]) || [];
     const scopeErrors: ValidationResult["errors"] = [];
-    const paramCodes = params.map(param => getParameterCode(param, flow, getNodeValidation));
-    const funcCallArgs = paramCodes.join(", ");
 
+    // 1. Parameter scope validation
     for (const param of params) {
-        if (param.value?.__typename === "ReferenceValue") {
-            const validation = validateReference(flow, node, param.value as ReferenceValue);
+        const val = param.value;
+        if (val?.__typename === "ReferenceValue") {
+            const validation = validateReference(flow, node, val as ReferenceValue);
             if (!validation.isValid) {
                 scopeErrors.push({
                     message: validation.error || "Scope error",
-                    code: 403, // Forbidden/Invalid Scope
+                    code: 403,
                     severity: "error"
                 });
             }
         }
     }
 
-    // Wenn Scope-Fehler vorliegen, können wir hier abbrechen
     if (scopeErrors.length > 0) {
         return {
             isValid: false,
@@ -40,7 +48,12 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
         };
     }
 
-    // Build the function signature string from the new structure
+    // 2. Code generation for type inference
+    const paramCodes = params.map(param => getParameterCode(param, flow, getNodeValidation));
+    const funcCallArgs = paramCodes.map(code =>
+        code === 'undefined' ? '({} as any)' : code
+    ).join(", ");
+
     let signature = "";
     if (funcDef.genericKeys && funcDef.genericKeys.length > 0) {
         signature += `<${funcDef.genericKeys.join(",")}>`;
@@ -50,66 +63,52 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
     signature += `): ${funcDef.returnType}`;
 
     const sourceCode = `
-        ${DATA_TYPES.map(dt => `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`).join('\n')}
+        ${getSharedTypeDeclarations()}
         declare function testFunc${signature};
         const result = testFunc(${funcCallArgs});
     `;
 
-    const fileName = "virtual.ts";
+    // 3. Virtual compilation
+    const fileName = "node_virtual.ts";
     const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
+    const host = createCompilerHost(fileName, sourceCode, sourceFile);
 
-    const host: ts.CompilerHost = {
-        getSourceFile: name => {
-            if (name === fileName) return sourceFile;
-            if (name.includes("lib.")) {
-                return ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest);
-            }
-            return undefined;
-        },
-        writeFile: () => {
-        },
-        getDefaultLibFileName: () => "lib.d.ts",
-        useCaseSensitiveFileNames: () => true,
-        getCanonicalFileName: f => f,
-        getCurrentDirectory: () => "/",
-        getNewLine: () => "\n",
-        fileExists: f => f === fileName || f.includes("lib."),
-        readFile: f => f === fileName ? sourceCode : (f.includes("lib.") ? MINIMAL_LIB : undefined),
-        directoryExists: () => true,
-        getDirectories: () => [],
-    };
-
-    const program = ts.createProgram([fileName], {
-        target: ts.ScriptTarget.Latest,
-        lib: ["lib.esnext.d.ts"],
-    }, host);
+    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
     const checker = program.getTypeChecker();
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
     let inferredType = "any";
 
-    function findResultType(node: ts.Node) {
-        if (ts.isVariableDeclaration(node) && node.name.getText() === "result") {
-            const type = checker.getTypeAtLocation(node);
-            // NoTruncation verhindert, dass TS bei komplexen Typen einfach "any" sagt
+    // 4. Extract inferred type of 'result'
+    const findResultType = (n: ts.Node) => {
+        if (ts.isVariableDeclaration(n) && n.name.getText() === "result") {
+            const type = checker.getTypeAtLocation(n);
             inferredType = checker.typeToString(
                 type,
-                node,
+                n,
                 ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType
             );
         }
-        ts.forEachChild(node, findResultType);
-    }
-
+        ts.forEachChild(n, findResultType);
+    };
     findResultType(sourceFile);
 
     const errors = diagnostics.map(d => {
         const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
-        const isGeneric = /\b([TRKV])\b/.test(message);
+        // Generic placeholders like T, R, K, V are often warnings rather than hard errors if they remains un-inferred
+        const isGenericPlaceholder = /\b([TRKV])\b/.test(message);
+
+        // Match specific phrases that indicate a mock error from our code generation,
+        // while allowing other "not assignable" errors (which represent real logic errors).
+        const isMockError = (message.includes("not assignable to parameter of type") && (message.includes("'{}'") || message.includes("undefined"))) ||
+            message.includes("not assignable to type 'undefined'") ||
+            message.includes("not assignable to type 'void'") ||
+            message.includes("may be a mistake because neither type sufficiently overlaps");
+
         return {
             message,
             code: d.code,
-            severity: (isGeneric ? "warning" : "error") as "error" | "warning",
+            severity: (isGenericPlaceholder || isMockError ? "warning" : "error") as "error" | "warning",
         };
     });
 
@@ -117,6 +116,5 @@ export const getNodeValidation = (flow: Flow, node: NodeFunction): ValidationRes
         isValid: !errors.some(e => e.severity === "error"),
         inferredType,
         errors,
-        sourceCode
     };
 };

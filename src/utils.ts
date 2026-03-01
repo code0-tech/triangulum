@@ -4,28 +4,89 @@ import {
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
-    ReferencePath, ReferenceValue
+    ReferencePath,
+    ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {ValidationResult} from "./data";
-
-export const MINIMAL_LIB = `
-        interface Array<T> { 
-            [n: number]: T; 
-            length: number; 
-        }
-        interface String { readonly length: number; }
-        interface Number { }
-        interface Boolean { }
-        interface Object { }
-        interface Function { }
-        interface CallableFunction extends Function {}
-        interface NewableFunction extends Function {}
-        interface IArguments { }
-        interface RegExp { }
-    `;
+import {DATA_TYPES, ValidationResult} from "./data";
+import ts from "typescript";
 
 /**
- * Determines the type along a reference path (for objects, not arrays).
+ * Minimal TypeScript library definitions for the virtual compiler environment.
+ */
+export const MINIMAL_LIB = `
+    interface Array<T> { 
+        [n: number]: T; 
+        length: number; 
+    }
+    interface String { readonly length: number; }
+    interface Number { }
+    interface Boolean { }
+    interface Object { }
+    interface Function { }
+    interface CallableFunction extends Function {}
+    interface NewableFunction extends Function {}
+    interface IArguments { }
+    interface RegExp { }
+`;
+
+/**
+ * Common configuration for the TypeScript compiler host across different validation/inference tasks.
+ */
+export function createCompilerHost(
+    fileName: string,
+    sourceCode: string,
+    sourceFile: ts.SourceFile
+): ts.CompilerHost {
+    return {
+        getSourceFile: (name) => {
+            if (name === fileName) return sourceFile;
+            if (name.includes("lib.") || name.endsWith(".d.ts")) return ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest);
+            return undefined;
+        },
+        writeFile: () => {
+        },
+        getDefaultLibFileName: () => "lib.d.ts",
+        useCaseSensitiveFileNames: () => true,
+        getCanonicalFileName: (f) => f,
+        getCurrentDirectory: () => "/",
+        getNewLine: () => "\n",
+        fileExists: (f) => f === fileName || f.includes("lib.") || f.endsWith(".d.ts"),
+        readFile: (f) => (f === fileName ? sourceCode : (f.includes("lib.") || f.endsWith(".d.ts") ? MINIMAL_LIB : undefined)),
+        directoryExists: () => true,
+        getDirectories: () => [],
+    };
+}
+
+/**
+ * Common TypeScript compiler options used for validation and type inference.
+ */
+export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
+    target: ts.ScriptTarget.Latest,
+    lib: ["lib.esnext.d.ts"],
+    noEmit: true,
+    strictNullChecks: true,
+};
+
+/**
+ * Extracts and returns common type and generic declarations from DATA_TYPES.
+ */
+export function getSharedTypeDeclarations(): string {
+    const genericDeclarations = Array.from(new Set(DATA_TYPES.flatMap(dt => dt.genericKeys || [])))
+        .map(g => `type ${g} = any;`)
+        .join("\n");
+
+    const typeAliasDeclarations = DATA_TYPES.map(dt =>
+        `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
+    ).join("\n");
+
+    return `${genericDeclarations}\n${typeAliasDeclarations}`;
+}
+
+/**
+ * Determines the type along a reference path for objects.
+ * @param value The base value to traverse.
+ * @param referencePath The path of properties to follow.
+ * @returns The typeof the final value or 'unknown' if path is broken.
  */
 export function getTypeFromReferencePath(value: any, referencePath: ReferencePath[]): string {
     let current = value;
@@ -39,62 +100,89 @@ export function getTypeFromReferencePath(value: any, referencePath: ReferencePat
 }
 
 /**
- * Extracts parameter code for a NodeParameter.
+ * Helper to find a node by ID within the flow structure.
+ */
+function findNodeById(flow: Flow, nodeId: string): NodeFunction | undefined {
+    const nodes = flow.nodes;
+    if (!nodes) return undefined;
+
+    if (Array.isArray(nodes)) {
+        return nodes.find((n: any) => n.id === nodeId);
+    }
+
+    return nodes.nodes?.find((n: any) => n.id === nodeId)!;
+}
+
+/**
+ * Extracts and returns the TypeScript code representation for a NodeParameter.
  */
 export function getParameterCode(
     param: NodeParameter,
     flow: Flow,
     getNodeValidation: (flow: Flow, node: NodeFunction) => ValidationResult
 ): string {
-    if (param?.value && param.value.__typename === "ReferenceValue") {
-        const refValue = param.value as { __typename: "ReferenceValue"; nodeFunctionId: string; referencePath?: any[] };
-        const refNode = flow.nodes && Array.isArray(flow.nodes)
-            ? flow.nodes.find((n: any) => n.id === refValue.nodeFunctionId)
-            : flow.nodes?.nodes?.find((n: any) => n.id === refValue.nodeFunctionId);
+    const value = param?.value;
+    if (!value) return 'undefined';
+
+    if (value.__typename === "ReferenceValue") {
+        const refValue = value as ReferenceValue;
+        const refNode = findNodeById(flow, refValue.nodeFunctionId!);
+
         if (!refNode) return 'undefined';
+
         let refType = getNodeValidation(flow, refNode).inferredType;
+
         if (refValue.referencePath && refValue.referencePath.length > 0) {
-            let refVal = undefined;
-            if (refNode.parameters && refNode.parameters.nodes) {
-                const firstParam = refNode.parameters.nodes[0];
-                if (firstParam.value && firstParam.value.__typename === "LiteralValue") {
+            let refVal: any = undefined;
+            const nodes = refNode.parameters?.nodes;
+            if (nodes && nodes.length > 0) {
+                const firstParam = nodes[0];
+                if (firstParam?.value?.__typename === "LiteralValue") {
                     refVal = firstParam.value.value;
                 }
             }
             refType = getTypeFromReferencePath(refVal, refValue.referencePath);
         }
         return `({} as ${refType})`;
-    } else if (param?.value && param.value.__typename === "NodeFunctionIdWrapper") {
-        const refNode: NodeFunction | undefined = flow?.nodes?.nodes?.find(lNode => lNode?.id === (param.value as NodeFunctionIdWrapper).id)!
+    }
+
+    if (value.__typename === "NodeFunctionIdWrapper") {
+        const wrapperId = (value as NodeFunctionIdWrapper).id;
+        const refNode = findNodeById(flow, wrapperId!);
+
         if (!refNode) return '(() => undefined)';
 
-        const findReturnNode = (node: NodeFunction, flow: Flow): NodeFunction | undefined => {
-            if (node?.functionDefinition?.identifier === "std::control::return")
-                return node
+        const findReturnNode = (node: NodeFunction): NodeFunction | undefined => {
+            if (node.functionDefinition?.identifier === "std::control::return") {
+                return node;
+            }
 
-            const lNode = flow?.nodes?.nodes?.find(lNode => lNode?.id === node?.nextNodeId)
-            if (lNode)
-                return findReturnNode(lNode, flow)
+            const nextNode = node.nextNodeId ? findNodeById(flow, node.nextNodeId) : undefined;
+            return nextNode ? findReturnNode(nextNode) : undefined;
+        };
 
-            return undefined
-        }
-
-        const returnNode = findReturnNode(refNode, flow);
+        const returnNode = findReturnNode(refNode);
         if (!returnNode) return '(() => undefined)';
 
         const validation = getNodeValidation(flow, returnNode);
         return `(() => ({} as ${validation.inferredType}))`;
-    } else if (param?.value && param.value.__typename === "LiteralValue") {
-        return JSON.stringify(param.value.value);
     }
+
+    if (value.__typename === "LiteralValue") {
+        return JSON.stringify(value.value);
+    }
+
     return 'undefined';
 }
 
 /**
- * Sucht die Parent-Node, die diesen Sub-Tree via NodeFunctionIdWrapper gestartet hat.
+ * Finds the parent node that initiated this sub-tree via a NodeFunctionIdWrapper.
  */
-const getParentScopeNode = (flow: Flow, currentNodeId: NodeFunction['id']): NodeFunction | undefined => {
-    return flow.nodes?.nodes?.find(n =>
+const getParentScopeNode = (flow: Flow, currentNodeId: string): NodeFunction | undefined => {
+    const nodes = flow.nodes?.nodes;
+    if (!nodes) return undefined;
+
+    return nodes.find(n =>
         n?.parameters?.nodes?.some(p =>
             p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id === currentNodeId
         )
@@ -102,16 +190,14 @@ const getParentScopeNode = (flow: Flow, currentNodeId: NodeFunction['id']): Node
 };
 
 /**
- * Prüft, ob eine Node (targetId) im Pfad vor der aktuellen Node (currentId) liegt.
- * Dies deckt Szenario 1 ab.
+ * Checks if a target node is reachable (executed before) the current node.
  */
 const isNodeReachable = (flow: Flow, currentNode: NodeFunction, targetId: string, visited = new Set<string>()): boolean => {
     const currentId = currentNode.id;
     if (!currentId || visited.has(currentId)) return false;
     visited.add(currentId);
 
-    // --- SZENARIO 1: Liegt die Node im selben Tree davor? ---
-    // Wir suchen alle Nodes, die direkt oder indirekt zur aktuellen Node führen
+    // Scenario 1: Is the node a predecessor in the same execution chain?
     const isPredecessor = (startId: string): boolean => {
         const pred = flow.nodes?.nodes?.find(n => n?.nextNodeId === startId);
         if (!pred) return false;
@@ -121,51 +207,52 @@ const isNodeReachable = (flow: Flow, currentNode: NodeFunction, targetId: string
 
     if (isPredecessor(currentId)) return true;
 
-    // --- SZENARIO 2: Sind wir in einem Sub-Tree und die Target-Node ist der Parent? ---
-    // Wenn wir z.B. in einer "forEach"-Schleife sind, ist die "forEach"-Node selbst
-    // und alles vor ihr erreichbar.
+    // Scenario 2: Nested scope check (e.g., inside a forEach loop)
     const parentNode = getParentScopeNode(flow, currentId);
     if (parentNode) {
         if (parentNode.id === targetId) return true;
-        // Rekursiv prüfen, ob die Target-Node vom Parent aus erreichbar ist
         return isNodeReachable(flow, parentNode, targetId, visited);
     }
 
     return false;
 };
 
-export const validateReference = (flow: Flow, currentNode: NodeFunction, ref: ReferenceValue): { isValid: boolean, error?: string } => {
-    // SZENARIO 3: Globaler Flow-Input
+/**
+ * Validates if a reference is accessible from the current node's scope.
+ */
+export const validateReference = (
+    flow: Flow,
+    currentNode: NodeFunction,
+    ref: ReferenceValue
+): { isValid: boolean, error?: string } => {
+    // Scenario 3: Global flow input
     if (!ref.nodeFunctionId) {
-        return { isValid: true };
+        return {isValid: true};
     }
 
-    // SZENARIO 2: Input eines Parameters (z.B. "item" in CONSUMER)
+    // Scenario 2: Parameter input reference (e.g., "item" in CONSUMER)
     if (ref.parameterIndex !== undefined && ref.inputIndex !== undefined) {
-        // KORREKTUR: Die Node darf sich selbst referenzieren,
-        // wenn sie der Einstiegspunkt des Scopes ist.
-        if (currentNode.id === ref.nodeFunctionId) return { isValid: true };
+        if (currentNode.id === ref.nodeFunctionId) return {isValid: true};
 
-        // Die Node, die den Input definiert (ref.nodeFunctionId),
-        // muss ein Parent-Scope der aktuellen Node sein.
         let tempParent = getParentScopeNode(flow, currentNode.id!);
         while (tempParent) {
-            if (tempParent.id === ref.nodeFunctionId) return { isValid: true };
+            if (tempParent.id === ref.nodeFunctionId) return {isValid: true};
             tempParent = getParentScopeNode(flow, tempParent.id!);
         }
+
         return {
             isValid: false,
-            error: `Input-Referenz ungültig: Node ${currentNode.id} befindet sich nicht im Scope von Node ${ref.nodeFunctionId}.`
+            error: `Invalid input reference: Node ${currentNode.id} is not in the scope of Node ${ref.nodeFunctionId}.`
         };
     }
 
-    // SZENARIO 1: Normaler Return-Wert
+    // Scenario 1: Ordinary return value reference
     if (!isNodeReachable(flow, currentNode, ref.nodeFunctionId)) {
         return {
             isValid: false,
-            error: `Die Node ${ref.nodeFunctionId} wurde noch nicht ausgeführt oder ist in diesem Scope nicht sichtbar.`
+            error: `Node ${ref.nodeFunctionId} has not been executed yet or is not visible in this scope.`
         };
     }
 
-    return { isValid: true };
+    return {isValid: true};
 };

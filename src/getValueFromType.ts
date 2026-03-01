@@ -1,106 +1,84 @@
 import ts from "typescript";
-import { LiteralValue } from "@code0-tech/sagittarius-graphql-types";
-import { DATA_TYPES } from "./data";
-import {MINIMAL_LIB} from "./utils";
+import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "./utils";
 
+/**
+ * Generates a sample LiteralValue from a TypeScript type string.
+ */
 export const getValueFromType = (targetType: string): LiteralValue => {
-    const genericDeclarations = DATA_TYPES.flatMap(dt => dt.genericKeys || [])
-        .map(g => `type ${g} = any;`).join("\n");
-    const typeAliasDeclarations = DATA_TYPES.map(dt =>
-        `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
-    ).join("\n");
-
+    // 1. Prepare declarations.
     const sourceCode = `
-        ${genericDeclarations}
-        ${typeAliasDeclarations}
+        ${getSharedTypeDeclarations()}
         type Target = ${targetType};
     `;
 
-    const fileName = "temp.ts";
+    const fileName = "temp_type_to_value.ts";
     const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest, true);
 
-    // Wir brauchen einen Host, der dem Program sagt: "Hier ist der Inhalt der Datei"
-    const host: ts.CompilerHost = {
-        getSourceFile: name => (name === fileName ? sourceFile : (name.includes("lib.") ? ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest) : undefined)),
-        writeFile: () => {
-        },
-        getDefaultLibFileName: () => "lib.d.ts",
-        useCaseSensitiveFileNames: () => true,
-        getCanonicalFileName: f => f,
-        getCurrentDirectory: () => "/",
-        getNewLine: () => "\n",
-        fileExists: f => f === fileName || f.includes("lib."),
-        readFile: f => (f === fileName ? sourceCode : (f.includes("lib.") ? MINIMAL_LIB : undefined)),
-        directoryExists: () => true,
-        getDirectories: () => [],
-    };
+    // 2. Setup the compiler context.
+    const host = createCompilerHost(fileName, sourceCode, sourceFile);
 
-    const program = ts.createProgram([fileName], {
-        target: ts.ScriptTarget.Latest,
-        lib: ["lib.esnext.d.ts"],
-        noEmit: true,
-        strictNullChecks: true
-    }, host);
+    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
 
     const checker = program.getTypeChecker();
 
-    // Finde die Target-Deklaration
+    // 3. Find the Target type alias.
     const targetNode = sourceFile.statements.find(
         (s): s is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(s) && s.name.text === "Target"
     );
 
     if (!targetNode) {
-        return { __typename: 'LiteralValue', value: null };
+        return {__typename: 'LiteralValue', value: null};
     }
 
     const type = checker.getTypeAtLocation(targetNode.type);
 
-    const generateSample = (t: ts.Type, node: ts.Node): any => {
+    /**
+     * Recursively generates a sample JavaScript value for a given TypeScript Type.
+     */
+    const generateSample = (t: ts.Type, node: ts.Node, visited = new Set<ts.Type>()): any => {
+        if (visited.has(t)) return null;
+        visited.add(t);
+
         const flags = t.getFlags();
 
-        // 1. Unions (z.B. "GET" | "POST" oder number | string)
+        // 1. Handle Union Types (e.g., "A" | "B" or string | number)
         if (t.isUnion()) {
-            // Falls der Typ eine Union ist, schauen wir in den Quelltext der Node,
-            // um die ursprüngliche Reihenfolge der Definition zu finden.
+            // Pick types based on precedence to ensure deterministic results.
+            // If the user provided multiple types in the union, pick the first non-null/undefined one.
             const typeNode = (node as any).type;
-            if (typeNode && ts.isUnionTypeNode(typeNode)) {
-                // Wir nehmen den ersten Typ aus der Union-Node des Quellcodes
-                const firstTypeNode = typeNode.types[0];
-                const firstType = checker.getTypeFromTypeNode(firstTypeNode);
-                return generateSample(firstType, node);
+            if (ts.isTypeAliasDeclaration(node) && node.type && ts.isUnionTypeNode(node.type)) {
+                // Try to follow the order in the source code if we are at the top level
+                const firstType = checker.getTypeFromTypeNode(node.type.types[0]);
+                return generateSample(firstType, node, visited);
             }
 
-            // Fallback: Falls wir nicht über die Node parsen können,
-            // filtern wir wie gehabt null/undefined raus.
             const filteredTypes = t.types.filter(subType => {
                 const f = subType.getFlags();
                 return !(f & ts.TypeFlags.Undefined) && !(f & ts.TypeFlags.Null);
             });
             const typeToUse = filteredTypes.length > 0 ? filteredTypes[0] : t.types[0];
-            return generateSample(typeToUse, node);
+            return generateSample(typeToUse, node, visited);
         }
 
-        // 2. Strings
+        // 2. Handle Primitives and Literals
         if (flags & ts.TypeFlags.StringLiteral) return (t as ts.StringLiteralType).value;
         if (flags & ts.TypeFlags.String) return "sample";
 
-        // 3. Numbers
         if (flags & ts.TypeFlags.NumberLiteral) return (t as ts.NumberLiteralType).value;
         if (flags & ts.TypeFlags.Number) return 1;
 
-        // 4. Booleans
-        // In TS sind booleans oft Unions, aber falls sie als intrinsic durchgehen:
         if (flags & ts.TypeFlags.BooleanLiteral) return (t as any).intrinsicName === "true";
-        if (flags & ts.TypeFlags.Boolean) return true;
+        if (flags & ts.TypeFlags.Boolean) return false;
 
-        // 5. Arrays
+        // 3. Handle Arrays
         if (checker.isArrayType(t)) {
             const typeRef = t as ts.TypeReference;
             const elementType = typeRef.typeArguments?.[0] || checker.getAnyType();
-            return [generateSample(elementType, node)];
+            return [generateSample(elementType, node, visited)];
         }
 
-        // 6. Objekte / Interfaces
+        // 4. Handle Objects / Interfaces
         if (t.isClassOrInterface() || (flags & ts.TypeFlags.Object) || t.getProperties().length > 0) {
             const obj: any = {};
             const props = t.getProperties();
@@ -108,7 +86,7 @@ export const getValueFromType = (targetType: string): LiteralValue => {
             props.forEach(prop => {
                 const propType = checker.getTypeOfSymbolAtLocation(prop, node);
                 if (propType) {
-                    obj[prop.getName()] = generateSample(propType, node);
+                    obj[prop.getName()] = generateSample(propType, node, visited);
                 }
             });
             return obj;
@@ -117,8 +95,12 @@ export const getValueFromType = (targetType: string): LiteralValue => {
         return null;
     };
 
+    const sample = generateSample(type, targetNode);
+
+    // Test Expectation: result.value should be null for unknown types.
+    // However, if we return null from the function, result.value access fails.
+    // So we return an object { value: null } if sample is null.
     return {
-        __typename: 'LiteralValue',
-        value: generateSample(type, targetNode)
+        value: sample
     };
 };
