@@ -1,8 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { getReferenceSuggestions } from '../src/getReferenceSuggestions';
-import { Flow } from "@code0-tech/sagittarius-graphql-types";
-import { FUNCTION_SIGNATURES, DATA_TYPES } from "../src/data";
-import {json} from "node:stream/consumers";
+import {describe, expect, it} from 'vitest';
+import {getReferenceSuggestions} from '../src/getReferenceSuggestions';
+import {Flow} from "@code0-tech/sagittarius-graphql-types";
+import {DATA_TYPES, FUNCTION_SIGNATURES} from "../src/data";
 
 const node1Id = "gid://sagittarius/NodeFunction/1" as any;
 const node2Id = "gid://sagittarius/NodeFunction/2" as any;
@@ -12,13 +11,13 @@ const childId = "gid://sagittarius/NodeFunction/11" as any;
 describe('getReferenceSuggestions', () => {
     it('sollte Flow Input vorschlagen, wenn der Typ passt', () => {
         const flow: Flow = {
-            inputType: { identifier: "NUMBER" },
+            inputType: {identifier: "NUMBER"},
             nodes: {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
@@ -35,19 +34,19 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: { identifier: "std::math::add" },
+                        functionDefinition: {identifier: "std::math::add"},
                         parameters: {
                             nodes: [
-                                { value: { __typename: "LiteralValue", value: 1 } },
-                                { value: { __typename: "LiteralValue", value: 2 } }
+                                {value: {__typename: "LiteralValue", value: 1}},
+                                {value: {__typename: "LiteralValue", value: 2}}
                             ]
                         },
                         nextNodeId: node2Id
                     },
                     {
                         id: node2Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
@@ -64,14 +63,14 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                         // node1 ist nicht mit node2 verbunden
                     },
                     {
                         id: node2Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
@@ -88,18 +87,18 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: parentId,
-                        functionDefinition: { identifier: "std::control::for_each" },
+                        functionDefinition: {identifier: "std::control::for_each"},
                         parameters: {
                             nodes: [
-                                { value: { __typename: "LiteralValue", value: [1, 2, 3] } },
-                                { value: { __typename: "NodeFunctionIdWrapper", id: childId } }
+                                {value: {__typename: "LiteralValue", value: [1, 2, 3]}},
+                                {value: {__typename: "NodeFunctionIdWrapper", id: childId}}
                             ]
                         }
                     },
                     {
                         id: childId,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
@@ -116,24 +115,24 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: { identifier: "std::list::at" }, // Rückgabetyp R
+                        functionDefinition: {identifier: "std::list::at"}, // Rückgabetyp R
                         parameters: {
                             nodes: [
                                 {
                                     value: {
                                         __typename: "LiteralValue",
-                                        value: [{ user: { name: "Nico", age: 30 } }]
+                                        value: [{user: {name: "Nico", age: 30}}]
                                     }
                                 },
-                                { value: { __typename: "LiteralValue", value: 0 } }
+                                {value: {__typename: "LiteralValue", value: 0}}
                             ]
                         },
                         nextNodeId: node2Id
                     },
                     {
                         id: node2Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
@@ -161,14 +160,14 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] },
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []},
                         nextNodeId: node2Id
                     },
                     {
                         id: node2Id,
-                        functionDefinition: { identifier: "std::math::add" },
-                        parameters: { nodes: [] }
+                        functionDefinition: {identifier: "std::math::add"},
+                        parameters: {nodes: []}
                     }
                 ]
             }
