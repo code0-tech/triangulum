@@ -15,11 +15,13 @@ import ts from "typescript";
 // Define the shape of ExtendedDataType and ExtendedFunction to use in types
 export interface ExtendedDataType extends DataType {
     type: string;
+    linkedDataTypeIdentifiers?: string[];
 }
 
 export interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
     returnType: string;
     parameters: { nodes: ExtendedDataType[] };
+    linkedDataTypeIdentifiers?: string[];
 }
 
 /**
