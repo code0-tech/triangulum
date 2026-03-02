@@ -4,6 +4,7 @@ export * from './getNodeSuggestions';
 export * from './getNodeValidation';
 export * from './getReferenceSuggestions';
 export * from './getTypeFromValue';
+export * from './getTypeVariant';
 export * from './getValueFromType';
 export * from './getValueSuggestions';
 export * from './getValueValidation';
