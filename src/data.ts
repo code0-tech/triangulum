@@ -1,5 +1,4 @@
-import {DataType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
-import {ExtendedFunction} from "./utils";
+import {ExtendedDataType, ExtendedFunction} from "./utils";
 
 /**
  * Result of a node or flow validation.
@@ -17,12 +16,14 @@ export interface ValidationResult {
 /**
  * Available data types and their TypeScript mappings.
  */
-export const DATA_TYPES: any[] = [
+export const DATA_TYPES: ExtendedDataType[] = [
     {identifier: "LIST", type: "T[]", genericKeys: ["T"]},
     {identifier: "NUMBER", type: "number"},
+    {identifier: "HTTP_METHOD", type: `"GET" | "POST" | "PUT" | "DELETE"`},
     {identifier: "STRING", type: "string"},
     {identifier: "CONSUMER", type: "(item:R) => void", genericKeys: ["R"]},
     {identifier: "PREDICATE", type: "(item:R) => T", genericKeys: ["R", "T"]},
+    {identifier: "NUMBER_ARRAY", type: "LIST<NUMBER>", linkedDataTypeIdentifiers: ["LIST", "NUMBER"]},
 ];
 
 /**
