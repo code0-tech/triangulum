@@ -13,11 +13,31 @@
   "license": "ISC",
   "author": "CodeZero",
   "type": "module",
-  "main": "index.ts",
+  "main": "./dist/triangulum.cjs.js",
+  "module": "./dist/triangulum.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/triangulum.es.js",
+      "require": "./dist/triangulum.cjs.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "build": "vite build"
   },
   "dependencies": {
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2342308809-931efb40b4bf3245999c53abbdd9164cea82e82d",
+    "@types/node": "^25.3.2",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^4.0.18"
   }
 }
