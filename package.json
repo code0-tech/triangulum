@@ -1,6 +1,6 @@
 {
-  "name": "triangulum",
-  "version": "0.0.0",
+  "name": "@code0-tech/triangulum",
+  "version": "0.1.0",
   "description": "",
   "homepage": "https://github.com/code0-tech/triangulum#readme",
   "bugs": {
@@ -10,7 +10,6 @@
     "type": "git",
     "url": "git+https://github.com/code0-tech/triangulum.git"
   },
-  "license": "ISC",
   "author": "CodeZero",
   "type": "module",
   "main": "./dist/triangulum.cjs.js",
