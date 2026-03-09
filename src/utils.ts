@@ -9,8 +9,20 @@ import {
     ReferencePath,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {ValidationResult} from "./data";
 import ts from "typescript";
+
+/**
+ * Result of a node or flow validation.
+ */
+export interface ValidationResult {
+    isValid: boolean;
+    inferredType: string;
+    errors: Array<{
+        message: string;
+        code: number;
+        severity: "error" | "warning";
+    }>;
+}
 
 // Define the shape of ExtendedDataType and ExtendedFunction to use in types
 export interface ExtendedDataType extends DataType {
@@ -19,8 +31,7 @@ export interface ExtendedDataType extends DataType {
 }
 
 export interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
-    returnType: string;
-    parameters: { nodes: ExtendedDataType[] };
+    signature: string;
     linkedDataTypeIdentifiers?: string[];
 }
 
@@ -41,6 +52,7 @@ export const MINIMAL_LIB = `
     interface NewableFunction extends Function {}
     interface IArguments { }
     interface RegExp { }
+    type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 `;
 
 /**

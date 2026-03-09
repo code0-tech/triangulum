@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getValueSuggestions } from '../src/getValueSuggestions';
+import { getValueSuggestions } from '../src/suggestion/getValueSuggestions';
 
 describe('getLanguageServiceSuggestions', () => {
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getValueFromType } from '../src/getValueFromType';
-import { DATA_TYPES } from '../src/data';
+import { getValueFromType } from '../src/extraction/getValueFromType';
+import { DATA_TYPES } from './data';
 
 describe('getValueFromType', () => {
 

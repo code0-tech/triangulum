@@ -1,7 +1,13 @@
 import ts from "typescript";
 import {Flow, NodeFunctionIdWrapper, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ExtendedFunction, ExtendedDataType} from "./utils";
-import {ValidationResult} from "./data";
+import {
+    createCompilerHost,
+    DEFAULT_COMPILER_OPTIONS,
+    ExtendedDataType,
+    ExtendedFunction,
+    getSharedTypeDeclarations,
+    ValidationResult
+} from "../utils";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -10,13 +16,13 @@ const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
  */
 export const getFlowValidation = (
     flow: Flow,
-    functionSignatures: ExtendedFunction[],
+    functions: ExtendedFunction[],
     dataTypes: ExtendedDataType[]
 ): ValidationResult => {
     const visited = new Set<string>();
     const nodes = flow.nodes?.nodes || [];
 
-    const funcMap = new Map(functionSignatures.map(f => [f.identifier, f]));
+    const funcMap = new Map(functions.map(f => [f.identifier, f]));
 
     /**
      * Recursive function to generate TypeScript code for a node and its execution path.
@@ -87,11 +93,8 @@ export const getFlowValidation = (
     // 1. Generate Declarations
     const typeDefs = getSharedTypeDeclarations(dataTypes);
 
-    const funcDeclarations = functionSignatures.map(funcDef => {
-        let sig = `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}`;
-        if (funcDef.genericKeys && funcDef.genericKeys.length > 0) sig += `<${funcDef.genericKeys.join(",")}>`;
-        sig += `(` + funcDef.parameters.nodes.map((p) => `${p?.identifier}: ${p.type}`).join(", ") + `): ${funcDef.returnType};`;
-        return sig;
+    const funcDeclarations = functions.map(funcDef => {
+        return `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}${funcDef.signature}`;
     }).join('\n');
 
     // 2. Execution Code Generation

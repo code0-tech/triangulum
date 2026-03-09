@@ -1,18 +1,18 @@
 import ts from "typescript";
 import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ExtendedDataType} from "./utils";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, ExtendedDataType, getSharedTypeDeclarations} from "../utils";
 
 /**
  * Generates a sample LiteralValue from a TypeScript type string.
  */
 export const getValueFromType = (
-    targetType: string,
+    type: string,
     dataTypes: ExtendedDataType[]
 ): LiteralValue => {
     // 1. Prepare declarations.
     const sourceCode = `
         ${getSharedTypeDeclarations(dataTypes)}
-        type Target = ${targetType};
+        type Target = ${type};
     `;
 
     const fileName = "temp_type_to_value.ts";
@@ -34,7 +34,7 @@ export const getValueFromType = (
         return {__typename: 'LiteralValue', value: null};
     }
 
-    const type = checker.getTypeAtLocation(targetNode.type);
+    const typeFound = checker.getTypeAtLocation(targetNode.type);
 
     /**
      * Recursively generates a sample JavaScript value for a given TypeScript Type.
@@ -98,7 +98,7 @@ export const getValueFromType = (
         return null;
     };
 
-    const sample = generateSample(type, targetNode);
+    const sample = generateSample(typeFound, targetNode);
 
     // Test Expectation: result.value should be null for unknown types.
     // However, if we return null from the function, result.value access fails.

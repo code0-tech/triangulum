@@ -1,14 +1,14 @@
 import {NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
-import {ExtendedFunction, createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "./utils";
-import {DATA_TYPES} from "./data";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, ExtendedFunction, getSharedTypeDeclarations} from "../utils";
+import {DATA_TYPES} from "../../test/data";
 
 /**
  * Suggests NodeFunctions based on a given type and a list of available FunctionDefinitions.
  * Returns functions whose return type is compatible with the target type.
  */
-export function getNodeSuggestions(targetType: string, functions: ExtendedFunction[]): NodeFunction[] {
-    if (!targetType || !functions || functions.length === 0) {
+export function getNodeSuggestions(type: string, functions: ExtendedFunction[]): NodeFunction[] {
+    if (!type || !functions || functions.length === 0) {
         return [];
     }
 
@@ -16,17 +16,26 @@ export function getNodeSuggestions(targetType: string, functions: ExtendedFuncti
 
     const sharedTypes = getSharedTypeDeclarations(DATA_TYPES);
 
+    function getGenericsCount(input: string): number {
+        const match = input.match(/<([^>]+)>/);
+        if (!match) return 0;
+        return match[1].split(',').map(s => s.trim()).filter(Boolean).length;
+    }
+
     const sourceCode = `
         ${sharedTypes}
-        type TargetType = ${targetType};
+        type TargetType = ${type};
         ${functions.map((f, i) => {
-            const generics = f.genericKeys && f.genericKeys.length > 0
-                ? `<${f.genericKeys.map(k => `${k} = any`).join(",")}>`
-                : "";
-            return `type F${i}${generics} = ${f.returnType};`;
-        }).join("\n")}
+            
+        return `
+        declare function Fu${i}${f.signature};
+        type F${i} = ReturnType<typeof Fu${i}${getGenericsCount(f.signature) > 0 ? `<${Array(getGenericsCount(f.signature)).fill("any").join(", ")}>` : ""}>;
+        `;
+    }).join("\n")}
         ${functions.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
     `;
+
+    console.log(sourceCode)
 
     const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
     const host = createCompilerHost(fileName, sourceCode, sourceFile);
@@ -34,7 +43,7 @@ export function getNodeSuggestions(targetType: string, functions: ExtendedFuncti
         ...DEFAULT_COMPILER_OPTIONS
     }, host);
 
-    const diagnostics = ts.getPreEmitDiagnostics(program);
+    const diagnostics = program.getSemanticDiagnostics();
     const errorLines = new Set<number>();
     diagnostics.forEach(diag => {
         if (diag.file === sourceFile && diag.start !== undefined) {
@@ -48,6 +57,8 @@ export function getNodeSuggestions(targetType: string, functions: ExtendedFuncti
             const lineToMatch = `const check${i}: TargetType = {} as F${i};`;
             const lines = sourceCode.split("\n");
             const actualLine = lines.findIndex(l => l.includes(lineToMatch));
+
+
 
             if (actualLine !== -1 && errorLines.has(actualLine)) {
                 return null;
@@ -63,12 +74,12 @@ export function getNodeSuggestions(targetType: string, functions: ExtendedFuncti
                 },
                 parameters: {
                     __typename: "NodeParameterConnection",
-                    nodes: (f.parameters?.nodes || []).map(p => ({
+                    nodes: (f.parameterDefinitions?.nodes || []).map(p => ({
                         __typename: "NodeParameter",
                         parameterDefinition: {
                             __typename: "ParameterDefinition",
-                            id: p.identifier as any,
-                            identifier: p.identifier
+                            id: p?.identifier as any,
+                            identifier: p?.identifier
                         },
                         value: null
                     }))

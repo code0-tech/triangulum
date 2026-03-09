@@ -1,18 +1,13 @@
 import ts from "typescript";
+import {Flow, NodeFunction, NodeFunctionIdWrapper, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
 import {
-    Flow,
-    NodeFunction,
-    ReferenceValue,
-    NodeFunctionIdWrapper
-} from "@code0-tech/sagittarius-graphql-types";
-import {
+    createCompilerHost,
+    DEFAULT_COMPILER_OPTIONS,
     ExtendedDataType,
     ExtendedFunction,
-    getSharedTypeDeclarations,
-    createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS
-} from "./utils";
-import {getNodeValidation} from "./getNodeValidation";
+    getSharedTypeDeclarations
+} from "../utils";
+import {getNodeValidation} from "../validation/getNodeValidation";
 
 /**
  * Calculates all available reference suggestions for a specific target node in a flow
@@ -20,14 +15,14 @@ import {getNodeValidation} from "./getNodeValidation";
  */
 export const getReferenceSuggestions = (
     flow: Flow,
-    targetNodeId: NodeFunction['id'],
-    requiredType: string,
-    functionSignatures: ExtendedFunction[],
+    nodeId: NodeFunction['id'],
+    type: string,
+    functions: ExtendedFunction[],
     dataTypes: ExtendedDataType[]
 ): ReferenceValue[] => {
     const suggestions: ReferenceValue[] = [];
     const nodes = flow.nodes?.nodes || [];
-    const targetNode = nodes.find(n => n?.id === targetNodeId);
+    const targetNode = nodes.find(n => n?.id === nodeId);
 
     if (!targetNode) return [];
 
@@ -35,14 +30,14 @@ export const getReferenceSuggestions = (
 
     // Helper to check if a type is assignable to the required type
     const isAssignable = (inferredType: string, path?: string): boolean => {
-        if (!requiredType || requiredType === "any") return true;
+        if (!type || type === "any") return true;
         if (inferredType === "any") return true;
 
         const fileName = `suggestion_check_${Math.random().toString(36).substring(7)}.ts`;
         const sourceCode = `
             ${typeDefs}
             const val: ${inferredType} = {} as any;
-            const test: ${requiredType} = val${path ? `.${path}` : ""};
+            const test: ${type} = val${path ? `.${path}` : ""};
         `;
         const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
         const host = createCompilerHost(fileName, sourceCode, sourceFile);
@@ -146,10 +141,10 @@ export const getReferenceSuggestions = (
 
     // 2. Return values of previously executed nodes
     nodes.forEach(node => {
-        if (!node || node.id === targetNodeId) return;
+        if (!node || node.id === nodeId) return;
 
         if (isNodeBefore(flow, node, targetNode)) {
-            const validation = getNodeValidation(flow, node, functionSignatures, dataTypes);
+            const validation = getNodeValidation(flow, node, functions, dataTypes);
             suggestions.push(...getValidPaths(validation.inferredType, {
                 __typename: "ReferenceValue",
                 nodeFunctionId: node.id,
@@ -159,15 +154,15 @@ export const getReferenceSuggestions = (
     });
 
     // 3. Inputs of parent nodes (Scopes)
-    let currentParent = getParentScopeNode(flow, targetNodeId!);
+    let currentParent = getParentScopeNode(flow, nodeId!);
     while (currentParent) {
-        const funcDef = functionSignatures.find(f => f.identifier === currentParent!.functionDefinition?.identifier);
+        const funcDef = functions.find(f => f.identifier === currentParent!.functionDefinition?.identifier);
         if (funcDef) {
             const paramIndex = currentParent.parameters?.nodes?.findIndex(p => {
                 const val = p?.value;
                 if (val?.__typename === "NodeFunctionIdWrapper") {
                     const wrapper = val as NodeFunctionIdWrapper;
-                    return wrapper.id === targetNodeId || isNodeInSubtree(flow, wrapper.id || undefined, targetNodeId!);
+                    return wrapper.id === nodeId || isNodeInSubtree(flow, wrapper.id || undefined, nodeId!);
                 }
                 return false;
             });

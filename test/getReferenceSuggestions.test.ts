@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
-import {getReferenceSuggestions} from '../src/getReferenceSuggestions';
+import {getReferenceSuggestions} from '../src/suggestion/getReferenceSuggestions';
 import {Flow} from "@code0-tech/sagittarius-graphql-types";
-import {DATA_TYPES, FUNCTION_SIGNATURES} from "../src/data";
+import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
 const node1Id = "gid://sagittarius/NodeFunction/1" as any;
 const node2Id = "gid://sagittarius/NodeFunction/2" as any;
@@ -148,8 +148,6 @@ describe('getReferenceSuggestions', () => {
             s.referencePath[0].path === "user" &&
             s.referencePath[1].path === "age"
         );
-
-        console.log(JSON.stringify(suggestions));
 
         expect(ageSuggestion).toBeDefined();
     });

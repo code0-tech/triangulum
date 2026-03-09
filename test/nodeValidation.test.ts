@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
-import {getNodeValidation} from '../src/getNodeValidation';
-import {FUNCTION_SIGNATURES, DATA_TYPES} from "../src/data";
+import {getNodeValidation} from '../src/validation/getNodeValidation';
+import {FUNCTION_SIGNATURES, DATA_TYPES} from "./data";
 
 describe('getNodeValidation', () => {
     it('1', () => {

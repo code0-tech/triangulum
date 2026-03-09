@@ -3,13 +3,13 @@ import {Flow, NodeFunction, NodeParameter, ReferenceValue} from "@code0-tech/sag
 import {
     createCompilerHost,
     DEFAULT_COMPILER_OPTIONS,
+    ExtendedDataType,
+    ExtendedFunction,
     getParameterCode,
     getSharedTypeDeclarations,
     validateReference,
-    ExtendedFunction,
-    ExtendedDataType
-} from "./utils";
-import {ValidationResult} from "./data";
+    ValidationResult
+} from "../utils";
 
 /**
  * Validates a single node's parameters and scope, then infers its return type.
@@ -17,10 +17,10 @@ import {ValidationResult} from "./data";
 export const getNodeValidation = (
     flow: Flow,
     node: NodeFunction,
-    functionSignatures: ExtendedFunction[],
+    functions: ExtendedFunction[],
     dataTypes: ExtendedDataType[]
 ): ValidationResult => {
-    const funcMap = new Map(functionSignatures.map(f => [f.identifier, f]));
+    const funcMap = new Map(functions.map(f => [f.identifier, f]));
     const funcDef = funcMap.get(node.functionDefinition?.identifier);
     if (!funcDef) {
         return {
@@ -57,18 +57,12 @@ export const getNodeValidation = (
     }
 
     // 2. Code generation for type inference
-    const paramCodes = params.map(param => getParameterCode(param, flow, (f, n) => getNodeValidation(f, n, functionSignatures, dataTypes)));
+    const paramCodes = params.map(param => getParameterCode(param, flow, (f, n) => getNodeValidation(f, n, functions, dataTypes)));
     const funcCallArgs = paramCodes.map(code =>
         code === 'undefined' ? '({} as any)' : code
     ).join(", ");
 
-    let signature = "";
-    if (funcDef.genericKeys && funcDef.genericKeys.length > 0) {
-        signature += `<${funcDef.genericKeys.join(",")}>`;
-    }
-    signature += `(`;
-    signature += funcDef.parameters.nodes.map((p) => `${p.identifier}: ${p.type}`).join(", ");
-    signature += `): ${funcDef.returnType}`;
+    let signature = funcDef.signature;
 
     const sourceCode = `
         ${getSharedTypeDeclarations(dataTypes)}

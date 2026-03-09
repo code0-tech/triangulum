@@ -1,14 +1,14 @@
 import ts from "typescript";
 import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS} from "./utils";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS} from "../utils";
 
 /**
  * Extracts possible literal values from a type string to provide suggestions.
  */
-export const getValueSuggestions = (typeString: string): LiteralValue[] => {
-    if (!typeString) return [];
+export const getValueSuggestions = (type: string): LiteralValue[] => {
+    if (!type) return [];
 
-    const sourceCode = `type T = ${typeString}; const val: T = {} as any;`;
+    const sourceCode = `type T = ${type}; const val: T = {} as any;`;
     const fileName = "suggestions_virtual.ts";
 
     // We recreate the SourceFile here but use the specialized compiler host
@@ -23,7 +23,7 @@ export const getValueSuggestions = (typeString: string): LiteralValue[] => {
     const typeAlias = sourceFile.statements.find(ts.isTypeAliasDeclaration);
     if (!typeAlias) return [];
 
-    const type = checker.getTypeAtLocation(typeAlias);
+    const typeFound = checker.getTypeAtLocation(typeAlias);
 
     /**
      * Recursively extracts literal values from a TypeScript type.
@@ -43,7 +43,7 @@ export const getValueSuggestions = (typeString: string): LiteralValue[] => {
     };
 
     // Use a Set to ensure uniqueness.
-    const uniqueValues = Array.from(new Set(extractValues(type)));
+    const uniqueValues = Array.from(new Set(extractValues(typeFound)));
 
     return uniqueValues.map(value => ({
         __typename: "LiteralValue",

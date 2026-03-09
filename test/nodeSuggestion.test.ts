@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
-import {getNodeSuggestions} from "../src/getNodeSuggestions";
-import {FUNCTION_SIGNATURES} from "../src/data";
+import {getNodeSuggestions} from "../src/suggestion/getNodeSuggestions";
+import {FUNCTION_SIGNATURES} from "./data";
 
 describe("getNodeSuggestions", () => {
     it("should suggest functions with compatible return types and prioritize exact matches", () => {

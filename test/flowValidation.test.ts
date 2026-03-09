@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { getFlowValidation } from '../src/getFlowValidation';
+import { getFlowValidation } from '../src/validation/getFlowValidation';
 import {Flow} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
-import {FUNCTION_SIGNATURES, DATA_TYPES} from "../src/data";
+import {FUNCTION_SIGNATURES, DATA_TYPES} from "./data";
 
 describe('getFlowValidation - Integrationstest', () => {
     it('sollte einen komplexen Flow mit verschachtelten Scopes und Generics validieren', () => {
@@ -65,8 +65,6 @@ describe('getFlowValidation - Integrationstest', () => {
         };
 
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
-
-        console.log(result)
 
         expect(result.isValid).toBe(true);
         expect(result.errors).toHaveLength(0);
