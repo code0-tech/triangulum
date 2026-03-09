@@ -7,4 +7,4 @@ export * from './extraction/getTypeVariant';
 export * from './extraction/getValueFromType';
 export * from './suggestion/getValueSuggestions';
 export * from './validation/getValueValidation';
-
+export * from './extraction/getTypesFromNode';
