@@ -11,7 +11,7 @@ export const getTypeFromValue = (value: LiteralValue | null): string => {
 
     // 2. Wrap value in virtual source code.
     const sourceCode = `const tempValue = ${literal ?? "any"};`;
-    const fileName = "temp_value.ts";
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;
