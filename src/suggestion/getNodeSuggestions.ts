@@ -34,8 +34,6 @@ export function getNodeSuggestions(type: string, functions: FunctionDefinition[]
         ${functions.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
     `;
 
-    console.log(sourceCode)
-
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;

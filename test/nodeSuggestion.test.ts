@@ -10,8 +10,6 @@ describe("getNodeSuggestions", () => {
 
         const map = suggestions.map(s => s.functionDefinition?.id)
 
-        console.log(map)
-
         expect(map).include("std::list::at")
         expect(map).include("std::control::find")
         expect(map).include("std::control::return")
