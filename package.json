@@ -35,13 +35,12 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "@typescript/vfs": "^1.6.4"
   },
   "peerDependencies": {
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2385560645-52d09772ef7058a833cf32edc393ce95668b8404",
-    "typescript": "^5.9.3"
-  },
-  "dependencies": {
+    "typescript": "^5.9.3",
     "@typescript/vfs": "^1.6.4"
   }
 }
