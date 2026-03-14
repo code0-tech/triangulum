@@ -6,14 +6,11 @@ import {DATA_TYPES} from "../../test/data";
  * Suggests NodeFunctions based on a given type and a list of available FunctionDefinitions.
  * Returns functions whose return type is compatible with the target type.
  */
+//TODO: add dataTypes
 export function getNodeSuggestions(type: string, functions: FunctionDefinition[]): NodeFunction[] {
     if (!type || !functions || functions.length === 0) {
         return [];
     }
-
-    const fileName = "suggestions.ts";
-
-    const sharedTypes = getSharedTypeDeclarations(DATA_TYPES);
 
     function getGenericsCount(input: string): number {
         const match = input.match(/<([^>]+)>/);
@@ -21,6 +18,7 @@ export function getNodeSuggestions(type: string, functions: FunctionDefinition[]
         return match[1].split(',').map(s => s.trim()).filter(Boolean).length;
     }
 
+    const sharedTypes = getSharedTypeDeclarations(DATA_TYPES);
     const sourceCode = `
         ${sharedTypes}
         type TargetType = ${type};
@@ -34,6 +32,7 @@ export function getNodeSuggestions(type: string, functions: FunctionDefinition[]
         ${functions.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
     `;
 
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;

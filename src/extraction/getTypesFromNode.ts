@@ -11,6 +11,7 @@ export interface NodeTypes {
 /**
  * Resolves the types of the parameters and the return type of a NodeFunction.
  */
+//TODO: only one function def and also filter out the needed datatypes for the function def
 export const getTypesFromNode = (
     node: NodeFunction,
     functions: FunctionDefinition[],
@@ -43,7 +44,7 @@ export const getTypesFromNode = (
         const result = testFunc(${funcCallArgs});
     `;
 
-    const fileName = "node_types_virtual.ts";
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;

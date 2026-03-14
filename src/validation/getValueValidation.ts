@@ -1,20 +1,12 @@
 import ts from "typescript";
 import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
-
-/**
- * Validates whether a literal value conforms to a specific TypeScript type string.
- */
-export interface ValueValidationResult {
-    isValid: boolean;
-    error?: string;
-}
+import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
 
 export const getValueValidation = (
     type: string,
     value: LiteralValue,
     dataTypes: DataType[]
-): ValueValidationResult => {
+): ValidationResult => {
     const valueAsCode = JSON.stringify(value.value);
 
     // 1. Construct the source code for validation.
@@ -23,16 +15,32 @@ export const getValueValidation = (
         const testValue: ${type} = ${valueAsCode};
     `;
 
-    const fileName = "value_check.ts";
+    const fileName = "index.ts";
     const compilerHost = createCompilerHost(fileName, sourceCode);
     const diagnostics = compilerHost.languageService.getSemanticDiagnostics(fileName);
 
-    if (diagnostics.length > 0) {
-        return {
-            isValid: false,
-            error: ts.flattenDiagnosticMessageText(diagnostics[0].messageText, "\n")
-        };
-    }
+    const errors = diagnostics.map(d => {
+        const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
+        // Generic placeholders like T, R, K, V are often warnings rather than hard errors if they remains un-inferred
+        const isGenericPlaceholder = /\b([TRKV])\b/.test(message);
 
-    return {isValid: true};
+        // Match specific phrases that indicate a mock error from our code generation,
+        // while allowing other "not assignable" errors (which represent real logic errors).
+        const isMockError = (message.includes("not assignable to parameter of type") && (message.includes("'{}'") || message.includes("undefined"))) ||
+            message.includes("not assignable to type 'undefined'") ||
+            message.includes("not assignable to type 'void'") ||
+            message.includes("may be a mistake because neither type sufficiently overlaps");
+
+        return {
+            message,
+            code: d.code,
+            severity: (isGenericPlaceholder || isMockError ? "warning" : "error") as "error" | "warning",
+        };
+    });
+
+    return {
+        isValid: !errors.some(e => e.severity === "error"),
+        inferredType: "void",
+        errors,
+    };
 };

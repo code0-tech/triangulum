@@ -9,13 +9,9 @@ export const getValueSuggestions = (type: string): LiteralValue[] => {
     if (!type) return [];
 
     const sourceCode = `type T = ${type}; const val: T = {} as any;`;
-    const fileName = "suggestions_virtual.ts";
-
-    // We recreate the SourceFile here but use the specialized compiler host
-    // to ensure the checker is matched with the host's view of the file.
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
-
     const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 

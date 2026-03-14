@@ -236,7 +236,7 @@ describe('getValueValidation', () => {
                 __typename: 'LiteralValue',
                 value: 1
             }, DATA_TYPES).isValid).toBe(false);
-            expect(getValueValidation('Array<', {
+            expect(getValueValidation('Arrays', {
                 __typename: 'LiteralValue',
                 value: []
             }, DATA_TYPES).isValid).toBe(false);

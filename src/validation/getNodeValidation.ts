@@ -9,7 +9,6 @@ import {
 } from "@code0-tech/sagittarius-graphql-types";
 import {
     createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
     getParameterCode,
     getSharedTypeDeclarations,
     validateReference,
@@ -19,6 +18,7 @@ import {
 /**
  * Validates a single node's parameters and scope, then infers its return type.
  */
+//TODO: just parse in one function
 export const getNodeValidation = (
     flow: Flow,
     node: NodeFunction,
@@ -76,7 +76,7 @@ export const getNodeValidation = (
     `;
 
     // 3. Virtual compilation
-    const fileName = "node_virtual.ts";
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
 

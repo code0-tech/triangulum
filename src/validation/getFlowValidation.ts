@@ -1,4 +1,4 @@
-import {flattenDiagnosticMessageText} from "typescript";
+import ts, {flattenDiagnosticMessageText} from "typescript";
 import {
     DataType,
     Flow,
@@ -106,7 +106,7 @@ export const getFlowValidation = (
     const sourceCode = `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
 
     // 3. Virtual TypeScript Compilation
-    const fileName = "flow_virtual.ts";
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
 
@@ -126,10 +126,10 @@ export const getFlowValidation = (
             code: d.code,
             severity: "error" as const,
         };
-    }).filter((e): e is NonNullable<typeof e> => e !== null);
+    }).filter((e) => e !== null);
 
     return {
-        isValid: errors.length === 0,
+        isValid: !errors.some(e => e?.severity === "error"),
         inferredType: "void",
         errors,
     };

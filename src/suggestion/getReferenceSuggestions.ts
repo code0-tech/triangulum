@@ -34,7 +34,7 @@ export const getReferenceSuggestions = (
         if (!type || type === "any") return true;
         if (inferredType === "any") return true;
 
-        const fileName = `suggestion_check_${Math.random().toString(36).substring(7)}.ts`;
+        const fileName = `index.ts`;
         const sourceCode = `
             ${typeDefs}
             const val: ${inferredType} = {} as any;
@@ -52,7 +52,7 @@ export const getReferenceSuggestions = (
     const getValidPaths = (inferredType: string, baseValue: ReferenceValue): ReferenceValue[] => {
         const validRefs: ReferenceValue[] = [];
 
-        const fileName = `probing_${Math.random().toString(36).substring(7)}.ts`;
+        const fileName = `index.ts`;
         const sourceCode = `
             ${typeDefs}
             const val: ${inferredType} = {} as any;
@@ -132,12 +132,7 @@ export const getReferenceSuggestions = (
     // 1. Flow Input
     if (flow.inputType) {
         const flowInputType = flow.inputType || "any";
-        suggestions.push(...getValidPaths(flowInputType, {
-            __typename: "ReferenceValue",
-            nodeFunctionId: null,
-            parameterIndex: 0,
-            referencePath: []
-        } as ReferenceValue));
+        suggestions.push(...getValidPaths(flowInputType, {} as ReferenceValue));
     }
 
     // 2. Return values of previously executed nodes
