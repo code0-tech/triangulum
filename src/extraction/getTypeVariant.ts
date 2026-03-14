@@ -17,7 +17,6 @@ export const getTypeVariant = (
     dataTypes: DataType[]
 ): DataTypeVariant => {
     const typeDefs = getSharedTypeDeclarations(dataTypes);
-    const fileName = `index.ts`;
 
     // We declare a variable with the type to probe it
     const sourceCode = `
@@ -26,6 +25,7 @@ export const getTypeVariant = (
         const val: TargetType = {} as any;
     `;
 
+    const fileName = `index.ts`;
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;

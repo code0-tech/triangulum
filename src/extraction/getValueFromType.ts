@@ -15,7 +15,7 @@ export const getValueFromType = (
         type Target = ${type};
     `;
 
-    const fileName = "temp_type_to_value.ts";
+    const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;
