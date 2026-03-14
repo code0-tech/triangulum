@@ -131,6 +131,6 @@ export const getFlowValidation = (
     return {
         isValid: !errors.some(e => e?.severity === "error"),
         returnType: "void",
-        errors,
+        diagnostics: errors,
     };
 };

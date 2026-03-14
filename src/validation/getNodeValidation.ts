@@ -30,12 +30,12 @@ export const getNodeValidation = (
         return {
             isValid: false,
             returnType: "any",
-            errors: [{message: `Function ${node.id} not found`, code: 404, severity: "error"}],
+            diagnostics: [{message: `Function ${node.id} not found`, code: 404, severity: "error"}],
         };
     }
 
     const params = (node.parameters?.nodes as NodeParameter[]) || [];
-    const scopeErrors: ValidationResult["errors"] = [];
+    const scopeErrors: ValidationResult["diagnostics"] = [];
 
     // 1. Parameter scope validation
     for (const param of params) {
@@ -56,7 +56,7 @@ export const getNodeValidation = (
         return {
             isValid: false,
             returnType: "any",
-            errors: scopeErrors,
+            diagnostics: scopeErrors,
         };
     }
 
@@ -121,6 +121,6 @@ export const getNodeValidation = (
     return {
         isValid: !errors.some(e => e.severity === "error"),
         returnType: inferredType,
-        errors,
+        diagnostics: errors,
     };
 };

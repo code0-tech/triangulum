@@ -17,7 +17,7 @@ import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvir
 export interface ValidationResult {
     isValid: boolean;
     returnType: string;
-    errors: Array<{
+    diagnostics: Array<{
         message: string;
         code: number;
         severity: "error" | "warning";
