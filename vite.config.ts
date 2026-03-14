@@ -27,7 +27,12 @@ export default defineConfig({
   plugins: [
     dts({
       insertTypesEntry: true,
-      include: ['src/**/*.ts']
+      include: ['src/**/*.ts'],
+      afterDiagnostic: diagnostics => {
+        if (diagnostics.length > 0) {
+          throw new Error("dts failed");
+        }
+      }
     })
   ]
 });
