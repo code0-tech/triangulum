@@ -1,13 +1,11 @@
-import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {DataType, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
-import {DATA_TYPES} from "../../test/data";
 
 /**
  * Suggests NodeFunctions based on a given type and a list of available FunctionDefinitions.
  * Returns functions whose return type is compatible with the target type.
  */
-//TODO: add dataTypes
-export function getNodeSuggestions(type: string, functions: FunctionDefinition[]): NodeFunction[] {
+export function getNodeSuggestions(type: string, functions: FunctionDefinition[], dataTypes: DataType[]): NodeFunction[] {
     if (!type || !functions || functions.length === 0) {
         return [];
     }
@@ -18,7 +16,7 @@ export function getNodeSuggestions(type: string, functions: FunctionDefinition[]
         return match[1].split(',').map(s => s.trim()).filter(Boolean).length;
     }
 
-    const sharedTypes = getSharedTypeDeclarations(DATA_TYPES);
+    const sharedTypes = getSharedTypeDeclarations(dataTypes);
     const sourceCode = `
         ${sharedTypes}
         type TargetType = ${type};
