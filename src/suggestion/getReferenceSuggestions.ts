@@ -7,7 +7,7 @@ import {
     NodeFunctionIdWrapper,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 import {getNodeValidation} from "../validation/getNodeValidation";
 
 /**
@@ -40,9 +40,9 @@ export const getReferenceSuggestions = (
             const val: ${inferredType} = {} as any;
             const test: ${type} = val${path ? `.${path}` : ""};
         `;
-        const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-        const host = createCompilerHost(fileName, sourceCode, sourceFile);
-        const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+        const host = createCompilerHost(fileName, sourceCode);
+        const sourceFile = host.getSourceFile(fileName)!;
+        const program = host.languageService.getProgram()!;
         const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
         return !diagnostics.some(d => d.category === ts.DiagnosticCategory.Error);
@@ -57,9 +57,9 @@ export const getReferenceSuggestions = (
             ${typeDefs}
             const val: ${inferredType} = {} as any;
         `;
-        const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-        const host = createCompilerHost(fileName, sourceCode, sourceFile);
-        const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+        const host = createCompilerHost(fileName, sourceCode);
+        const sourceFile = host.getSourceFile(fileName)!;
+        const program = host.languageService.getProgram()!;
         const checker = program.getTypeChecker();
 
         // 1. Check base type

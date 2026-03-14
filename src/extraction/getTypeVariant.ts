@@ -1,5 +1,5 @@
 import ts from "typescript";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 import {DataType} from "@code0-tech/sagittarius-graphql-types";
 
 export enum DataTypeVariant {
@@ -26,9 +26,9 @@ export const getTypeVariant = (
         const val: TargetType = {} as any;
     `;
 
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
     let discoveredVariant: DataTypeVariant = DataTypeVariant.TYPE;

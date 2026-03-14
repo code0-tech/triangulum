@@ -1,6 +1,6 @@
 import ts from "typescript";
 import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS} from "../utils";
+import {createCompilerHost} from "../utils";
 
 /**
  * Extracts possible literal values from a type string to provide suggestions.
@@ -13,11 +13,10 @@ export const getValueSuggestions = (type: string): LiteralValue[] => {
 
     // We recreate the SourceFile here but use the specialized compiler host
     // to ensure the checker is matched with the host's view of the file.
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
 
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-
-    const program = ts.createProgram([fileName], {...DEFAULT_COMPILER_OPTIONS, noLib: true}, host);
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
     const typeAlias = sourceFile.statements.find(ts.isTypeAliasDeclaration);

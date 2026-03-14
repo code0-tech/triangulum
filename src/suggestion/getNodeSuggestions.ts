@@ -1,6 +1,5 @@
 import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
-import ts from "typescript";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 import {DATA_TYPES} from "../../test/data";
 
 /**
@@ -37,11 +36,9 @@ export function getNodeSuggestions(type: string, functions: FunctionDefinition[]
 
     console.log(sourceCode)
 
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-    const program = ts.createProgram([fileName], {
-        ...DEFAULT_COMPILER_OPTIONS
-    }, host);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
 
     const diagnostics = program.getSemanticDiagnostics();
     const errorLines = new Set<number>();

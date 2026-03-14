@@ -1,6 +1,6 @@
 import ts from "typescript";
 import {DataType, Flow, FunctionDefinition, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getParameterCode, getSharedTypeDeclarations,} from "../utils";
+import {createCompilerHost, getParameterCode, getSharedTypeDeclarations,} from "../utils";
 import {getNodeValidation} from "../validation/getNodeValidation"; // Wieder hinzugefügt
 
 export interface NodeTypes {
@@ -44,10 +44,9 @@ export const getTypesFromNode = (
     `;
 
     const fileName = "node_types_virtual.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
     let inferredReturnType = "any";

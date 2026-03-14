@@ -24,10 +24,8 @@ export const getValueValidation = (
     `;
 
     const fileName = "value_check.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const compilerHost = createCompilerHost(fileName, sourceCode, sourceFile);
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, compilerHost);
-    const diagnostics = program.getSemanticDiagnostics(sourceFile);
+    const compilerHost = createCompilerHost(fileName, sourceCode);
+    const diagnostics = compilerHost.languageService.getSemanticDiagnostics(fileName);
 
     if (diagnostics.length > 0) {
         return {

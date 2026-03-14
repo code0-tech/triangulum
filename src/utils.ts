@@ -9,6 +9,7 @@ import {
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
+import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
 
 /**
  * Result of a node or flow validation.
@@ -48,27 +49,15 @@ export const MINIMAL_LIB = `
  */
 export function createCompilerHost(
     fileName: string,
-    sourceCode: string,
-    sourceFile: ts.SourceFile
-): ts.CompilerHost {
-    return {
-        getSourceFile: (name) => {
-            if (name === fileName) return sourceFile;
-            if (name.includes("lib.") || name.endsWith(".d.ts")) return ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest);
-            return undefined;
-        },
-        writeFile: () => {
-        },
-        getDefaultLibFileName: () => "lib.d.ts",
-        useCaseSensitiveFileNames: () => true,
-        getCanonicalFileName: (f) => f,
-        getCurrentDirectory: () => "/",
-        getNewLine: () => "\n",
-        fileExists: (f) => f === fileName || f.includes("lib.") || f.endsWith(".d.ts"),
-        readFile: (f) => (f === fileName ? sourceCode : (f.includes("lib.") || f.endsWith(".d.ts") ? MINIMAL_LIB : undefined)),
-        directoryExists: () => true,
-        getDirectories: () => [],
-    };
+    sourceCode: string
+): VirtualTypeScriptEnvironment {
+
+    const fsMap = new Map<string, string>()
+    fsMap.set(fileName, sourceCode)
+    fsMap.set("lib.codezero.d.ts", MINIMAL_LIB)
+
+    const system = createSystem(fsMap)
+    return createVirtualTypeScriptEnvironment(system, [fileName, "lib.codezero.d.ts"], ts, DEFAULT_COMPILER_OPTIONS)
 }
 
 /**
@@ -76,7 +65,7 @@ export function createCompilerHost(
  */
 export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
     target: ts.ScriptTarget.Latest,
-    lib: ["lib.esnext.d.ts"],
+    lib: ["lib.codezero.d.ts"],
     noEmit: true,
     strictNullChecks: true,
 };

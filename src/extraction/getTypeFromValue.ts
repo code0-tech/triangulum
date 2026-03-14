@@ -5,19 +5,16 @@ import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 /**
  * Uses the TypeScript compiler to generate a precise type string from any runtime value.
  */
-export const getTypeFromValue = (value: LiteralValue): string => {
+export const getTypeFromValue = (value: LiteralValue | null): string => {
     // 1. Serialize value to a JSON string for embedding in source code.
-    const literal = JSON.stringify(value.value);
+    const literal = JSON.stringify(value?.value);
 
     // 2. Wrap value in virtual source code.
-    const sourceCode = `const tempValue = ${literal};`;
+    const sourceCode = `const tempValue = ${literal ?? "any"};`;
     const fileName = "temp_value.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-
-    // 3. Setup a minimal compiler host.
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-
-    const program = ts.createProgram([fileName], {target: ts.ScriptTarget.Latest, noEmit: true}, host);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
     let inferredType = "any";

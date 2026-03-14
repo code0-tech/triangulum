@@ -77,10 +77,10 @@ export const getNodeValidation = (
 
     // 3. Virtual compilation
     const fileName = "node_virtual.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
 
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 

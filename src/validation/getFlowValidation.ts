@@ -1,4 +1,4 @@
-import ts from "typescript";
+import {flattenDiagnosticMessageText} from "typescript";
 import {
     DataType,
     Flow,
@@ -7,7 +7,7 @@ import {
     NodeParameter,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ValidationResult} from "../utils";
+import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -107,14 +107,14 @@ export const getFlowValidation = (
 
     // 3. Virtual TypeScript Compilation
     const fileName = "flow_virtual.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
 
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+    const program = host.languageService.getProgram()!;
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
     const errors = diagnostics.map(d => {
-        const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
+        const message = flattenDiagnosticMessageText(d.messageText, "\n");
         // "Argument of type 'undefined' is not assignable to parameter of type 'number'."
         // We ignore this in flow validation too because we might generate code for incomplete flows.
         const isMockError = message.includes("Argument of type 'undefined'") || message.includes("not assignable to type 'undefined'");
