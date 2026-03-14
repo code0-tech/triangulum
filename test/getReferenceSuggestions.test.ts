@@ -11,7 +11,7 @@ const childId = "gid://sagittarius/NodeFunction/11" as any;
 describe('getReferenceSuggestions', () => {
     it('sollte Flow Input vorschlagen, wenn der Typ passt', () => {
         const flow: Flow = {
-            inputType: {identifier: "NUMBER"},
+            inputType: "NUMBER",
             nodes: {
                 nodes: [
                     {
