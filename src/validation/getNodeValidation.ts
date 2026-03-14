@@ -1,10 +1,15 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    NodeParameter,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
 import {
     createCompilerHost,
     DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
     getParameterCode,
     getSharedTypeDeclarations,
     validateReference,
@@ -17,8 +22,8 @@ import {
 export const getNodeValidation = (
     flow: Flow,
     node: NodeFunction,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): ValidationResult => {
     const funcMap = new Map(functions.map(f => [f.identifier, f]));
     const funcDef = funcMap.get(node.functionDefinition?.identifier);

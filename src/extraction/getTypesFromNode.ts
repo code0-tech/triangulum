@@ -1,13 +1,6 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
-import {
-    createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
-    getParameterCode,
-    getSharedTypeDeclarations,
-} from "../utils";
+import {DataType, Flow, FunctionDefinition, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getParameterCode, getSharedTypeDeclarations,} from "../utils";
 import {getNodeValidation} from "../validation/getNodeValidation"; // Wieder hinzugefügt
 
 export interface NodeTypes {
@@ -20,8 +13,8 @@ export interface NodeTypes {
  */
 export const getTypesFromNode = (
     node: NodeFunction,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): NodeTypes => {
     const funcMap = new Map(functions.map(f => [f.identifier, f]));
     const funcDef = funcMap.get(node.functionDefinition?.identifier);
@@ -35,7 +28,7 @@ export const getTypesFromNode = (
 
     const mockFlow: Flow = {
         id: "gid://sagittarius/Flow/0" as any,
-        nodes: { __typename: "NodeFunctionConnection", nodes: [node] }
+        nodes: {__typename: "NodeFunctionConnection", nodes: [node]}
     } as Flow;
 
     const params = (node.parameters?.nodes as NodeParameter[]) || [];

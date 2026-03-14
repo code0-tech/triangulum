@@ -2,7 +2,6 @@
 import {
     DataType,
     Flow,
-    FunctionDefinition,
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
@@ -22,17 +21,6 @@ export interface ValidationResult {
         code: number;
         severity: "error" | "warning";
     }>;
-}
-
-// Define the shape of ExtendedDataType and ExtendedFunction to use in types
-export interface ExtendedDataType extends DataType {
-    type: string;
-    linkedDataTypeIdentifiers?: string[];
-}
-
-export interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
-    signature: string;
-    linkedDataTypeIdentifiers?: string[];
 }
 
 /**
@@ -96,7 +84,7 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
-export function getSharedTypeDeclarations(dataTypes: ExtendedDataType[]): string {
+export function getSharedTypeDeclarations(dataTypes: DataType[]): string {
     const genericDeclarations = Array.from(new Set(dataTypes.flatMap(dt => dt.genericKeys || [])))
         .map(g => `type ${g} = any;`)
         .join("\n");

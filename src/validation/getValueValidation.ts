@@ -1,6 +1,6 @@
 import ts from "typescript";
-import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, ExtendedDataType, getSharedTypeDeclarations} from "../utils";
+import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
 
 /**
  * Validates whether a literal value conforms to a specific TypeScript type string.
@@ -13,7 +13,7 @@ export interface ValueValidationResult {
 export const getValueValidation = (
     type: string,
     value: LiteralValue,
-    dataTypes: ExtendedDataType[]
+    dataTypes: DataType[]
 ): ValueValidationResult => {
     const valueAsCode = JSON.stringify(value.value);
 

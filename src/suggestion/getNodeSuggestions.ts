@@ -1,13 +1,13 @@
-import {NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, ExtendedFunction, getSharedTypeDeclarations} from "../utils";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
 import {DATA_TYPES} from "../../test/data";
 
 /**
  * Suggests NodeFunctions based on a given type and a list of available FunctionDefinitions.
  * Returns functions whose return type is compatible with the target type.
  */
-export function getNodeSuggestions(type: string, functions: ExtendedFunction[]): NodeFunction[] {
+export function getNodeSuggestions(type: string, functions: FunctionDefinition[]): NodeFunction[] {
     if (!type || !functions || functions.length === 0) {
         return [];
     }
@@ -26,10 +26,10 @@ export function getNodeSuggestions(type: string, functions: ExtendedFunction[]):
         ${sharedTypes}
         type TargetType = ${type};
         ${functions.map((f, i) => {
-            
+
         return `
         declare function Fu${i}${f.signature};
-        type F${i} = ReturnType<typeof Fu${i}${getGenericsCount(f.signature) > 0 ? `<${Array(getGenericsCount(f.signature)).fill("any").join(", ")}>` : ""}>;
+        type F${i} = ReturnType<typeof Fu${i}${getGenericsCount(f.signature!) > 0 ? `<${Array(getGenericsCount(f.signature!)).fill("any").join(", ")}>` : ""}>;
         `;
     }).join("\n")}
         ${functions.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
@@ -57,7 +57,6 @@ export function getNodeSuggestions(type: string, functions: ExtendedFunction[]):
             const lineToMatch = `const check${i}: TargetType = {} as F${i};`;
             const lines = sourceCode.split("\n");
             const actualLine = lines.findIndex(l => l.includes(lineToMatch));
-
 
 
             if (actualLine !== -1 && errorLines.has(actualLine)) {

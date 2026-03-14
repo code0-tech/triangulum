@@ -1,12 +1,13 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeFunctionIdWrapper, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
 import {
-    createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
-    getSharedTypeDeclarations
-} from "../utils";
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    NodeFunctionIdWrapper,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
 import {getNodeValidation} from "../validation/getNodeValidation";
 
 /**
@@ -17,8 +18,8 @@ export const getReferenceSuggestions = (
     flow: Flow,
     nodeId: NodeFunction['id'],
     type: string,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): ReferenceValue[] => {
     const suggestions: ReferenceValue[] = [];
     const nodes = flow.nodes?.nodes || [];
@@ -130,7 +131,7 @@ export const getReferenceSuggestions = (
 
     // 1. Flow Input
     if (flow.inputType) {
-        const flowInputType = flow.inputType.identifier || "any";
+        const flowInputType = flow.inputType || "any";
         suggestions.push(...getValidPaths(flowInputType, {
             __typename: "ReferenceValue",
             nodeFunctionId: null,

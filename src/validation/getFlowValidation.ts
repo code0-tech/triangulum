@@ -1,13 +1,13 @@
 import ts from "typescript";
-import {Flow, NodeFunctionIdWrapper, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
 import {
-    createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
-    getSharedTypeDeclarations,
-    ValidationResult
-} from "../utils";
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunctionIdWrapper,
+    NodeParameter,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations, ValidationResult} from "../utils";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -16,8 +16,8 @@ const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
  */
 export const getFlowValidation = (
     flow: Flow,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): ValidationResult => {
     const visited = new Set<string>();
     const nodes = flow.nodes?.nodes || [];
@@ -80,7 +80,7 @@ export const getFlowValidation = (
         const funcName = `fn_${funcDef.identifier?.replace(/::/g, '_')}`;
 
         // Add 'as any' cast only if undefined arguments are passed to a generic function to avoid false-positive errors.
-        const needsAnyCast = args.includes("undefined") || (funcDef.genericKeys?.length ?? 0) > 0;
+        const needsAnyCast = args.includes("undefined");
         let code = `${indent}const ${varName} = ${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
 
         if (node.nextNodeId) {

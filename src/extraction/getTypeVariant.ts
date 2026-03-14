@@ -1,5 +1,6 @@
 import ts from "typescript";
-import {ExtendedDataType, getSharedTypeDeclarations, createCompilerHost, DEFAULT_COMPILER_OPTIONS} from "../utils";
+import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, getSharedTypeDeclarations} from "../utils";
+import {DataType} from "@code0-tech/sagittarius-graphql-types";
 
 export enum DataTypeVariant {
     PRIMITIVE,
@@ -13,7 +14,7 @@ export enum DataTypeVariant {
  */
 export const getTypeVariant = (
     type: string,
-    dataTypes: ExtendedDataType[]
+    dataTypes: DataType[]
 ): DataTypeVariant => {
     const typeDefs = getSharedTypeDeclarations(dataTypes);
     const fileName = `type_probe_${Math.random().toString(36).substring(7)}.ts`;
