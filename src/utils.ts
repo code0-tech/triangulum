@@ -18,9 +18,11 @@ export interface ValidationResult {
     isValid: boolean;
     returnType: string;
     diagnostics: Array<{
-        message: string;
-        code: number;
-        severity: "error" | "warning";
+        message: string
+        code: number
+        severity: "error" | "warning"
+        nodeId?: NodeFunction["id"]
+        parameterIndex?: number
     }>;
 }
 

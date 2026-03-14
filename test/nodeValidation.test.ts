@@ -93,6 +93,7 @@ describe('getNodeValidation', () => {
 
     it('3', () => {
         const result = getNodeValidation({}, {
+            id: "gid://sagittarius/NodeFunction/1",
             functionDefinition: {
                 identifier: "std::list::at" as any
             },

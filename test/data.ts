@@ -26,6 +26,16 @@ export const DATA_TYPES: DataType[] = [
  */
 export const FUNCTION_SIGNATURES: FunctionDefinition[] = [
     {
+        parameterDefinitions: {
+            nodes: [
+                {
+                    identifier: "list"
+                },
+                {
+                    identifier: "index"
+                }
+            ]
+        },
         signature: "<R>(list: LIST<R>, index: NUMBER): R",
         identifier: "std::list::at",
     },

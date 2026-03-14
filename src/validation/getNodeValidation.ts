@@ -30,7 +30,7 @@ export const getNodeValidation = (
         return {
             isValid: false,
             returnType: "any",
-            diagnostics: [{message: `Function ${node.id} not found`, code: 404, severity: "error"}],
+            diagnostics: [{message: `Function ${node.id} not found`, nodeId: node.id, code: 404, severity: "error"}],
         };
     }
 
@@ -46,6 +46,8 @@ export const getNodeValidation = (
                 scopeErrors.push({
                     message: validation.error || "Scope error",
                     code: 403,
+                    nodeId: node.id,
+                    parameterIndex: params.indexOf(param),
                     severity: "error"
                 });
             }
@@ -114,6 +116,16 @@ export const getNodeValidation = (
         return {
             message,
             code: d.code,
+            nodeId: node.id,
+            parameterIndex: (() => {
+                if (d.start !== undefined) {
+                    const argIndex = params.findIndex((_, i) => {
+                        const start = sourceCode.indexOf(paramCodes[i]);
+                        return d.start! >= start && d.start! < start + paramCodes[i].length;
+                    });
+                    if (argIndex !== -1) return argIndex;
+                }
+            })(),
             severity: (isGenericPlaceholder || isMockError ? "warning" : "error") as "error" | "warning",
         };
     });
