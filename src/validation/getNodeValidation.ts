@@ -29,7 +29,7 @@ export const getNodeValidation = (
     if (!funcDef) {
         return {
             isValid: false,
-            inferredType: "any",
+            returnType: "any",
             errors: [{message: `Function ${node.id} not found`, code: 404, severity: "error"}],
         };
     }
@@ -55,7 +55,7 @@ export const getNodeValidation = (
     if (scopeErrors.length > 0) {
         return {
             isValid: false,
-            inferredType: "any",
+            returnType: "any",
             errors: scopeErrors,
         };
     }
@@ -120,7 +120,7 @@ export const getNodeValidation = (
 
     return {
         isValid: !errors.some(e => e.severity === "error"),
-        inferredType,
+        returnType: inferredType,
         errors,
     };
 };

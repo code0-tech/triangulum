@@ -16,7 +16,7 @@ import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvir
  */
 export interface ValidationResult {
     isValid: boolean;
-    inferredType: string;
+    returnType: string;
     errors: Array<{
         message: string;
         code: number;
@@ -133,7 +133,7 @@ export function getParameterCode(
 
         if (!refNode) return 'undefined';
 
-        let refType = getNodeValidation(flow, refNode).inferredType;
+        let refType = getNodeValidation(flow, refNode).returnType;
 
         if (refValue.referencePath && refValue.referencePath.length > 0) {
             let refVal: any = undefined;
@@ -168,7 +168,7 @@ export function getParameterCode(
         if (!returnNode) return '(() => undefined)';
 
         const validation = getNodeValidation(flow, returnNode);
-        return `(() => ({} as ${validation.inferredType}))`;
+        return `(() => ({} as ${validation.returnType}))`;
     }
 
     if (value.__typename === "LiteralValue") {

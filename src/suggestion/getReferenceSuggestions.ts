@@ -141,7 +141,7 @@ export const getReferenceSuggestions = (
 
         if (isNodeBefore(flow, node, targetNode)) {
             const validation = getNodeValidation(flow, node, functions, dataTypes);
-            suggestions.push(...getValidPaths(validation.inferredType, {
+            suggestions.push(...getValidPaths(validation.returnType, {
                 __typename: "ReferenceValue",
                 nodeFunctionId: node.id,
                 referencePath: []

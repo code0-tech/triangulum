@@ -40,7 +40,7 @@ export const getValueValidation = (
 
     return {
         isValid: !errors.some(e => e.severity === "error"),
-        inferredType: "void",
+        returnType: "void",
         errors,
     };
 };
