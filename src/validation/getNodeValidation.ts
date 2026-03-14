@@ -18,7 +18,6 @@ import {
 /**
  * Validates a single node's parameters and scope, then infers its return type.
  */
-//TODO: just parse in one function
 export const getNodeValidation = (
     flow: Flow,
     node: NodeFunction,
