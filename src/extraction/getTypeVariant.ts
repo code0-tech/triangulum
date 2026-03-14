@@ -17,7 +17,7 @@ export const getTypeVariant = (
     dataTypes: DataType[]
 ): DataTypeVariant => {
     const typeDefs = getSharedTypeDeclarations(dataTypes);
-    const fileName = `type_probe_${Math.random().toString(36).substring(7)}.ts`;
+    const fileName = `index.ts`;
 
     // We declare a variable with the type to probe it
     const sourceCode = `
