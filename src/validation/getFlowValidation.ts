@@ -2,7 +2,7 @@ import ts, {flattenDiagnosticMessageText} from "typescript";
 import {
     DataType,
     Flow,
-    FunctionDefinition,
+    FunctionDefinition, NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
     ReferenceValue
@@ -52,8 +52,8 @@ export const getFlowValidation = (
                 if (!ref.nodeFunctionId) return "undefined";
 
                 let refCode = ref.parameterIndex !== undefined
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
-                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
+                    ? `/* @pos ${nodeId} ${index} */ p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
+                    : `/* @pos ${nodeId} ${index} */ node_${sanitizeId(ref.nodeFunctionId)}`;
 
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
@@ -63,14 +63,14 @@ export const getFlowValidation = (
             }
 
             if (val.__typename === "LiteralValue") {
-                return JSON.stringify(val.value);
+                return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
             }
 
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
                 const lambdaArgName = `p_${sanitizeId(node.id!)}_${index}`;
                 const subTreeCode = generateNodeCode(wrapper.id!, indent + "  ");
-                return `(${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
+                return `/* @pos ${nodeId} ${index} */ (${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
             }
 
             return "undefined";
@@ -121,10 +121,25 @@ export const getFlowValidation = (
 
         if (isMockError) return null;
 
+        let nodeId: NodeFunction['id'] | undefined;
+        let parameterIndex: number | undefined;
+
+        if (d.start !== undefined) {
+            const fullText = sourceFile.getFullText();
+            const textBefore = fullText.substring(0, d.start);
+            const posMatch = textBefore.match(/\/\* @pos ([^ ]+) (\d+) \*\/\s*$/);
+            if (posMatch) {
+                nodeId = posMatch[1] as NodeFunction['id'];
+                parameterIndex = parseInt(posMatch[2], 10);
+            }
+        }
+
         return {
             message,
             code: d.code,
             severity: "error" as const,
+            nodeId,
+            parameterIndex
         };
     }).filter((e) => e !== null);
 
