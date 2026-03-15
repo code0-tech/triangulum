@@ -8,7 +8,7 @@ describe("getNodeSuggestions", () => {
         // We are looking for suggestions for a 'number' type
         const suggestions = getNodeSuggestions("STRING", FUNCTION_SIGNATURES, DATA_TYPES);
 
-        const map = suggestions.map(s => s.functionDefinition?.id)
+        const map = suggestions.map(s => s.functionDefinition?.identifier)
 
         expect(map).include("std::list::at")
         expect(map).include("std::control::find")
