@@ -60,7 +60,7 @@ export const getNodeSuggestions = (
             id: `gid://sagittarius/NodeFunction/1`,
             functionDefinition: {
                 __typename: "FunctionDefinition",
-                id: f.identifier as any,
+                id: f.id,
                 identifier: f.identifier,
             },
             parameters: {
@@ -69,7 +69,7 @@ export const getNodeSuggestions = (
                     __typename: "NodeParameter",
                     parameterDefinition: {
                         __typename: "ParameterDefinition",
-                        id: p?.identifier as any,
+                        id: p?.id,
                         identifier: p?.identifier
                     },
                     value: null
