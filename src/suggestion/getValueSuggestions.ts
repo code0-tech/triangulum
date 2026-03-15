@@ -1,14 +1,20 @@
 import ts from "typescript";
-import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost} from "../utils";
+import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 
 /**
  * Extracts possible literal values from a type string to provide suggestions.
  */
-export const getValueSuggestions = (type: string): LiteralValue[] => {
+export const getValueSuggestions = (
+    type?: string,
+    dataTypes?: DataType[]
+): LiteralValue[] => {
     if (!type) return [];
 
-    const sourceCode = `type T = ${type}; const val: T = {} as any;`;
+    const sourceCode = `
+        ${getSharedTypeDeclarations(dataTypes)}
+        type T = ${type}; const val: T = {} as any;
+    `;
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
