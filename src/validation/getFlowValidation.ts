@@ -1,8 +1,9 @@
-import ts, {flattenDiagnosticMessageText} from "typescript";
+import {flattenDiagnosticMessageText} from "typescript";
 import {
     DataType,
     Flow,
-    FunctionDefinition, NodeFunction,
+    FunctionDefinition,
+    NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
     ReferenceValue
