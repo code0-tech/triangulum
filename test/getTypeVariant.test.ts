@@ -27,5 +27,20 @@ describe('getTypeVariant', () => {
         // In data.ts ist LIST als T[] definiert
         expect(getTypeVariant("LIST<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
     });
+
+    it('sollte NODE für Funktionstypen wie CONSUMER zurückgeben', () => {
+        // In data.ts ist CONSUMER als (item:R) => void definiert
+        expect(getTypeVariant("CONSUMER<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+    });
+
+    it('sollte NODE für Funktionstypen wie RUNNABLE zurückgeben', () => {
+        // In data.ts ist CONSUMER als (item:R) => void definiert
+        expect(getTypeVariant("RUNNABLE", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+    });
+
+    it('sollte NODE für Funktionstypen wie PREDICATE zurückgeben', () => {
+        // In data.ts ist CONSUMER als (item:R) => void definiert
+        expect(getTypeVariant("PREDICATE<NUMBER, BOOLEAN>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+    });
 });
 

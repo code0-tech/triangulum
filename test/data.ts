@@ -9,6 +9,7 @@ export const DATA_TYPES: DataType[] = [
     {identifier: "HTTP_METHOD", type: `"GET" | "POST" | "PUT" | "DELETE"`},
     {identifier: "STRING", type: "string"},
     {identifier: "CONSUMER", type: "(item:R) => void", genericKeys: ["R"]},
+    {identifier: "RUNNABLE", type: "() => void"},
     {identifier: "PREDICATE", type: "(item:R) => T", genericKeys: ["R", "T"]},
     {
         identifier: "NUMBER_ARRAY", type: "LIST<NUMBER>", linkedDataTypes: {
