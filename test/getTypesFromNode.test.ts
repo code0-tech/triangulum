@@ -24,8 +24,6 @@ describe('getTypesFromNode', () => {
         };
         const result = getTypesFromNode(node as any, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        console.log(result)
-
         expect(result.returnType).toBe("string");
         expect(result.parameters).toContain("LIST<string>");
         expect(result.parameters).toContain("number");
@@ -48,8 +46,6 @@ describe('getTypesFromNode', () => {
             }
         };
         const result = getTypesFromNode(node as any, FUNCTION_SIGNATURES, DATA_TYPES);
-
-        console.log(result)
 
         expect(result.returnType).toBe("unknown");
         expect(result.parameters).toContain("LIST<unknown>");

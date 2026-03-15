@@ -1,10 +1,14 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeParameter, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    NodeParameter,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
 import {
     createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
     getParameterCode,
     getSharedTypeDeclarations,
     validateReference,
@@ -17,21 +21,21 @@ import {
 export const getNodeValidation = (
     flow: Flow,
     node: NodeFunction,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): ValidationResult => {
     const funcMap = new Map(functions.map(f => [f.identifier, f]));
     const funcDef = funcMap.get(node.functionDefinition?.identifier);
     if (!funcDef) {
         return {
             isValid: false,
-            inferredType: "any",
-            errors: [{message: `Function ${node.id} not found`, code: 404, severity: "error"}],
+            returnType: "any",
+            diagnostics: [{message: `Function ${node.id} not found`, nodeId: node.id, code: 404, severity: "error"}],
         };
     }
 
     const params = (node.parameters?.nodes as NodeParameter[]) || [];
-    const scopeErrors: ValidationResult["errors"] = [];
+    const scopeErrors: ValidationResult["diagnostics"] = [];
 
     // 1. Parameter scope validation
     for (const param of params) {
@@ -42,6 +46,8 @@ export const getNodeValidation = (
                 scopeErrors.push({
                     message: validation.error || "Scope error",
                     code: 403,
+                    nodeId: node.id,
+                    parameterIndex: params.indexOf(param),
                     severity: "error"
                 });
             }
@@ -51,8 +57,8 @@ export const getNodeValidation = (
     if (scopeErrors.length > 0) {
         return {
             isValid: false,
-            inferredType: "any",
-            errors: scopeErrors,
+            returnType: "any",
+            diagnostics: scopeErrors,
         };
     }
 
@@ -71,11 +77,11 @@ export const getNodeValidation = (
     `;
 
     // 3. Virtual compilation
-    const fileName = "node_virtual.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
+    const fileName = "index.ts";
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
 
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
@@ -110,13 +116,23 @@ export const getNodeValidation = (
         return {
             message,
             code: d.code,
+            nodeId: node.id,
+            parameterIndex: (() => {
+                if (d.start !== undefined) {
+                    const argIndex = params.findIndex((_, i) => {
+                        const start = sourceCode.indexOf(paramCodes[i]);
+                        return d.start! >= start && d.start! < start + paramCodes[i].length;
+                    });
+                    if (argIndex !== -1) return argIndex;
+                }
+            })(),
             severity: (isGenericPlaceholder || isMockError ? "warning" : "error") as "error" | "warning",
         };
     });
 
     return {
         isValid: !errors.some(e => e.severity === "error"),
-        inferredType,
-        errors,
+        returnType: inferredType,
+        diagnostics: errors,
     };
 };

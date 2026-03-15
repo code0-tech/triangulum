@@ -1,12 +1,13 @@
 import ts from "typescript";
-import {Flow, NodeFunction, NodeFunctionIdWrapper, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
 import {
-    createCompilerHost,
-    DEFAULT_COMPILER_OPTIONS,
-    ExtendedDataType,
-    ExtendedFunction,
-    getSharedTypeDeclarations
-} from "../utils";
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    NodeFunctionIdWrapper,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 import {getNodeValidation} from "../validation/getNodeValidation";
 
 /**
@@ -17,8 +18,8 @@ export const getReferenceSuggestions = (
     flow: Flow,
     nodeId: NodeFunction['id'],
     type: string,
-    functions: ExtendedFunction[],
-    dataTypes: ExtendedDataType[]
+    functions: FunctionDefinition[],
+    dataTypes: DataType[]
 ): ReferenceValue[] => {
     const suggestions: ReferenceValue[] = [];
     const nodes = flow.nodes?.nodes || [];
@@ -33,15 +34,15 @@ export const getReferenceSuggestions = (
         if (!type || type === "any") return true;
         if (inferredType === "any") return true;
 
-        const fileName = `suggestion_check_${Math.random().toString(36).substring(7)}.ts`;
+        const fileName = `index.ts`;
         const sourceCode = `
             ${typeDefs}
             const val: ${inferredType} = {} as any;
             const test: ${type} = val${path ? `.${path}` : ""};
         `;
-        const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-        const host = createCompilerHost(fileName, sourceCode, sourceFile);
-        const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+        const host = createCompilerHost(fileName, sourceCode);
+        const sourceFile = host.getSourceFile(fileName)!;
+        const program = host.languageService.getProgram()!;
         const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
         return !diagnostics.some(d => d.category === ts.DiagnosticCategory.Error);
@@ -51,14 +52,14 @@ export const getReferenceSuggestions = (
     const getValidPaths = (inferredType: string, baseValue: ReferenceValue): ReferenceValue[] => {
         const validRefs: ReferenceValue[] = [];
 
-        const fileName = `probing_${Math.random().toString(36).substring(7)}.ts`;
+        const fileName = `index.ts`;
         const sourceCode = `
             ${typeDefs}
             const val: ${inferredType} = {} as any;
         `;
-        const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest);
-        const host = createCompilerHost(fileName, sourceCode, sourceFile);
-        const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
+        const host = createCompilerHost(fileName, sourceCode);
+        const sourceFile = host.getSourceFile(fileName)!;
+        const program = host.languageService.getProgram()!;
         const checker = program.getTypeChecker();
 
         // 1. Check base type
@@ -130,13 +131,8 @@ export const getReferenceSuggestions = (
 
     // 1. Flow Input
     if (flow.inputType) {
-        const flowInputType = flow.inputType.identifier || "any";
-        suggestions.push(...getValidPaths(flowInputType, {
-            __typename: "ReferenceValue",
-            nodeFunctionId: null,
-            parameterIndex: 0,
-            referencePath: []
-        } as ReferenceValue));
+        const flowInputType = flow.inputType || "any";
+        suggestions.push(...getValidPaths(flowInputType, {} as ReferenceValue));
     }
 
     // 2. Return values of previously executed nodes
@@ -145,7 +141,7 @@ export const getReferenceSuggestions = (
 
         if (isNodeBefore(flow, node, targetNode)) {
             const validation = getNodeValidation(flow, node, functions, dataTypes);
-            suggestions.push(...getValidPaths(validation.inferredType, {
+            suggestions.push(...getValidPaths(validation.returnType, {
                 __typename: "ReferenceValue",
                 nodeFunctionId: node.id,
                 referencePath: []

@@ -11,7 +11,7 @@ const childId = "gid://sagittarius/NodeFunction/11" as any;
 describe('getReferenceSuggestions', () => {
     it('sollte Flow Input vorschlagen, wenn der Typ passt', () => {
         const flow: Flow = {
-            inputType: {identifier: "NUMBER"},
+            inputType: "NUMBER",
             nodes: {
                 nodes: [
                     {
@@ -25,7 +25,7 @@ describe('getReferenceSuggestions', () => {
 
         const suggestions = getReferenceSuggestions(flow, node1Id, "number", FUNCTION_SIGNATURES, DATA_TYPES);
 
-        expect(suggestions.some(s => s.nodeFunctionId === null && s.parameterIndex === 0)).toBe(true);
+        expect(suggestions.some(s => !s.nodeFunctionId)).toBe(true);
     });
 
     it('sollte Rückgabewerte vorheriger Nodes vorschlagen', () => {

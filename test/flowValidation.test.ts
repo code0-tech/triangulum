@@ -67,7 +67,7 @@ describe('getFlowValidation - Integrationstest', () => {
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
-        expect(result.errors).toHaveLength(0);
+        expect(result.diagnostics).toHaveLength(0);
     });
 
     it('sollte einen komplexen Flow mit verschachtelten Scopes und Generics validieren', () => {
@@ -110,7 +110,33 @@ describe('getFlowValidation - Integrationstest', () => {
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(true);
-        expect(result.errors).toHaveLength(0);
+        expect(result.diagnostics).toHaveLength(0);
+    });
+
+    it('sollte nodeId und parameterIndex in den Diagnostics zurückgeben', () => {
+        const flow: Flow = {
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: { identifier: "std::math::add" },
+                        parameters: {
+                            nodes: [
+                                { value: { __typename: "LiteralValue", value: "not accessibility a number" } },
+                                { value: { __typename: "LiteralValue", value: 10 } }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(false);
+        const diagnostic = result.diagnostics.find(d => d.nodeId === "gid://sagittarius/NodeFunction/1" && d.parameterIndex === 0);
+        expect(diagnostic).toBeDefined();
+        expect(diagnostic?.message).toContain("number");
     });
 
 });

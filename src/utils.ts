@@ -2,7 +2,6 @@
 import {
     DataType,
     Flow,
-    FunctionDefinition,
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
@@ -10,29 +9,21 @@ import {
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
+import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
 
 /**
  * Result of a node or flow validation.
  */
 export interface ValidationResult {
     isValid: boolean;
-    inferredType: string;
-    errors: Array<{
-        message: string;
-        code: number;
-        severity: "error" | "warning";
+    returnType: string;
+    diagnostics: Array<{
+        message: string
+        code: number
+        severity: "error" | "warning"
+        nodeId?: NodeFunction["id"]
+        parameterIndex?: number
     }>;
-}
-
-// Define the shape of ExtendedDataType and ExtendedFunction to use in types
-export interface ExtendedDataType extends DataType {
-    type: string;
-    linkedDataTypeIdentifiers?: string[];
-}
-
-export interface ExtendedFunction extends Omit<FunctionDefinition, 'returnType'> {
-    signature: string;
-    linkedDataTypeIdentifiers?: string[];
 }
 
 /**
@@ -60,27 +51,15 @@ export const MINIMAL_LIB = `
  */
 export function createCompilerHost(
     fileName: string,
-    sourceCode: string,
-    sourceFile: ts.SourceFile
-): ts.CompilerHost {
-    return {
-        getSourceFile: (name) => {
-            if (name === fileName) return sourceFile;
-            if (name.includes("lib.") || name.endsWith(".d.ts")) return ts.createSourceFile(name, MINIMAL_LIB, ts.ScriptTarget.Latest);
-            return undefined;
-        },
-        writeFile: () => {
-        },
-        getDefaultLibFileName: () => "lib.d.ts",
-        useCaseSensitiveFileNames: () => true,
-        getCanonicalFileName: (f) => f,
-        getCurrentDirectory: () => "/",
-        getNewLine: () => "\n",
-        fileExists: (f) => f === fileName || f.includes("lib.") || f.endsWith(".d.ts"),
-        readFile: (f) => (f === fileName ? sourceCode : (f.includes("lib.") || f.endsWith(".d.ts") ? MINIMAL_LIB : undefined)),
-        directoryExists: () => true,
-        getDirectories: () => [],
-    };
+    sourceCode: string
+): VirtualTypeScriptEnvironment {
+
+    const fsMap = new Map<string, string>()
+    fsMap.set(fileName, sourceCode)
+    fsMap.set("lib.codezero.d.ts", MINIMAL_LIB)
+
+    const system = createSystem(fsMap)
+    return createVirtualTypeScriptEnvironment(system, [fileName, "lib.codezero.d.ts"], ts, DEFAULT_COMPILER_OPTIONS)
 }
 
 /**
@@ -88,7 +67,7 @@ export function createCompilerHost(
  */
 export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
     target: ts.ScriptTarget.Latest,
-    lib: ["lib.esnext.d.ts"],
+    lib: ["lib.codezero.d.ts"],
     noEmit: true,
     strictNullChecks: true,
 };
@@ -96,7 +75,7 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
-export function getSharedTypeDeclarations(dataTypes: ExtendedDataType[]): string {
+export function getSharedTypeDeclarations(dataTypes: DataType[]): string {
     const genericDeclarations = Array.from(new Set(dataTypes.flatMap(dt => dt.genericKeys || [])))
         .map(g => `type ${g} = any;`)
         .join("\n");
@@ -156,7 +135,7 @@ export function getParameterCode(
 
         if (!refNode) return 'undefined';
 
-        let refType = getNodeValidation(flow, refNode).inferredType;
+        let refType = getNodeValidation(flow, refNode).returnType;
 
         if (refValue.referencePath && refValue.referencePath.length > 0) {
             let refVal: any = undefined;
@@ -191,7 +170,7 @@ export function getParameterCode(
         if (!returnNode) return '(() => undefined)';
 
         const validation = getNodeValidation(flow, returnNode);
-        return `(() => ({} as ${validation.inferredType}))`;
+        return `(() => ({} as ${validation.returnType}))`;
     }
 
     if (value.__typename === "LiteralValue") {

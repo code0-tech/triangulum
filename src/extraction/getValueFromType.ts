@@ -1,13 +1,13 @@
 import ts from "typescript";
-import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, DEFAULT_COMPILER_OPTIONS, ExtendedDataType, getSharedTypeDeclarations} from "../utils";
+import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 
 /**
  * Generates a sample LiteralValue from a TypeScript type string.
  */
 export const getValueFromType = (
     type: string,
-    dataTypes: ExtendedDataType[]
+    dataTypes: DataType[]
 ): LiteralValue => {
     // 1. Prepare declarations.
     const sourceCode = `
@@ -15,14 +15,10 @@ export const getValueFromType = (
         type Target = ${type};
     `;
 
-    const fileName = "temp_type_to_value.ts";
-    const sourceFile = ts.createSourceFile(fileName, sourceCode, ts.ScriptTarget.Latest, true);
-
-    // 2. Setup the compiler context.
-    const host = createCompilerHost(fileName, sourceCode, sourceFile);
-
-    const program = ts.createProgram([fileName], DEFAULT_COMPILER_OPTIONS, host);
-
+    const fileName = "index.ts";
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
     // 3. Find the Target type alias.

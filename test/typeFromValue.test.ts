@@ -41,7 +41,8 @@ describe('getTypeFromValue', () => {
     });
 
     it('should handle null and empty structures', () => {
-        expect(getTypeFromValue({value: null})).toBe('any');
+        expect(getTypeFromValue({value: null})).toBe('null');
+        expect(getTypeFromValue(null)).toBe('any');
         expect(getTypeFromValue({value: []})).toBe('any[]');
         expect(getTypeFromValue({value: {}})).toBe('{}');
     });
