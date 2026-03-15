@@ -107,8 +107,8 @@ export function getTypeFromReferencePath(value: any, referencePath: ReferencePat
 /**
  * Helper to find a node by ID within the flow structure.
  */
-function findNodeById(flow: Flow, nodeId: string): NodeFunction | undefined {
-    const nodes = flow.nodes;
+function findNodeById(flow?: Flow, nodeId?: string): NodeFunction | undefined {
+    const nodes = flow?.nodes;
     if (!nodes) return undefined;
 
     if (Array.isArray(nodes)) {
@@ -122,9 +122,9 @@ function findNodeById(flow: Flow, nodeId: string): NodeFunction | undefined {
  * Extracts and returns the TypeScript code representation for a NodeParameter.
  */
 export function getParameterCode(
-    param: NodeParameter,
-    flow: Flow,
-    getNodeValidation: (flow: Flow, node: NodeFunction) => ValidationResult
+    param?: NodeParameter,
+    flow?: Flow,
+    getNodeValidation?: (flow?: Flow, node?: NodeFunction) => ValidationResult
 ): string {
     const value = param?.value;
     if (!value) return 'undefined';
@@ -135,7 +135,7 @@ export function getParameterCode(
 
         if (!refNode) return 'undefined';
 
-        let refType = getNodeValidation(flow, refNode).returnType;
+        let refType = getNodeValidation?.(flow, refNode).returnType;
 
         if (refValue.referencePath && refValue.referencePath.length > 0) {
             let refVal: any = undefined;
@@ -169,8 +169,8 @@ export function getParameterCode(
         const returnNode = findReturnNode(refNode);
         if (!returnNode) return '(() => undefined)';
 
-        const validation = getNodeValidation(flow, returnNode);
-        return `(() => ({} as ${validation.returnType}))`;
+        const validation = getNodeValidation?.(flow, returnNode);
+        return `(() => ({} as ${validation?.returnType}))`;
     }
 
     if (value.__typename === "LiteralValue") {
@@ -183,8 +183,8 @@ export function getParameterCode(
 /**
  * Finds the parent node that initiated this sub-tree via a NodeFunctionIdWrapper.
  */
-const getParentScopeNode = (flow: Flow, currentNodeId: string): NodeFunction | undefined => {
-    const nodes = flow.nodes?.nodes;
+const getParentScopeNode = (flow?: Flow, currentNodeId?: string): NodeFunction | undefined => {
+    const nodes = flow?.nodes?.nodes;
     if (!nodes) return undefined;
 
     return nodes.find(n =>
@@ -197,14 +197,14 @@ const getParentScopeNode = (flow: Flow, currentNodeId: string): NodeFunction | u
 /**
  * Checks if a target node is reachable (executed before) the current node.
  */
-const isNodeReachable = (flow: Flow, currentNode: NodeFunction, targetId: string, visited = new Set<string>()): boolean => {
-    const currentId = currentNode.id;
+const isNodeReachable = (flow?: Flow, currentNode?: NodeFunction, targetId?: string, visited = new Set<string>()): boolean => {
+    const currentId = currentNode?.id;
     if (!currentId || visited.has(currentId)) return false;
     visited.add(currentId);
 
     // Scenario 1: Is the node a predecessor in the same execution chain?
     const isPredecessor = (startId: string): boolean => {
-        const pred = flow.nodes?.nodes?.find(n => n?.nextNodeId === startId);
+        const pred = flow?.nodes?.nodes?.find(n => n?.nextNodeId === startId);
         if (!pred) return false;
         if (pred.id === targetId) return true;
         return isPredecessor(pred.id!);
@@ -226,20 +226,20 @@ const isNodeReachable = (flow: Flow, currentNode: NodeFunction, targetId: string
  * Validates if a reference is accessible from the current node's scope.
  */
 export const validateReference = (
-    flow: Flow,
-    currentNode: NodeFunction,
-    ref: ReferenceValue
+    flow?: Flow,
+    currentNode?: NodeFunction,
+    ref?: ReferenceValue
 ): { isValid: boolean, error?: string } => {
     // Scenario 3: Global flow input
-    if (!ref.nodeFunctionId) {
+    if (!ref?.nodeFunctionId) {
         return {isValid: true};
     }
 
     // Scenario 2: Parameter input reference (e.g., "item" in CONSUMER)
     if (ref.parameterIndex !== undefined && ref.inputIndex !== undefined) {
-        if (currentNode.id === ref.nodeFunctionId) return {isValid: true};
+        if (currentNode?.id === ref.nodeFunctionId) return {isValid: true};
 
-        let tempParent = getParentScopeNode(flow, currentNode.id!);
+        let tempParent = getParentScopeNode(flow, currentNode?.id!);
         while (tempParent) {
             if (tempParent.id === ref.nodeFunctionId) return {isValid: true};
             tempParent = getParentScopeNode(flow, tempParent.id!);
@@ -247,7 +247,7 @@ export const validateReference = (
 
         return {
             isValid: false,
-            error: `Invalid input reference: Node ${currentNode.id} is not in the scope of Node ${ref.nodeFunctionId}.`
+            error: `Invalid input reference: Node ${currentNode?.id} is not in the scope of Node ${ref.nodeFunctionId}.`
         };
     }
 

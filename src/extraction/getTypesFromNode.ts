@@ -12,12 +12,12 @@ export interface NodeTypes {
  * Resolves the types of the parameters and the return type of a NodeFunction.
  */
 export const getTypesFromNode = (
-    node: NodeFunction,
-    functions: FunctionDefinition[],
-    dataTypes: DataType[]
+    node?: NodeFunction,
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[]
 ): NodeTypes => {
-    const funcMap = new Map(functions.map(f => [f.identifier, f]));
-    const funcDef = funcMap.get(node.functionDefinition?.identifier);
+    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
+    const funcDef = funcMap.get(node?.functionDefinition?.identifier);
 
     if (!funcDef) {
         return {
@@ -31,7 +31,7 @@ export const getTypesFromNode = (
         nodes: {__typename: "NodeFunctionConnection", nodes: [node]}
     } as Flow;
 
-    const params = (node.parameters?.nodes as NodeParameter[]) || [];
+    const params = (node?.parameters?.nodes as NodeParameter[]) || [];
     const paramCodes = params.map(param => getParameterCode(param, mockFlow, (f, n) => getNodeValidation(f, n, functions, dataTypes)));
 
     const funcCallArgs = paramCodes.map(code => code === 'undefined' ? '({} as any)' : code).join(", ");

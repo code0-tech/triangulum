@@ -6,8 +6,8 @@ import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
  * Generates a sample LiteralValue from a TypeScript type string.
  */
 export const getValueFromType = (
-    type: string,
-    dataTypes: DataType[]
+    type?: string,
+    dataTypes?: DataType[]
 ): LiteralValue => {
     // 1. Prepare declarations.
     const sourceCode = `

@@ -19,22 +19,22 @@ import {
  * Validates a single node's parameters and scope, then infers its return type.
  */
 export const getNodeValidation = (
-    flow: Flow,
-    node: NodeFunction,
-    functions: FunctionDefinition[],
-    dataTypes: DataType[]
+    flow?: Flow,
+    node?: NodeFunction,
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[]
 ): ValidationResult => {
-    const funcMap = new Map(functions.map(f => [f.identifier, f]));
-    const funcDef = funcMap.get(node.functionDefinition?.identifier);
+    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
+    const funcDef = funcMap.get(node?.functionDefinition?.identifier);
     if (!funcDef) {
         return {
             isValid: false,
             returnType: "any",
-            diagnostics: [{message: `Function ${node.id} not found`, nodeId: node.id, code: 404, severity: "error"}],
+            diagnostics: [{message: `Function ${node?.id} not found`, nodeId: node?.id, code: 404, severity: "error"}],
         };
     }
 
-    const params = (node.parameters?.nodes as NodeParameter[]) || [];
+    const params = (node?.parameters?.nodes as NodeParameter[]) || [];
     const scopeErrors: ValidationResult["diagnostics"] = [];
 
     // 1. Parameter scope validation
@@ -46,7 +46,7 @@ export const getNodeValidation = (
                 scopeErrors.push({
                     message: validation.error || "Scope error",
                     code: 403,
-                    nodeId: node.id,
+                    nodeId: node?.id,
                     parameterIndex: params.indexOf(param),
                     severity: "error"
                 });
@@ -116,7 +116,7 @@ export const getNodeValidation = (
         return {
             message,
             code: d.code,
-            nodeId: node.id,
+            nodeId: node?.id,
             parameterIndex: (() => {
                 if (d.start !== undefined) {
                     const argIndex = params.findIndex((_, i) => {

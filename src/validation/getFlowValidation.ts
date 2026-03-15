@@ -16,14 +16,14 @@ const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
  */
 export const getFlowValidation = (
-    flow: Flow,
-    functions: FunctionDefinition[],
-    dataTypes: DataType[]
+    flow?: Flow,
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[]
 ): ValidationResult => {
     const visited = new Set<string>();
-    const nodes = flow.nodes?.nodes || [];
+    const nodes = flow?.nodes?.nodes || [];
 
-    const funcMap = new Map(functions.map(f => [f.identifier, f]));
+    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
 
     /**
      * Recursive function to generate TypeScript code for a node and its execution path.
@@ -94,7 +94,7 @@ export const getFlowValidation = (
     // 1. Generate Declarations
     const typeDefs = getSharedTypeDeclarations(dataTypes);
 
-    const funcDeclarations = functions.map(funcDef => {
+    const funcDeclarations = functions?.map(funcDef => {
         return `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}${funcDef.signature}`;
     }).join('\n');
 
