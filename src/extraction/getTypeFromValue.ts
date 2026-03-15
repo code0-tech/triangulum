@@ -5,7 +5,9 @@ import {LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 /**
  * Uses the TypeScript compiler to generate a precise type string from any runtime value.
  */
-export const getTypeFromValue = (value: LiteralValue | null): string => {
+export const getTypeFromValue = (
+    value?: LiteralValue | null
+): string => {
     // 1. Serialize value to a JSON string for embedding in source code.
     const literal = JSON.stringify(value?.value);
 

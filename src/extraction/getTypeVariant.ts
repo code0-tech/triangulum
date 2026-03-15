@@ -13,8 +13,8 @@ export enum DataTypeVariant {
  * Determines the variant of a given TypeScript type string using the TS compiler.
  */
 export const getTypeVariant = (
-    type: string,
-    dataTypes: DataType[]
+    type?: string,
+    dataTypes?: DataType[]
 ): DataTypeVariant => {
     const typeDefs = getSharedTypeDeclarations(dataTypes);
 

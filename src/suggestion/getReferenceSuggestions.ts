@@ -15,14 +15,18 @@ import {getNodeValidation} from "../validation/getNodeValidation";
  * and filters them by a required type.
  */
 export const getReferenceSuggestions = (
-    flow: Flow,
-    nodeId: NodeFunction['id'],
-    type: string,
-    functions: FunctionDefinition[],
-    dataTypes: DataType[]
+    flow?: Flow,
+    nodeId?: NodeFunction['id'],
+    type: string = "any",
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[]
 ): ReferenceValue[] => {
+
+    if (!flow) return []
+    if (!nodeId) return []
+
     const suggestions: ReferenceValue[] = [];
-    const nodes = flow.nodes?.nodes || [];
+    const nodes = flow?.nodes?.nodes || [];
     const targetNode = nodes.find(n => n?.id === nodeId);
 
     if (!targetNode) return [];
@@ -152,7 +156,7 @@ export const getReferenceSuggestions = (
     // 3. Inputs of parent nodes (Scopes)
     let currentParent = getParentScopeNode(flow, nodeId!);
     while (currentParent) {
-        const funcDef = functions.find(f => f.identifier === currentParent!.functionDefinition?.identifier);
+        const funcDef = functions?.find(f => f.identifier === currentParent!.functionDefinition?.identifier);
         if (funcDef) {
             const paramIndex = currentParent.parameters?.nodes?.findIndex(p => {
                 const val = p?.value;

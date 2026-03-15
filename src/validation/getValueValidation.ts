@@ -3,11 +3,11 @@ import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
 
 export const getValueValidation = (
-    type: string,
-    value: LiteralValue,
-    dataTypes: DataType[]
+    type?: string,
+    value?: LiteralValue,
+    dataTypes?: DataType[]
 ): ValidationResult => {
-    const valueAsCode = JSON.stringify(value.value);
+    const valueAsCode = JSON.stringify(value?.value);
 
     // 1. Construct the source code for validation.
     const sourceCode = `
