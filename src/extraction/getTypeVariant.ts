@@ -7,6 +7,7 @@ export enum DataTypeVariant {
     TYPE,
     ARRAY,
     OBJECT,
+    NODE
 }
 
 /**
@@ -37,7 +38,9 @@ export const getTypeVariant = (
         if (ts.isVariableDeclaration(node) && node.name.getText() === "val") {
             const type = checker.getTypeAtLocation(node);
 
-            if (checker.isArrayType(type)) {
+            if (type.getCallSignatures().length > 0) {
+                discoveredVariant = DataTypeVariant.NODE;
+            } else if (checker.isArrayType(type)) {
                 discoveredVariant = DataTypeVariant.ARRAY;
             } else if (
                 type.isStringLiteral() ||
