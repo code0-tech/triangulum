@@ -33,7 +33,7 @@
     "typescript": "^5.9.3"
   },
   "devDependencies": {
-    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2342308809-931efb40b4bf3245999c53abbdd9164cea82e82d",
+    "@code0-tech/sagittarius-graphql-types": "0.0.0-f91466f0f343596ad170e7e5c5316a70b072594d",
     "@types/node": "^25.3.2",
     "vite": "^7.3.1",
     "vite-plugin-dts": "^4.5.4",
