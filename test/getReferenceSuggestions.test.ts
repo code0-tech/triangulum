@@ -172,7 +172,32 @@ describe('getReferenceSuggestions', () => {
         };
 
         // Wir suchen nach einem String, node1 gibt aber NUMBER zurück
-        const suggestions = getReferenceSuggestions(flow, node2Id, "string", FUNCTION_SIGNATURES, DATA_TYPES);
+        const suggestions = getReferenceSuggestions(flow, node2Id, "TEXT", FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(suggestions.some(s => s.nodeFunctionId === node1Id)).toBe(false);
+    });
+
+    it('sollte nur Typ-kompatible Vorschläge machen', () => {
+        const flow: Flow = {
+            nodes: {
+                nodes: [
+                    {
+                        id: node1Id,
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {nodes: []},
+                        nextNodeId: node2Id
+                    },
+                    {
+                        id: node2Id,
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {nodes: []}
+                    }
+                ]
+            }
+        };
+
+        // Wir suchen nach einem String, node1 gibt aber NUMBER zurück
+        const suggestions = getReferenceSuggestions(flow, node2Id, "TEXT", FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(suggestions.some(s => s.nodeFunctionId === node1Id)).toBe(false);
     });
