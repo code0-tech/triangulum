@@ -76,6 +76,8 @@ export const getNodeValidation = (
         const result = testFunc(${funcCallArgs});
     `;
 
+    console.log(sourceCode)
+
     // 3. Virtual compilation
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);

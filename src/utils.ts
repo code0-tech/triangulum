@@ -43,6 +43,7 @@ export const MINIMAL_LIB = `
     interface NewableFunction extends Function {}
     interface IArguments { }
     interface RegExp { }
+    type Record<K extends keyof any, T> = { [P in K]: T; };
     type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 `;
 
@@ -84,7 +85,7 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[]): string {
         `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 
-    return `${typeAliasDeclarations}`;
+    return `${genericDeclarations}\n${typeAliasDeclarations}`;
 }
 
 /**

@@ -7,12 +7,12 @@ describe('getValueFromType', () => {
     describe('Basics', () => {
         it('sollte einen Default-String generieren', () => {
             const result = getValueFromType('string', DATA_TYPES);
-            expect(result.value).toBe('sample');
+            expect(result.value).toBe('');
         });
 
         it('sollte eine Default-Zahl generieren', () => {
             const result = getValueFromType('number', DATA_TYPES);
-            expect(result.value).toBe(1);
+            expect(result.value).toBe(0);
         });
 
         it('sollte einen Default-Boolean generieren', () => {
@@ -21,18 +21,18 @@ describe('getValueFromType', () => {
         });
 
         it('sollte NUMBER (Alias) als 1 generieren', () => {
-            expect(getValueFromType('NUMBER', DATA_TYPES).value).toBe(1);
+            expect(getValueFromType('NUMBER', DATA_TYPES).value).toBe(0);
         });
 
         it('sollte LIST<T> als Array mit einem Inhalt generieren', () => {
-            const result = getValueFromType('LIST<STRING>', DATA_TYPES);
+            const result = getValueFromType('LIST<TEXT>', DATA_TYPES);
             expect(Array.isArray(result.value)).toBe(true);
-            expect(result.value).toEqual(['sample']);
+            expect(result.value).toEqual(['']);
         });
 
         it('sollte verschachtelte LIST Typen generieren', () => {
             const result = getValueFromType('LIST<LIST<NUMBER>>', DATA_TYPES);
-            expect(result.value).toEqual([[1]]);
+            expect(result.value).toEqual([[0]]);
         });
     });
 
@@ -46,32 +46,32 @@ describe('getValueFromType', () => {
             const result = getValueFromType('number | string', DATA_TYPES);
 
             expect(typeof result.value).toBe('number');
-            expect(result.value).toBe(1);
+            expect(result.value).toBe(0);
         });
     });
 
     describe('Complex Objects (Deep Generation)', () => {
         it('sollte ein Objekt rekursiv mit Werten füllen', () => {
-            const type = '{ id: NUMBER, profile: { username: STRING, active: boolean } }';
+            const type = '{ id: NUMBER, profile: { username: TEXT, active: boolean } }';
             const result = getValueFromType(type, DATA_TYPES);
 
             expect(result.value).toEqual({
-                id: 1,
+                id: 0,
                 profile: {
-                    username: 'sample',
+                    username: '',
                     active: false
                 }
             });
         });
 
         it('sollte Objekte innerhalb von Listen füllen', () => {
-            const type = 'LIST<{ uid: STRING, tags: LIST<NUMBER> }>';
+            const type = 'LIST<{ uid: TEXT, tags: LIST<NUMBER> }>';
             const result = getValueFromType(type, DATA_TYPES);
 
             expect(result.value).toEqual([
                 {
-                    uid: 'sample',
-                    tags: [1]
+                    uid: '',
+                    tags: [0]
                 }
             ]);
         });
@@ -82,8 +82,8 @@ describe('getValueFromType', () => {
             const type = '{ required: string, optional?: number }';
             const result = getValueFromType(type, DATA_TYPES);
 
-            expect(result.value).toHaveProperty('required', 'sample');
-            expect(result.value).toHaveProperty('optional', 1);
+            expect(result.value).toHaveProperty('required', '');
+            expect(result.value).toHaveProperty('optional', 0);
         });
 
         it('sollte bei unkenntlichen Typen null zurückgeben (Graceful Fallback)', () => {

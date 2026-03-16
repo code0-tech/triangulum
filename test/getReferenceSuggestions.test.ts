@@ -16,7 +16,7 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]
@@ -34,7 +34,7 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {
                             nodes: [
                                 {value: {__typename: "LiteralValue", value: 1}},
@@ -45,7 +45,7 @@ describe('getReferenceSuggestions', () => {
                     },
                     {
                         id: node2Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]
@@ -63,13 +63,13 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                         // node1 ist nicht mit node2 verbunden
                     },
                     {
                         id: node2Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]
@@ -87,7 +87,7 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: parentId,
-                        functionDefinition: {identifier: "std::control::for_each"},
+                        functionDefinition: {identifier: "std::list::for_each"},
                         parameters: {
                             nodes: [
                                 {value: {__typename: "LiteralValue", value: [1, 2, 3]}},
@@ -97,7 +97,7 @@ describe('getReferenceSuggestions', () => {
                     },
                     {
                         id: childId,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]
@@ -131,7 +131,7 @@ describe('getReferenceSuggestions', () => {
                     },
                     {
                         id: node2Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]
@@ -158,13 +158,13 @@ describe('getReferenceSuggestions', () => {
                 nodes: [
                     {
                         id: node1Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []},
                         nextNodeId: node2Id
                     },
                     {
                         id: node2Id,
-                        functionDefinition: {identifier: "std::math::add"},
+                        functionDefinition: {identifier: "std::number::add"},
                         parameters: {nodes: []}
                     }
                 ]

@@ -22,7 +22,6 @@ export const getValueValidation = (
     const errors = diagnostics.map(d => {
         const message = ts.flattenDiagnosticMessageText(d.messageText, "\n");
         // Generic placeholders like T, R, K, V are often warnings rather than hard errors if they remains un-inferred
-        const isGenericPlaceholder = /\b([TRKV])\b/.test(message);
 
         // Match specific phrases that indicate a mock error from our code generation,
         // while allowing other "not assignable" errors (which represent real logic errors).
@@ -34,7 +33,7 @@ export const getValueValidation = (
         return {
             message,
             code: d.code,
-            severity: (isGenericPlaceholder || isMockError ? "warning" : "error") as "error" | "warning",
+            severity: (isMockError ? "warning" : "error") as "error" | "warning",
         };
     });
 

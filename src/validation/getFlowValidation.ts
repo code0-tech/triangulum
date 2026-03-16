@@ -144,6 +144,8 @@ export const getFlowValidation = (
         };
     }).filter((e) => e !== null);
 
+    console.log(sourceCode)
+
     return {
         isValid: !errors.some(e => e?.severity === "error"),
         returnType: "void",

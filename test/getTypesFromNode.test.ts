@@ -55,7 +55,7 @@ describe('getTypesFromNode', () => {
     it('should resolve types for std::math::add', () => {
         const node = {
             functionDefinition: {
-                identifier: "std::math::add" as any
+                identifier: "std::number::add" as any
             },
             parameters: {
                 nodes: [{

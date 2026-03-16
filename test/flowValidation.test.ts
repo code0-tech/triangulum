@@ -11,7 +11,7 @@ describe('getFlowValidation - Integrationstest', () => {
                 nodes: [
                     {
                         id: "gid://sagittarius/NodeFunction/1",
-                        functionDefinition: { identifier: "std::math::add" },
+                        functionDefinition: { identifier: "std::number::add" },
                         parameters: {
                             nodes: [
                                 { value: { __typename: "LiteralValue", value: 1 } },
@@ -22,7 +22,7 @@ describe('getFlowValidation - Integrationstest', () => {
                     },
                     {
                         id: "gid://sagittarius/NodeFunction/2",
-                        functionDefinition: { identifier: "std::control::for_each" },
+                        functionDefinition: { identifier: "std::list::for_each" },
                         parameters: {
                             nodes: [
                                 {
@@ -42,7 +42,7 @@ describe('getFlowValidation - Integrationstest', () => {
                     },
                     {
                         id: "gid://sagittarius/NodeFunction/3",
-                        functionDefinition: { identifier: "std::math::add" },
+                        functionDefinition: { identifier: "std::number::add" },
                         parameters: {
                             nodes: [
                                 {
@@ -66,6 +66,8 @@ describe('getFlowValidation - Integrationstest', () => {
 
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
+        console.log(result)
+
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
     });
@@ -88,7 +90,7 @@ describe('getFlowValidation - Integrationstest', () => {
                     },
                     {
                         id: "gid://sagittarius/NodeFunction/2",
-                        functionDefinition: { identifier: "std::math::add" },
+                        functionDefinition: { identifier: "std::number::add" },
                         parameters: {
                             nodes: [
                                 {
@@ -119,7 +121,7 @@ describe('getFlowValidation - Integrationstest', () => {
                 nodes: [
                     {
                         id: "gid://sagittarius/NodeFunction/1",
-                        functionDefinition: { identifier: "std::math::add" },
+                        functionDefinition: { identifier: "std::number::add" },
                         parameters: {
                             nodes: [
                                 { value: { __typename: "LiteralValue", value: "not accessibility a number" } },
