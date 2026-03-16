@@ -152,6 +152,7 @@ export function getParameterCode(
         return `({} as ${refType})`;
     }
 
+    //TODO: need to distinguish between variant NODE and everything else
     if (value.__typename === "NodeFunctionIdWrapper") {
         const wrapperId = (value as NodeFunctionIdWrapper).id;
         const refNode = findNodeById(flow, wrapperId!);
@@ -168,7 +169,7 @@ export function getParameterCode(
         };
 
         const returnNode = findReturnNode(refNode);
-        if (!returnNode) return '(() => undefined)';
+        if (!returnNode) return '(() => ({} as any))()';
 
         const validation = getNodeValidation?.(flow, returnNode);
         return `(() => ({} as ${validation?.returnType}))`;
