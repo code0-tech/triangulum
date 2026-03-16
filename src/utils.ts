@@ -81,10 +81,10 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[]): string {
         .join("\n");
 
     const typeAliasDeclarations = dataTypes?.map(dt =>
-        `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
+        `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 
-    return `${genericDeclarations}\n${typeAliasDeclarations}`;
+    return `${typeAliasDeclarations}`;
 }
 
 /**

@@ -40,7 +40,7 @@ describe('getTypeVariant', () => {
 
     it('sollte NODE für Funktionstypen wie PREDICATE zurückgeben', () => {
         // In data.ts ist CONSUMER als (item:R) => void definiert
-        expect(getTypeVariant("PREDICATE<NUMBER, BOOLEAN>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+        expect(getTypeVariant("PREDICATE<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
     });
 });
 
