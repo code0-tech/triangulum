@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {getNodeValidation} from '../src/validation/getNodeValidation';
-import {FUNCTION_SIGNATURES, DATA_TYPES} from "./data";
+import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
 describe('getNodeValidation', () => {
     it('1', () => {
@@ -356,7 +356,7 @@ describe('getNodeValidation', () => {
                 nodes: [{
                     value: {
                         __typename: "LiteralValue",
-                        value: [1,2,3]
+                        value: [1, 2, 3]
                     }
                 }, {
                     value: {
@@ -585,6 +585,77 @@ describe('getNodeValidation', () => {
                 }]
             }
         }, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(true);
+        expect(result.returnType).toBeDefined();
+        expect(result.diagnostics.filter(e => e.severity === 'error').length).toBe(0);
+    })
+
+    it('12', () => {
+        const result = getNodeValidation({
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {
+                            identifier: "std::number::add" as any
+                        },
+                        parameters: {
+                            nodes: [{
+                                value: {
+                                    __typename: "LiteralValue",
+                                    value: 1
+                                }
+                            }, {
+                                value: {
+                                    __typename: "LiteralValue",
+                                    value: 1
+                                }
+                            }]
+                        }
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {
+                            identifier: "std::number::add" as any
+                        },
+                        parameters: {
+                            nodes: [{
+                                value: {
+                                    __typename: "NodeFunctionIdWrapper",
+                                    id: "gid://sagittarius/NodeFunction/1"
+                                }
+                            }, {
+                                value: {
+                                    __typename: "LiteralValue",
+                                    value: 1
+                                }
+                            }]
+                        }
+                    }
+                ]
+            }
+        }, {
+            id: "gid://sagittarius/NodeFunction/2",
+            functionDefinition: {
+                identifier: "std::number::add" as any
+            },
+            parameters: {
+                nodes: [{
+                    value: {
+                        __typename: "NodeFunctionIdWrapper",
+                        id: "gid://sagittarius/NodeFunction/1"
+                    }
+                }, {
+                    value: {
+                        __typename: "LiteralValue",
+                        value: 1
+                    }
+                }]
+            }
+        }, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        console.log(result)
 
         expect(result.isValid).toBe(true);
         expect(result.returnType).toBeDefined();
