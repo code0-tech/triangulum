@@ -380,122 +380,164 @@ describe('getFlowValidation - Integrationstest', () => {
             "returnType": "HTTP_RESPONSE",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
-                "nodes": [{
-                    "__typename": "NodeFunction",
-                    "id": "gid://sagittarius/NodeFunction/2",
-                    "nextNodeId": null,
-                    "createdAt": "2026-03-17T14:04:15Z",
-                    "updatedAt": "2026-03-17T19:13:40Z",
-                    "parameters": {
-                        "__typename": "NodeParameterConnection",
-                        "count": 1,
-                        "nodes": [{
-                            "__typename": "NodeParameter",
-                            "id": "gid://sagittarius/NodeParameter/63",
-                            "updatedAt": "2026-03-17T19:13:40Z",
-                            "createdAt": "2026-03-17T18:35:16Z",
-                            "parameterDefinition": {
-                                "__typename": "ParameterDefinition",
-                                "id": "gid://sagittarius/ParameterDefinition/113",
-                                "identifier": "value",
-                                "createdAt": "2026-03-17T14:01:55Z",
-                                "updatedAt": "2026-03-17T14:01:55Z"
-                            },
-                            "value": null
-                        }],
-                        "pageInfo": {"__typename": "PageInfo", "endCursor": "NjM", "hasNextPage": false}
+                "nodes": [
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/2",
+                        "nextNodeId": null,
+                        "createdAt": "2026-03-17T14:04:15Z",
+                        "updatedAt": "2026-03-17T19:13:40Z",
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "count": 1,
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "id": "gid://sagittarius/NodeParameter/63",
+                                    "updatedAt": "2026-03-17T19:13:40Z",
+                                    "createdAt": "2026-03-17T18:35:16Z",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/113",
+                                        "identifier": "value",
+                                        "createdAt": "2026-03-17T14:01:55Z",
+                                        "updatedAt": "2026-03-17T14:01:55Z"
+                                    },
+                                    "value": null
+                                }
+                            ],
+                            "pageInfo": {
+                                "__typename": "PageInfo",
+                                "endCursor": "NjM",
+                                "hasNextPage": false
+                            }
+                        },
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/74",
+                            "identifier": "std::boolean::from_number"
+                        }
                     },
-                    "functionDefinition": {
-                        "__typename": "FunctionDefinition",
-                        "id": "gid://sagittarius/FunctionDefinition/74",
-                        "identifier": "std::boolean::from_number"
-                    }
-                }, {
-                    "__typename": "NodeFunction",
-                    "id": "gid://sagittarius/NodeFunction/3",
-                    "functionDefinition": {
-                        "__typename": "FunctionDefinition",
-                        "id": "gid://sagittarius/FunctionDefinition/7",
-                        "identifier": "std::list::for_each"
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/3",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/75",
+                            "identifier": "std::boolean::is_equal"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/114",
+                                        "identifier": "first"
+                                    },
+                                    "value": {
+                                        "id": "gid://sagittarius/NodeFunction/4",
+                                        "__typename": "NodeFunctionIdWrapper"
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/115",
+                                        "identifier": "second"
+                                    },
+                                    "value": null
+                                }
+                            ]
+                        }
                     },
-                    "parameters": {
-                        "__typename": "NodeParameterConnection",
-                        "nodes": [{
-                            "__typename": "NodeParameter",
-                            "parameterDefinition": {
-                                "__typename": "ParameterDefinition",
-                                "id": "gid://sagittarius/ParameterDefinition/10",
-                                "identifier": "list"
-                            },
-                            "value": null
-                        }, {
-                            "__typename": "NodeParameter",
-                            "parameterDefinition": {
-                                "__typename": "ParameterDefinition",
-                                "id": "gid://sagittarius/ParameterDefinition/11",
-                                "identifier": "consumer"
-                            },
-                            "value": {"id": "gid://sagittarius/NodeFunction/4", "__typename": "NodeFunctionIdWrapper"}
-                        }]
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/4",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/68",
+                            "identifier": "std::object::get"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/99",
+                                        "identifier": "object"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": {
+                                            "test": 1
+                                        }
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/100",
+                                        "identifier": "key"
+                                    },
+                                    "value": null
+                                }
+                            ]
+                        }
                     }
-                }, {
-                    "__typename": "NodeFunction",
-                    "id": "gid://sagittarius/NodeFunction/4",
-                    "functionDefinition": {
-                        "__typename": "FunctionDefinition",
-                        "id": "gid://sagittarius/FunctionDefinition/23",
-                        "identifier": "std::list::join"
-                    },
-                    "parameters": {
-                        "__typename": "NodeParameterConnection",
-                        "nodes": [{
-                            "__typename": "NodeParameter",
-                            "parameterDefinition": {
-                                "__typename": "ParameterDefinition",
-                                "id": "gid://sagittarius/ParameterDefinition/35",
-                                "identifier": "list"
-                            },
-                            "value": null
-                        }, {
-                            "__typename": "NodeParameter",
-                            "parameterDefinition": {
-                                "__typename": "ParameterDefinition",
-                                "id": "gid://sagittarius/ParameterDefinition/36",
-                                "identifier": "join_text"
-                            },
-                            "value": null
-                        }]
-                    }
-                }]
+                ]
             },
-            "project": {"__typename": "NamespaceProject", "id": "gid://sagittarius/NamespaceProject/1"},
+            "project": {
+                "__typename": "NamespaceProject",
+                "id": "gid://sagittarius/NamespaceProject/1"
+            },
             "settings": {
                 "__typename": "FlowSettingConnection",
                 "count": 2,
-                "nodes": [{
-                    "__typename": "FlowSetting",
-                    "id": "gid://sagittarius/FlowSetting/1",
-                    "createdAt": "2026-03-17T14:17:48Z",
-                    "updatedAt": "2026-03-17T14:17:48Z",
-                    "flowSettingIdentifier": "HTTP_METHOD",
-                    "value": ""
-                }, {
-                    "__typename": "FlowSetting",
-                    "id": "gid://sagittarius/FlowSetting/2",
-                    "createdAt": "2026-03-17T14:17:48Z",
-                    "updatedAt": "2026-03-17T14:17:48Z",
-                    "flowSettingIdentifier": "HTTP_URL",
-                    "value": ""
-                }],
-                "pageInfo": {"__typename": "PageInfo", "endCursor": "Mg", "hasNextPage": false}
+                "nodes": [
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/1",
+                        "createdAt": "2026-03-17T14:17:48Z",
+                        "updatedAt": "2026-03-17T14:17:48Z",
+                        "flowSettingIdentifier": "HTTP_METHOD",
+                        "value": ""
+                    },
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/2",
+                        "createdAt": "2026-03-17T14:17:48Z",
+                        "updatedAt": "2026-03-17T14:17:48Z",
+                        "flowSettingIdentifier": "HTTP_URL",
+                        "value": ""
+                    }
+                ],
+                "pageInfo": {
+                    "__typename": "PageInfo",
+                    "endCursor": "Mg",
+                    "hasNextPage": false
+                }
             },
             "startingNodeId": "gid://sagittarius/NodeFunction/3",
-            "type": {"__typename": "FlowType", "id": "gid://sagittarius/FlowType/1"},
-            "updatedAt": "2026-03-17T19:18:43Z",
-            "userAbilities": {"__typename": "FlowUserAbilities", "deleteFlow": true},
+            "type": {
+                "__typename": "FlowType",
+                "id": "gid://sagittarius/FlowType/1"
+            },
+            "updatedAt": "2026-03-17T19:56:30Z",
+            "userAbilities": {
+                "__typename": "FlowUserAbilities",
+                "deleteFlow": true
+            },
         };
 
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        console.log(result)
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
