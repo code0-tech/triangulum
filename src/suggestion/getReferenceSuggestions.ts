@@ -7,9 +7,7 @@ import {
     NodeFunctionIdWrapper,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
-import {getNodeValidation} from "../validation/getNodeValidation";
-
+import {createCompilerHost, getSharedTypeDeclarations, getInferredTypesFromFlow, sanitizeId} from "../utils";
 /**
  * Calculates all available reference suggestions for a specific target node in a flow
  * and filters them by a required type.
@@ -21,34 +19,26 @@ export const getReferenceSuggestions = (
     functions?: FunctionDefinition[],
     dataTypes?: DataType[]
 ): ReferenceValue[] => {
-
-    if (!flow) return []
-    if (!nodeId) return []
-
+    if (!flow || !nodeId) return [];
     const suggestions: ReferenceValue[] = [];
     const nodes = flow?.nodes?.nodes || [];
     const targetNode = nodes.find(n => n?.id === nodeId);
-
     if (!targetNode) return [];
-
     const typeDefs = getSharedTypeDeclarations(dataTypes);
+    const inferred = getInferredTypesFromFlow(flow, functions, dataTypes);
 
     // Helper to check if a type is assignable to the required type
     const isAssignable = (inferredType: string, path?: string): boolean => {
-        if (!type || type === "any") return true;
-        if (inferredType === "any") return true;
-
         const fileName = `index.ts`;
         const sourceCode = `
             ${typeDefs}
-            const val: ${inferredType} = {} as any;
+            declare const val: ${inferredType};
             const test: ${type} = val${path ? `.${path}` : ""};
         `;
         const host = createCompilerHost(fileName, sourceCode);
-        const sourceFile = host.getSourceFile(fileName)!;
         const program = host.languageService.getProgram()!;
+        const sourceFile = program.getSourceFile(fileName)!;
         const diagnostics = program.getSemanticDiagnostics(sourceFile);
-
         return !diagnostics.some(d => d.category === ts.DiagnosticCategory.Error);
     };
 
@@ -56,44 +46,28 @@ export const getReferenceSuggestions = (
     const getValidPaths = (inferredType: string, baseValue: ReferenceValue): ReferenceValue[] => {
         const validRefs: ReferenceValue[] = [];
 
-        const fileName = `index.ts`;
-        const sourceCode = `
-            ${typeDefs}
-            const val: ${inferredType} = {} as any;
-        `;
-        const host = createCompilerHost(fileName, sourceCode);
-        const sourceFile = host.getSourceFile(fileName)!;
-        const program = host.languageService.getProgram()!;
-        const checker = program.getTypeChecker();
-
         // 1. Check base type
         if (isAssignable(inferredType)) {
             validRefs.push({...baseValue, referencePath: []});
         }
 
-        // 2. Probing for sub-properties
-        const findProperties = (type: ts.Type, currentPath: string[] = []) => {
-            if (currentPath.length > 3) return; // Limit depth to avoid infinite recursion or performance issues
+        const fileName = `probe.ts`;
+        const sourceCode = `
+            ${typeDefs}
+            declare const val: ${inferredType};
+        `;
+        const host = createCompilerHost(fileName, sourceCode);
+        const program = host.languageService.getProgram()!;
+        const checker = program.getTypeChecker();
+        const sourceFile = program.getSourceFile(fileName)!;
 
-            const properties = type.getProperties();
+        const findProperties = (typeObj: ts.Type, currentPath: string[] = []) => {
+            if (currentPath.length >= 3) return; // Limit depth
+
+            const properties = typeObj.getProperties();
             for (const prop of properties) {
                 const propName = prop.getName();
-
-                // Use getPropertyOfType if it exists, otherwise use more standard ways to get the type
-                let propType: ts.Type | undefined;
-                if ((checker as any).getPropertyOfType) {
-                    const symbol = (checker as any).getPropertyOfType(type, propName);
-                    if (symbol) {
-                        propType = checker.getTypeOfSymbolAtLocation(symbol, sourceFile);
-                    }
-                } else {
-                    const symbol = type.getProperty(propName);
-                    if (symbol) {
-                        propType = checker.getTypeOfSymbolAtLocation(symbol, sourceFile);
-                    }
-                }
-
-                if (!propType) continue;
+                if (propName.startsWith("__")) continue;
 
                 const fullPath = [...currentPath, propName];
                 const pathString = fullPath.join(".");
@@ -108,25 +82,20 @@ export const getReferenceSuggestions = (
                     });
                 }
 
-                // Recursively explore properties (e.g., for nested objects)
-                findProperties(propType, fullPath);
+                // Recursively check sub-properties
+                const propType = checker.getTypeOfSymbolAtLocation(prop, sourceFile);
+                if (propType && (propType.getFlags() & ts.TypeFlags.Object)) {
+                    findProperties(propType, fullPath);
+                }
             }
         };
 
-        // Get the actual type object for inferredType to explore properties
-        const diagnostics = program.getSemanticDiagnostics(sourceFile);
-        if (diagnostics.length === 0) {
-            let typeNode: ts.Type | undefined;
-            const visit = (node: ts.Node) => {
-                if (ts.isVariableDeclaration(node) && node.name.getText() === "val") {
-                    typeNode = checker.getTypeAtLocation(node);
-                }
-                ts.forEachChild(node, visit);
-            };
-            visit(sourceFile);
-
-            if (typeNode) {
-                findProperties(typeNode);
+        const lastStatement = sourceFile.statements[sourceFile.statements.length - 1];
+        if (lastStatement && ts.isVariableStatement(lastStatement)) {
+            const decl = lastStatement.declarationList.declarations[0];
+            if (decl) {
+                const typeObj = checker.getTypeAtLocation(decl);
+                if (typeObj) findProperties(typeObj);
             }
         }
 
@@ -135,110 +104,107 @@ export const getReferenceSuggestions = (
 
     // 1. Flow Input
     if (flow.inputType) {
-        const flowInputType = flow.inputType || "any";
-        suggestions.push(...getValidPaths(flowInputType, {} as ReferenceValue));
+        suggestions.push(...getValidPaths(flow.inputType, { __typename: "ReferenceValue" } as ReferenceValue));
     }
 
-    // 2. Return values of previously executed nodes
+    // 2. Previously executed nodes and scope inputs
     nodes.forEach(node => {
-        if (!node || node.id === nodeId) return;
+        if (!node || !node.id) return;
+        const sId = sanitizeId(node.id);
 
-        if (isNodeBefore(flow, node, targetNode)) {
-            const validation = getNodeValidation(flow, node, functions, dataTypes);
-            suggestions.push(...getValidPaths(validation.returnType, {
-                __typename: "ReferenceValue",
-                nodeFunctionId: node.id,
-                referencePath: []
-            } as ReferenceValue));
-        }
-    });
-
-    // 3. Inputs of parent nodes (Scopes)
-    let currentParent = getParentScopeNode(flow, nodeId!);
-    while (currentParent) {
-        const funcDef = functions?.find(f => f.identifier === currentParent!.functionDefinition?.identifier);
-        if (funcDef) {
-            const paramIndex = currentParent.parameters?.nodes?.findIndex(p => {
-                const val = p?.value;
-                if (val?.__typename === "NodeFunctionIdWrapper") {
-                    const wrapper = val as NodeFunctionIdWrapper;
-                    return wrapper.id === nodeId || isNodeInSubtree(flow, wrapper.id || undefined, nodeId!);
-                }
-                return false;
-            });
-
-            if (paramIndex !== undefined && paramIndex !== -1) {
-                // For scope inputs like 'item' in for_each, we ideally need the generic type R.
-                // This requires parsing the function signature (e.g., CONSUMER<R>).
-                // For now, we use 'any' which is always assignable.
-                suggestions.push(...getValidPaths("any", {
+        // Suggestions from node return values
+        if (node.id !== nodeId) {
+            const nodeType = inferred.nodes.get(sId);
+            if (nodeType && isNodeBefore(flow, node.id, nodeId)) {
+                suggestions.push(...getValidPaths(nodeType, {
                     __typename: "ReferenceValue",
-                    nodeFunctionId: currentParent.id,
-                    parameterIndex: paramIndex,
-                    inputIndex: 0,
+                    nodeFunctionId: node.id,
                     referencePath: []
                 } as ReferenceValue));
             }
         }
-        currentParent = getParentScopeNode(flow, currentParent.id!);
-    }
+
+        // Suggestions from scope inputs (parameters of lambda)
+        const pTypes = inferred.parameters.get(sId);
+        if (pTypes) {
+            pTypes.forEach((pType, idx) => {
+                if (isParentScope(flow, node.id!, nodeId!)) {
+                     // Extract T from CONSUMER<T> or similar if needed
+                     let actualPType = pType;
+                     if (pType.startsWith("CONSUMER<") && pType.endsWith(">")) {
+                         actualPType = pType.substring(9, pType.length - 1);
+                     }
+
+                     suggestions.push(...getValidPaths(actualPType, {
+                        __typename: "ReferenceValue",
+                        nodeFunctionId: node.id,
+                        parameterIndex: idx,
+                        inputIndex: 0,
+                        referencePath: []
+                    } as ReferenceValue));
+                }
+            });
+        }
+    });
 
     return suggestions;
 };
 
-// Helper functions adapted from utils.ts but specialized for suggestions
-
-function isNodeBefore(flow: Flow, potentialPredecessor: NodeFunction, currentNode: NodeFunction): boolean {
+function isNodeBefore(flow: Flow, startId: string, targetId: string): boolean {
     const nodes = flow.nodes?.nodes || [];
-    let checkId = potentialPredecessor.nextNodeId;
     const visited = new Set<string>();
 
-    while (checkId) {
-        if (checkId === currentNode.id) return true;
-        if (visited.has(checkId)) break;
-        visited.add(checkId);
-        const next = nodes.find(n => n?.id === checkId);
-        checkId = next?.nextNodeId;
-    }
+    // Check if there's a path from startId to targetId
+    const checkForward = (currentId: string): boolean => {
+        if (currentId === targetId) return true;
+        if (visited.has(currentId)) return false;
+        visited.add(currentId);
 
-    // Also check if potentialPredecessor is a parent scope of currentNode
-    let parent = getParentScopeNode(flow, currentNode.id!);
-    while (parent) {
-        if (parent.id === potentialPredecessor.id) return true;
-        parent = getParentScopeNode(flow, parent.id!);
-    }
+        const node = nodes.find(n => n?.id === currentId);
+        if (!node) return false;
 
-    return false;
+        if (node.nextNodeId && checkForward(node.nextNodeId)) return true;
+        return node.parameters?.nodes?.some(p => {
+             if (p?.value?.__typename === "NodeFunctionIdWrapper") {
+                 return checkForward((p.value as NodeFunctionIdWrapper).id!);
+             }
+             return false;
+        }) || false;
+    };
+
+    return checkForward(startId);
 }
 
-function getParentScopeNode(flow: Flow, nodeId: string): NodeFunction | undefined {
-    const parent = flow.nodes?.nodes?.find(n =>
-        n?.parameters?.nodes?.some(p =>
-            p?.value?.__typename === "NodeFunctionIdWrapper" && (p.value as NodeFunctionIdWrapper).id === nodeId
-        )
-    );
-    return parent || undefined;
+function isParentScope(flow: Flow, parentId: string, childId: string): boolean {
+    const nodes = flow.nodes?.nodes || [];
+    const parent = nodes.find(n => n?.id === parentId);
+    if (!parent) return false;
+
+    return parent.parameters?.nodes?.some(p => {
+        const val = p?.value;
+        if (val?.__typename === "NodeFunctionIdWrapper") {
+            const wrapper = val as NodeFunctionIdWrapper;
+            return wrapper.id === childId || isNodeInSubtree(flow, wrapper.id!, childId);
+        }
+        return false;
+    }) || false;
 }
 
-function isNodeInSubtree(flow: Flow, rootId: string | undefined, targetId: string): boolean {
-    if (!rootId) return false;
+function isNodeInSubtree(flow: Flow, rootId: string, targetId: string): boolean {
     if (rootId === targetId) return true;
-
     const nodes = flow.nodes?.nodes || [];
     const root = nodes.find(n => n?.id === rootId);
     if (!root) return false;
 
-    // Check next node
-    if (root.nextNodeId && isNodeInSubtree(flow, root.nextNodeId || undefined, targetId)) return true;
+    if (root.nextNodeId && isNodeInSubtree(flow, root.nextNodeId, targetId)) return true;
 
-    // Check parameters (lambdas)
-    const inLambda = root.parameters?.nodes?.some(p => {
+    return root.parameters?.nodes?.some(p => {
         const val = p?.value;
         if (val?.__typename === "NodeFunctionIdWrapper") {
-            return isNodeInSubtree(flow, (val as NodeFunctionIdWrapper).id || undefined, targetId);
+            const wrapper = val as NodeFunctionIdWrapper;
+            if (!wrapper.id) return false;
+            return isNodeInSubtree(flow, wrapper.id, targetId);
         }
         return false;
-    });
-
-    return !!inLambda;
+    }) || false;
 }

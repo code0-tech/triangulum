@@ -6,5 +6,4 @@ export * from './suggestion/getNodeSuggestions';
 export * from './suggestion/getReferenceSuggestions';
 export * from './suggestion/getValueSuggestions';
 export * from './validation/getFlowValidation';
-export * from './validation/getNodeValidation';
 export * from './validation/getValueValidation';

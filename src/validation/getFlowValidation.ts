@@ -53,14 +53,14 @@ export const getFlowValidation = (
                 if (!ref.nodeFunctionId) return "undefined";
 
                 let refCode = ref.parameterIndex !== undefined
-                    ? `/* @pos ${nodeId} ${index} */ p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
-                    : `/* @pos ${nodeId} ${index} */ node_${sanitizeId(ref.nodeFunctionId)}`;
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
+                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
 
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
 
-                return refCode;
+                return `/* @pos ${nodeId} ${index} */ ${refCode}`;
             }
 
             if (val.__typename === "LiteralValue") {
@@ -69,8 +69,8 @@ export const getFlowValidation = (
 
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
-                const lambdaArgName = `p_${sanitizeId(node.id!)}_${index}`;
-                const subTreeCode = generateNodeCode(wrapper.id!, indent + "  ");
+                const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
+                const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
                 return `/* @pos ${nodeId} ${index} */ (${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
             }
 
@@ -78,11 +78,12 @@ export const getFlowValidation = (
         }).join(", ");
 
         const varName = `node_${sanitizeId(node.id!)}`;
-        const funcName = `fn_${funcDef.identifier?.replace(/::/g, '_')}`;
+        const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
 
         // Add 'as any' cast only if undefined arguments are passed to a generic function to avoid false-positive errors.
         const needsAnyCast = args.includes("undefined");
-        let code = `${indent}const ${varName} = ${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
+        const isReturnNode = node.functionDefinition.identifier === "std::control::return";
+        let code = `${indent}${isReturnNode ? "return " : `var ${varName} = `}${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
 
         if (node.nextNodeId) {
             code += generateNodeCode(node.nextNodeId, indent);
@@ -98,10 +99,19 @@ export const getFlowValidation = (
         return `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}${funcDef.signature}`;
     }).join('\n');
 
-    // 2. Execution Code Generation
+    const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));
+    const subTreeIds = new Set<string>();
+    nodes.forEach(n => {
+        n?.parameters?.nodes?.forEach((p: any) => {
+            if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) {
+                subTreeIds.add(p.value.id);
+            }
+        });
+    });
+
     const executionCode = nodes
-        .map(n => n?.id ? generateNodeCode(n.id) : "")
-        .filter(line => line !== "")
+        .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
+        .map(n => generateNodeCode(n!.id!))
         .join('\n');
 
     const sourceCode = `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
@@ -118,9 +128,6 @@ export const getFlowValidation = (
         const message = flattenDiagnosticMessageText(d.messageText, "\n");
         // "Argument of type 'undefined' is not assignable to parameter of type 'number'."
         // We ignore this in flow validation too because we might generate code for incomplete flows.
-        const isMockError = message.includes("Argument of type 'undefined'") || message.includes("not assignable to type 'undefined'");
-
-        if (isMockError) return null;
 
         let nodeId: NodeFunction['id'] | undefined;
         let parameterIndex: number | undefined;
@@ -143,8 +150,6 @@ export const getFlowValidation = (
             parameterIndex
         };
     }).filter((e) => e !== null);
-
-    console.log(sourceCode)
 
     return {
         isValid: !errors.some(e => e?.severity === "error"),

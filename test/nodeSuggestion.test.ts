@@ -10,8 +10,6 @@ describe("getNodeSuggestions", () => {
 
         const map = suggestions.map(s => s.functionDefinition?.identifier)
 
-        console.log(map)
-
         expect(map).toEqual(expect.arrayContaining([
             'std::list::first',
             'std::list::max',
