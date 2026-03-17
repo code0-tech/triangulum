@@ -8,7 +8,7 @@ import {
     NodeParameter,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
+import {createCompilerHost, generateFlowSourceCode, getSharedTypeDeclarations, ValidationResult} from "../utils";
 
 const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -20,101 +20,9 @@ export const getFlowValidation = (
     functions?: FunctionDefinition[],
     dataTypes?: DataType[]
 ): ValidationResult => {
-    const visited = new Set<string>();
-    const nodes = flow?.nodes?.nodes || [];
 
-    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
 
-    /**
-     * Recursive function to generate TypeScript code for a node and its execution path.
-     */
-    const generateNodeCode = (
-        nodeId: string,
-        indent: string = ""
-    ): string => {
-        if (visited.has(nodeId)) return "";
-
-        const node = nodes.find(n => n?.id === nodeId);
-        if (!node || !node.functionDefinition) return "";
-
-        visited.add(nodeId);
-
-        const funcDef = funcMap.get(node.functionDefinition?.identifier);
-        if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
-
-        const params = node.parameters?.nodes as NodeParameter[] || [];
-
-        const args = params.map((p, index) => {
-            const val = p.value;
-            if (!val) return "undefined";
-
-            if (val.__typename === "ReferenceValue") {
-                const ref = val as ReferenceValue;
-                if (!ref.nodeFunctionId) return "undefined";
-
-                let refCode = ref.parameterIndex !== undefined
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
-                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
-
-                ref.referencePath?.forEach(pathObj => {
-                    refCode += `?.${pathObj.path}`;
-                });
-
-                return `/* @pos ${nodeId} ${index} */ ${refCode}`;
-            }
-
-            if (val.__typename === "LiteralValue") {
-                return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
-            }
-
-            if (val.__typename === "NodeFunctionIdWrapper") {
-                const wrapper = val as NodeFunctionIdWrapper;
-                const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
-                const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
-                return `/* @pos ${nodeId} ${index} */ (${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
-            }
-
-            return "undefined";
-        }).join(", ");
-
-        const varName = `node_${sanitizeId(node.id!)}`;
-        const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
-
-        // Add 'as any' cast only if undefined arguments are passed to a generic function to avoid false-positive errors.
-        const needsAnyCast = args.includes("undefined");
-        const isReturnNode = node.functionDefinition.identifier === "std::control::return";
-        let code = `${indent}${isReturnNode ? "return " : `var ${varName} = `}${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
-
-        if (node.nextNodeId) {
-            code += generateNodeCode(node.nextNodeId, indent);
-        }
-
-        return code;
-    };
-
-    // 1. Generate Declarations
-    const typeDefs = getSharedTypeDeclarations(dataTypes);
-
-    const funcDeclarations = functions?.map(funcDef => {
-        return `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}${funcDef.signature}`;
-    }).join('\n');
-
-    const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));
-    const subTreeIds = new Set<string>();
-    nodes.forEach(n => {
-        n?.parameters?.nodes?.forEach((p: any) => {
-            if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) {
-                subTreeIds.add(p.value.id);
-            }
-        });
-    });
-
-    const executionCode = nodes
-        .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
-        .map(n => generateNodeCode(n!.id!))
-        .join('\n');
-
-    const sourceCode = `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes);
 
     // 3. Virtual TypeScript Compilation
     const fileName = "index.ts";
@@ -134,11 +42,38 @@ export const getFlowValidation = (
 
         if (d.start !== undefined) {
             const fullText = sourceFile.getFullText();
-            const textBefore = fullText.substring(0, d.start);
-            const posMatch = textBefore.match(/\/\* @pos ([^ ]+) (\d+) \*\/\s*$/);
-            if (posMatch) {
-                nodeId = posMatch[1] as NodeFunction['id'];
-                parameterIndex = parseInt(posMatch[2], 10);
+
+            // Search for position marker comment near the error location
+            // The error position is typically the start of the problematic token (e.g., "undefined")
+            const searchStart = Math.max(0, d.start - 300);
+            const searchEnd = Math.min(fullText.length, d.start);
+            const searchText = fullText.substring(searchStart, searchEnd);
+
+            // Find all @pos comments in the search range
+            const posRegex = /\/\* @pos ([^ ]+) (\d+) \*\//g;
+            let match;
+            let closestMatch: RegExpExecArray | null = null;
+            let closestCommentEnd = -1;
+
+            // Collect all matches and find the one whose end is closest to d.start
+            // We want the comment that is immediately before the error
+            while ((match = posRegex.exec(searchText)) !== null) {
+                const commentStart = searchStart + match.index;
+                const commentEnd = commentStart + match[0].length;
+
+                // Only consider comments that end before or very close to the error start
+                // This ensures we get the @pos comment that directly precedes the problematic argument
+                if (commentEnd <= d.start!) {
+                    if (commentEnd > closestCommentEnd) {
+                        closestCommentEnd = commentEnd;
+                        closestMatch = match;
+                    }
+                }
+            }
+
+            if (closestMatch) {
+                nodeId = closestMatch[1] as NodeFunction['id'];
+                parameterIndex = parseInt(closestMatch[2], 10);
             }
         }
 
