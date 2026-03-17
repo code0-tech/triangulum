@@ -1,0 +1,15 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+# intellij
+/.idea/
+*.iml
+
+# rspec failure tracking
+.rspec_status
