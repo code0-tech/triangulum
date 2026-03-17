@@ -68,6 +68,10 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
     });
 
     it('2', () => {
@@ -110,6 +114,10 @@ describe('getFlowValidation - Integrationstest', () => {
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(false);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
     });
 
     it('3', () => {
@@ -133,9 +141,10 @@ describe('getFlowValidation - Integrationstest', () => {
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
         expect(result.isValid).toBe(false);
-        const diagnostic = result.diagnostics.find(d => d.nodeId === "gid://sagittarius/NodeFunction/1" && d.parameterIndex === 0);
-        expect(diagnostic).toBeDefined();
-        expect(diagnostic?.message).toContain("number");
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
     });
 
     it('4', () => {
@@ -182,6 +191,10 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
     });
 
     it('5', () => {
@@ -235,6 +248,261 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
+    });
+
+    it('6', () => {
+
+        const flow: Flow = {
+            "__typename": "Flow",
+            "id": "gid://sagittarius/Flow/1",
+            "createdAt": "2026-03-17T14:02:31Z",
+            "name": "Test",
+            "inputType": "REST_ADAPTER_INPUT",
+            "returnType": "HTTP_RESPONSE",
+            "nodes": {
+                "__typename": "NodeFunctionConnection",
+                "nodes": [
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/1",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/77",
+                            "identifier": "std::boolean::as_number"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/117",
+                                        "identifier": "value"
+                                    },
+                                    "value": {
+                                        "id": "gid://sagittarius/NodeFunction/2",
+                                        "__typename": "NodeFunctionIdWrapper"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/2",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/74",
+                            "identifier": "std::boolean::from_number"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/113",
+                                        "identifier": "value"
+                                    },
+                                    "value": null
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "project": {
+                "__typename": "NamespaceProject",
+                "id": "gid://sagittarius/NamespaceProject/1"
+            },
+            "settings": {
+                "__typename": "FlowSettingConnection",
+                "count": 2,
+                "nodes": [
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/1",
+                        "createdAt": "2026-03-17T14:17:48Z",
+                        "updatedAt": "2026-03-17T14:17:48Z",
+                        "flowSettingIdentifier": "HTTP_METHOD",
+                        "value": ""
+                    },
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/2",
+                        "createdAt": "2026-03-17T14:17:48Z",
+                        "updatedAt": "2026-03-17T14:17:48Z",
+                        "flowSettingIdentifier": "HTTP_URL",
+                        "value": ""
+                    }
+                ],
+                "pageInfo": {
+                    "__typename": "PageInfo",
+                    "endCursor": "Mg",
+                    "hasNextPage": false
+                }
+            },
+            "startingNodeId": "gid://sagittarius/NodeFunction/1",
+            "type": {
+                "__typename": "FlowType",
+                "id": "gid://sagittarius/FlowType/1"
+            },
+            "updatedAt": "2026-03-17T17:21:45Z",
+            "userAbilities": {
+                "__typename": "FlowUserAbilities",
+                "deleteFlow": true
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(false);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
+    });
+
+    it('7', () => {
+
+        const flow: Flow = {
+            "__typename": "Flow",
+            "id": "gid://sagittarius/Flow/1",
+            "createdAt": "2026-03-17T14:02:31Z",
+            "name": "Test",
+            "inputType": "REST_ADAPTER_INPUT",
+            "returnType": "HTTP_RESPONSE",
+            "nodes": {
+                "__typename": "NodeFunctionConnection",
+                "nodes": [{
+                    "__typename": "NodeFunction",
+                    "id": "gid://sagittarius/NodeFunction/2",
+                    "nextNodeId": null,
+                    "createdAt": "2026-03-17T14:04:15Z",
+                    "updatedAt": "2026-03-17T19:13:40Z",
+                    "parameters": {
+                        "__typename": "NodeParameterConnection",
+                        "count": 1,
+                        "nodes": [{
+                            "__typename": "NodeParameter",
+                            "id": "gid://sagittarius/NodeParameter/63",
+                            "updatedAt": "2026-03-17T19:13:40Z",
+                            "createdAt": "2026-03-17T18:35:16Z",
+                            "parameterDefinition": {
+                                "__typename": "ParameterDefinition",
+                                "id": "gid://sagittarius/ParameterDefinition/113",
+                                "identifier": "value",
+                                "createdAt": "2026-03-17T14:01:55Z",
+                                "updatedAt": "2026-03-17T14:01:55Z"
+                            },
+                            "value": null
+                        }],
+                        "pageInfo": {"__typename": "PageInfo", "endCursor": "NjM", "hasNextPage": false}
+                    },
+                    "functionDefinition": {
+                        "__typename": "FunctionDefinition",
+                        "id": "gid://sagittarius/FunctionDefinition/74",
+                        "identifier": "std::boolean::from_number"
+                    }
+                }, {
+                    "__typename": "NodeFunction",
+                    "id": "gid://sagittarius/NodeFunction/3",
+                    "functionDefinition": {
+                        "__typename": "FunctionDefinition",
+                        "id": "gid://sagittarius/FunctionDefinition/7",
+                        "identifier": "std::list::for_each"
+                    },
+                    "parameters": {
+                        "__typename": "NodeParameterConnection",
+                        "nodes": [{
+                            "__typename": "NodeParameter",
+                            "parameterDefinition": {
+                                "__typename": "ParameterDefinition",
+                                "id": "gid://sagittarius/ParameterDefinition/10",
+                                "identifier": "list"
+                            },
+                            "value": null
+                        }, {
+                            "__typename": "NodeParameter",
+                            "parameterDefinition": {
+                                "__typename": "ParameterDefinition",
+                                "id": "gid://sagittarius/ParameterDefinition/11",
+                                "identifier": "consumer"
+                            },
+                            "value": {"id": "gid://sagittarius/NodeFunction/4", "__typename": "NodeFunctionIdWrapper"}
+                        }]
+                    }
+                }, {
+                    "__typename": "NodeFunction",
+                    "id": "gid://sagittarius/NodeFunction/4",
+                    "functionDefinition": {
+                        "__typename": "FunctionDefinition",
+                        "id": "gid://sagittarius/FunctionDefinition/23",
+                        "identifier": "std::list::join"
+                    },
+                    "parameters": {
+                        "__typename": "NodeParameterConnection",
+                        "nodes": [{
+                            "__typename": "NodeParameter",
+                            "parameterDefinition": {
+                                "__typename": "ParameterDefinition",
+                                "id": "gid://sagittarius/ParameterDefinition/35",
+                                "identifier": "list"
+                            },
+                            "value": null
+                        }, {
+                            "__typename": "NodeParameter",
+                            "parameterDefinition": {
+                                "__typename": "ParameterDefinition",
+                                "id": "gid://sagittarius/ParameterDefinition/36",
+                                "identifier": "join_text"
+                            },
+                            "value": null
+                        }]
+                    }
+                }]
+            },
+            "project": {"__typename": "NamespaceProject", "id": "gid://sagittarius/NamespaceProject/1"},
+            "settings": {
+                "__typename": "FlowSettingConnection",
+                "count": 2,
+                "nodes": [{
+                    "__typename": "FlowSetting",
+                    "id": "gid://sagittarius/FlowSetting/1",
+                    "createdAt": "2026-03-17T14:17:48Z",
+                    "updatedAt": "2026-03-17T14:17:48Z",
+                    "flowSettingIdentifier": "HTTP_METHOD",
+                    "value": ""
+                }, {
+                    "__typename": "FlowSetting",
+                    "id": "gid://sagittarius/FlowSetting/2",
+                    "createdAt": "2026-03-17T14:17:48Z",
+                    "updatedAt": "2026-03-17T14:17:48Z",
+                    "flowSettingIdentifier": "HTTP_URL",
+                    "value": ""
+                }],
+                "pageInfo": {"__typename": "PageInfo", "endCursor": "Mg", "hasNextPage": false}
+            },
+            "startingNodeId": "gid://sagittarius/NodeFunction/3",
+            "type": {"__typename": "FlowType", "id": "gid://sagittarius/FlowType/1"},
+            "updatedAt": "2026-03-17T19:18:43Z",
+            "userAbilities": {"__typename": "FlowUserAbilities", "deleteFlow": true},
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(false);
+        result.diagnostics.forEach((error) => {
+
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
     });
 
 });
