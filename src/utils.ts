@@ -168,7 +168,7 @@ export function generateFlowSourceCode(
         const call = `${funcName}(${args})`;
         // Add position comment only for nested calls (when called from within an argument)
         if (parentNodeId !== undefined && parentParamIndex !== undefined) {
-            return `/* @pos ${nodeId} 0 */ ${call}`;
+            return `${call}`;
         }
         return call;
     };
