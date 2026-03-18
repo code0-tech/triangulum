@@ -537,8 +537,6 @@ describe('getFlowValidation - Integrationstest', () => {
 
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        console.log(result)
-
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
 
