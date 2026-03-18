@@ -76,4 +76,17 @@ describe('getLanguageServiceSuggestions', () => {
         expect(Array.isArray(values)).toBe(true);
         expect(values.length).toBe(0);
     });
+
+    it('s', () => {
+        const type = 'HTTP_METHOD'; //
+        const suggestions = getValueSuggestions(type);
+        const values = suggestions.map(s => s.value);
+
+        // Wenn es nur 'string' ist, gibt es keine spezifischen Literale zu vervollständigen
+        // Der Language Service könnte globale Variablen vorschlagen, daher prüfen wir
+        // hier spezifisch auf das Ausbleiben deiner Literale.
+        expect(values).toContain('GET');
+        expect(values).toContain('POST');
+        expect(values).toContain('DELETE');
+    });
 });
