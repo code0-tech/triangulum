@@ -1,16 +1,6 @@
 import {flattenDiagnosticMessageText} from "typescript";
-import {
-    DataType,
-    Flow,
-    FunctionDefinition,
-    NodeFunction,
-    NodeFunctionIdWrapper,
-    NodeParameter,
-    ReferenceValue
-} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, generateFlowSourceCode, getSharedTypeDeclarations, ValidationResult} from "../utils";
-
-const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
+import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, generateFlowSourceCode, ValidationResult} from "../utils";
 
 /**
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
