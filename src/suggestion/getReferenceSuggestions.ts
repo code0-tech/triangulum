@@ -27,6 +27,8 @@ export const getReferenceSuggestions = (
     const typeDefs = getSharedTypeDeclarations(dataTypes);
     const inferred = getInferredTypesFromFlow(flow, functions, dataTypes);
 
+    console.log(inferred)
+
     // Helper to check if a type is assignable to the required type
     const isAssignable = (inferredType: string, path?: string): boolean => {
         const fileName = `index.ts`;
@@ -115,7 +117,7 @@ export const getReferenceSuggestions = (
         // Suggestions from node return values
         if (node.id !== nodeId) {
             const nodeType = inferred.nodes.get(sId);
-            if (nodeType && isNodeBefore(flow, node.id, nodeId)) {
+            if (nodeType !== "void" && nodeType && isNodeBefore(flow, node.id, nodeId)) {
                 suggestions.push(...getValidPaths(nodeType, {
                     __typename: "ReferenceValue",
                     nodeFunctionId: node.id,
@@ -129,6 +131,7 @@ export const getReferenceSuggestions = (
         if (pTypes) {
             pTypes.forEach((pType, idx) => {
                 if (isParentScope(flow, node.id!, nodeId!)) {
+
                      // Extract T from CONSUMER<T> or similar if needed
                      let actualPType = pType;
                      if (pType.startsWith("CONSUMER<") && pType.endsWith(">")) {

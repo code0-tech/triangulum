@@ -146,7 +146,7 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, paramIdx) => {
             const val = p.value;
-            if (!val) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
@@ -161,7 +161,7 @@ export function generateFlowSourceCode(
                 const wrapper = val as NodeFunctionIdWrapper;
                 return generateNodeCall(wrapper.id!, nodeId, paramIdx);
             }
-            return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
         }).join(", ");
 
         const funcName = `fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
@@ -191,7 +191,7 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            if (!val) return `/* @pos ${nodeId} ${index} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ ({} as any)` :  `/* @pos ${nodeId} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
@@ -225,7 +225,7 @@ export function generateFlowSourceCode(
                     return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
                 }
             }
-            return `/* @pos ${nodeId} ${index} */ undefined`;
+            return isForInference ? `/* @pos ${nodeId} ${index} */ ({} as any)` :  `/* @pos ${nodeId} ${index} */ undefined`;
         }).join(", ");
 
         const varName = `node_${sanitizeId(node.id!)}`;
@@ -268,6 +268,7 @@ export function getInferredTypesFromFlow(
     dataTypes?: DataType[]
 ): InferredTypes {
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, true);
+    console.log("Generated source code for inference:\n", sourceCode);
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;

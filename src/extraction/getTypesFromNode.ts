@@ -32,7 +32,7 @@ export const getTypesFromNode = (
             nodes: node.parameters?.nodes?.map(p => {
                 if (p?.value) return p;
                 // If value is missing, we still want the compiler to see the argument position
-                return { ...p, value: { __typename: "LiteralValue", value: null } };
+                return { ...p, value: null };
             }) || []
         }
     };
