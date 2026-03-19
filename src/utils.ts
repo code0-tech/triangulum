@@ -146,12 +146,12 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, paramIdx) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
                 let refCode = ref.inputIndex !== undefined
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}[${ref.inputIndex}]`
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
                 ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
                 return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
@@ -191,12 +191,12 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ ({} as any)` :  `/* @pos ${nodeId} ${index} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
                 let refCode = ref.inputIndex !== undefined
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}[${ref.inputIndex}]`
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
                 ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
                 return `/* @pos ${nodeId} ${index} */ ${refCode}`;
@@ -210,7 +210,7 @@ export function generateFlowSourceCode(
                     const isFunctionType = expectedType ? getTypeVariant(expectedType, dataTypes) === DataTypeVariant.NODE : false;
 
                     if (isFunctionType) {
-                        const lambdaArgName = `p_${sanitizeId(nodeId)}`;
+                        const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
                         const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
                         return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
                     } else {
@@ -220,19 +220,19 @@ export function generateFlowSourceCode(
                 } else {
                     // During inference, we just need something valid.
                     // Defaulting to a lambda is safer for type inference of the parent node's parameters.
-                    const lambdaArgName = `p_${sanitizeId(nodeId)}`;
+                    const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
                     const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
                     return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
                 }
             }
-            return isForInference ? `/* @pos ${nodeId} ${index} */ ({} as any)` :  `/* @pos ${nodeId} ${index} */ undefined`;
+            return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
         }).join(", ");
 
         const varName = `node_${sanitizeId(node.id!)}`;
         const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
         const needsAnyCast = args.includes("undefined");
         const isReturnNode = node.functionDefinition.identifier === "std::control::return";
-        let code = `${indent}${isReturnNode ? "return " : `var ${varName} = `}${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
+        let code = `${indent}${isReturnNode ? "return " : `const ${varName} = `}${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
         if (node.nextNodeId) code += generateNodeCode(node.nextNodeId, indent);
         return code;
     };
@@ -268,7 +268,7 @@ export function getInferredTypesFromFlow(
     dataTypes?: DataType[]
 ): InferredTypes {
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, true);
-    console.log("Generated source code for inference:\n", sourceCode);
+
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
@@ -277,6 +277,15 @@ export function getInferredTypesFromFlow(
 
     const nodeTypes = new Map<string, string>();
     const parameterTypes = new Map<string, string[]>();
+    const nodeIdToNode = new Map<string, NodeFunction>();
+
+    // Build a map of nodes for later lookup
+    const nodes = flow?.nodes?.nodes || [];
+    nodes.forEach(node => {
+        if (node?.id) {
+            nodeIdToNode.set(sanitizeId(node.id), node);
+        }
+    });
 
     const visit = (n: ts.Node) => {
         if (ts.isVariableDeclaration(n) && n.name.getText().startsWith("node_")) {
@@ -287,10 +296,12 @@ export function getInferredTypesFromFlow(
             if (n.initializer && ts.isCallExpression(n.initializer)) {
                 const sig = checker.getResolvedSignature(n.initializer);
                 if (sig) {
-                    parameterTypes.set(nodeId, sig.getParameters().map(p => {
+                    // getResolvedSignature returns the signature with generics resolved based on actual arguments
+                    const resolvedParams = sig.getParameters().map((p) => {
                         const t = checker.getTypeOfSymbolAtLocation(p, n.initializer!);
                         return checker.typeToString(t, n.initializer, ts.TypeFormatFlags.NoTruncation);
-                    }));
+                    });
+                    parameterTypes.set(nodeId, resolvedParams);
                 }
             }
         }
@@ -310,3 +321,4 @@ export function getInferredTypesFromFlow(
 
     return { nodes: nodeTypes, parameters: parameterTypes };
 }
+

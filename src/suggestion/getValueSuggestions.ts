@@ -13,16 +13,20 @@ export const getValueSuggestions = (
 
     const sourceCode = `
         ${getSharedTypeDeclarations(dataTypes)}
-        type T = ${type}; const val: T = {} as any;
+        type VALUE = ${type}; const val: VALUE = {} as any;
     `;
+
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;
     const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
-    const typeAlias = sourceFile.statements.find(ts.isTypeAliasDeclaration);
-    if (!typeAlias) return [];
+    // Find the VALUE type alias (not the first one, but the one we defined)
+    const typeAlias = sourceFile.statements.find(
+        node => ts.isTypeAliasDeclaration(node) && node.name.text === 'VALUE'
+    );
+    if (!typeAlias || !ts.isTypeAliasDeclaration(typeAlias)) return [];
 
     const typeFound = checker.getTypeAtLocation(typeAlias);
 
