@@ -113,5 +113,32 @@ describe('getTypesFromNode', () => {
         expect(result.returnType).toBe("string | number");
         expect(result.parameters[1]).toEqual('"id" | "name"');
     });
+
+    it('should return std::object::get with all values', () => {
+        const node: NodeFunction = {
+            functionDefinition: {
+                identifier: "std::object::get"
+            },
+            parameters: {
+                nodes: [{
+                    value: {
+                        __typename: "LiteralValue",
+                        value: { id: 1, name: "Test" }
+                    }
+                }, {
+                    value: {
+                        __typename: "LiteralValue",
+                        value: "id"
+                    }
+                }]
+            }
+        };
+        const result = getTypesFromNode(node, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        console.log(result)
+
+        expect(result.returnType).toBe("number");
+        expect(result.parameters[1]).toEqual('"id" | "name"');
+    });
 });
 

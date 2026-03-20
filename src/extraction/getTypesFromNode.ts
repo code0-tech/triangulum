@@ -37,16 +37,48 @@ export const getTypesFromNode = (
         }
     };
 
+    // Create a version of the node with primitive literals removed
+    // This allows inferring the "expected" type of parameters (e.g. keyof T)
+    // rather than the specific type of the argument provided (e.g. "id").
+    const nodeIdParams = nodeId + "_params";
+    const nodeForParams = {
+        ...nodeWithDefaults,
+        id: nodeIdParams,
+        parameters: {
+            ...nodeWithDefaults.parameters,
+            nodes: nodeWithDefaults.parameters.nodes.map(p => {
+                // If it's a primitive literal, remove it to allow wider type inference for parameters
+                if (p.value?.__typename === "LiteralValue" && p.value.value !== null && typeof p.value.value !== 'object') {
+                    return { ...p, value: null };
+                }
+                return p;
+            })
+        }
+    };
+
     const mockFlow: Flow = {
         id: "gid://sagittarius/Flow/0" as any,
-        nodes: { __typename: "NodeFunctionConnection", nodes: [nodeWithDefaults] }
+        nodes: { __typename: "NodeFunctionConnection", nodes: [nodeWithDefaults, nodeForParams] }
     } as Flow;
 
     const inferred = getInferredTypesFromFlow(mockFlow, functions, dataTypes);
     const sId = sanitizeId(nodeId);
+    const sIdParams = sanitizeId(nodeIdParams);
+
+    const directParams = inferred.parameters.get(sId) || [];
+    const widenedParams = inferred.parameters.get(sIdParams) || [];
+
+    // Merge parameters: prefer widened types unless they failed inference (any/unknown)
+    const parameters = directParams.map((p, i) => {
+        const wide = widenedParams[i];
+        if (wide && wide !== "any" && wide !== "unknown") {
+            return wide;
+        }
+        return p;
+    });
 
     return {
-        parameters: inferred.parameters.get(sId) || [],
+        parameters,
         returnType: inferred.nodes.get(sId) || "any",
     };
 };
