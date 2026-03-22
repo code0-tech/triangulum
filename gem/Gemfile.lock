@@ -18,12 +18,12 @@ GEM
     date (3.5.1)
     diff-lcs (1.6.2)
     erb (6.0.2)
-    google-protobuf (4.34.1-x86_64-linux-gnu)
+    google-protobuf (4.34.1)
       bigdecimal
       rake (~> 13.3)
     googleapis-common-protos-types (1.22.0)
       google-protobuf (~> 4.26)
-    grpc (1.78.1-x86_64-linux-gnu)
+    grpc (1.78.1)
       google-protobuf (>= 3.25, < 5.0)
       googleapis-common-protos-types (~> 1.0)
     io-console (0.8.2)
@@ -108,7 +108,7 @@ GEM
     unicode-emoji (4.2.0)
 
 PLATFORMS
-  x86_64-linux
+  ruby
 
 DEPENDENCIES
   irb (~> 1.17)
