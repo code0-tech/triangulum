@@ -6,7 +6,7 @@ on:
     tags:
       - '*'
 jobs:
-  publish:
+  npm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,3 +18,42 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm publish --tag latest
+
+  rubygems:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gem
+    steps:
+      # Set up
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.7'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".tool-versions"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+        working-directory: .
+      - run: npm run build
+        working-directory: .
+      - run: npm ci
+        working-directory: entrypoint
+      - name: Install gems
+        run: bundle install
+      - name: Set version
+        run: sed -i "s/VERSION = '0.0.0'/VERSION = '${GITHUB_REF_NAME#v}'/" lib/triangulum/version.rb && bundle
+      - name: Package gems
+        run: bundle exec rake package
+
+      # Release
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+      - name: Publish gem
+        run: bundle exec rake push:all
+      - name: Wait for release
+        run: gem exec rubygems-await pkg/*.gem
