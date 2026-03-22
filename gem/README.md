@@ -1,35 +1,77 @@
-# Triangulum
+# Triangulum Ruby Gem
 
-TODO: Delete this and the text below, and describe your gem
-
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/triangulum`. To experiment with that code, run `bin/console` for an interactive prompt.
+Ruby bindings for the [Triangulum](https://github.com/code0-tech/triangulum) validation layer. This gem wraps the TypeScript library and a bundled [Bun](https://bun.sh) runtime to validate flows using the TypeScript compiler.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+Add to your Gemfile:
 
-Install the gem and add to the application's Gemfile by executing:
-
-```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+```ruby
+gem 'triangulum'
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+Platform-specific gems are published for:
+
+- `arm64-darwin` (macOS Apple Silicon)
+- `x86_64-darwin` (macOS Intel)
+- `x86_64-linux-gnu` (Linux x64)
+- `x86_64-linux-musl` (Linux x64 musl)
+- `aarch64-linux-gnu` (Linux ARM64)
+- `aarch64-linux-musl` (Linux ARM64 musl)
+
+If Bundler doesn't automatically select the correct platform gem, add your platform:
 
 ```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+bundle lock --add-platform x86_64-linux-gnu
 ```
 
 ## Usage
 
-TODO: Write usage instructions here
+```ruby
+result = Triangulum::Validation.new(flow, runtime_function_definitions, data_types).validate
+
+result.valid?       # => true / false
+result.return_type  # => "void"
+result.diagnostics  # => [Triangulum::Validation::Diagnostic, ...]
+```
+
+The arguments are [Tucana](https://github.com/code0-tech/tucana) protobuf objects:
+
+- `flow` — `Tucana::Shared::ValidationFlow`
+- `runtime_function_definitions` — `Array<Tucana::Shared::RuntimeFunctionDefinition>`
+- `data_types` — `Array<Tucana::Shared::DefinitionDataType>`
+
+### Diagnostics
+
+Each diagnostic contains:
+
+| Field | Description |
+|---|---|
+| `message` | Human-readable error description |
+| `code` | TypeScript diagnostic code |
+| `severity` | `"error"` or `"warning"` |
+| `node_id` | ID of the node that caused the error |
+| `parameter_index` | Index of the parameter that caused the error |
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+Prerequisites: [Bun](https://bun.sh) installed locally for building the entrypoint.
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+```bash
+cd gem
+bundle install
+bundle exec rake prepare_build  # downloads bun binaries + builds JS entrypoint
+bundle exec rake                # run tests and rubocop
+```
 
-## Contributing
+### Building platform gems
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/triangulum.
+```bash
+bundle exec rake package
+```
+
+This will download bun binaries (with SHA256 checksum verification) for all supported platforms and build a `.gem` file for each.
+
+## License
+
+See [LICENSE](../LICENSE).
