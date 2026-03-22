@@ -7,6 +7,12 @@
 /spec/reports/
 /tmp/
 
+# bun binaries
+/exe/*/bun
+
+# built entrypoints
+/lib/triangulum/js/
+
 # intellij
 /.idea/
 *.iml

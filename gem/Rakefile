@@ -2,6 +2,9 @@
 
 require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
+require 'rubygems/package_task'
+require 'open-uri'
+require 'digest'
 
 RSpec::Core::RakeTask.new(:spec)
 
@@ -9,4 +12,91 @@ require 'rubocop/rake_task'
 
 RuboCop::RakeTask.new
 
-task default: %i[spec rubocop]
+task default: %i[prepare_build spec rubocop]
+
+require_relative 'lib/triangulum/bun'
+
+TRIANGULUM_GEMSPEC = Bundler.load_gemspec('triangulum.gemspec')
+
+task prepare_build: %i[download build:entrypoints]
+
+task package: %i[clobber prepare_build]
+
+desc 'Clean downloaded bun binaries'
+task 'clobber:bun' do
+  Triangulum::Bun::NATIVE_PLATFORMS.each_key do |platform|
+    bun_path = File.join('exe', platform, 'bun')
+    rm bun_path if File.exist?(bun_path)
+  end
+end
+
+task clobber: %i[clobber:bun]
+
+exepaths = []
+
+Triangulum::Bun::NATIVE_PLATFORMS.each do |platform, (zip_filename, expected_checksum)|
+  TRIANGULUM_GEMSPEC.dup.tap do |gemspec|
+    exedir = File.join('exe', platform)
+    exepath = File.join(exedir, 'bun')
+
+    exepaths << exepath
+
+    gemspec.platform = platform
+    gemspec.files += [exepath]
+
+    gem_path = Gem::PackageTask.new(gemspec).define
+    desc "Build the #{platform} gem"
+    task "gem:#{platform}" => [gem_path]
+
+    directory exedir
+    file exepath => [exedir] do
+      url = Triangulum::Bun.download_url(zip_filename)
+      warn "Downloading #{exepath} from #{url} ..."
+
+      URI.open(url) do |remote| # rubocop:disable Security/Open
+        zip_data = remote.read
+
+        actual_checksum = Digest::SHA256.hexdigest(zip_data)
+        unless actual_checksum == expected_checksum
+          raise "Checksum mismatch for #{zip_filename}: expected #{expected_checksum}, got #{actual_checksum}"
+        end
+
+        # Bun zips contain a directory with the binary inside
+        require 'zip'
+        Zip::File.open_buffer(zip_data) do |zip|
+          bun_entry = zip.find { |e| File.basename(e.name) == 'bun' }
+          raise "bun binary not found in #{zip_filename}" unless bun_entry
+
+          File.binwrite(exepath, bun_entry.get_input_stream.read)
+        end
+      end
+
+      FileUtils.chmod(0o755, exepath, verbose: true)
+    end
+  end
+end
+
+desc 'Download all bun binaries'
+task download: exepaths
+
+desc 'Bundle the TypeScript entrypoints into single JS files'
+task 'build:entrypoints' do
+  rm_rf 'lib/triangulum/js'
+  directory 'lib/triangulum/js'
+
+  entrypoints = %w[single-validation]
+
+  entrypoints.each do |entrypoint|
+    entrypoint_src = File.expand_path("../entrypoint/#{entrypoint}.ts", __dir__)
+    entrypoint_dst = File.expand_path("lib/triangulum/js/#{entrypoint}.js", __dir__)
+
+    sh 'bun', 'build', entrypoint_src, '--outfile', entrypoint_dst, '--target', 'bun'
+  end
+end
+
+desc 'Push all platform gems to RubyGems'
+task 'push:all' do
+  Dir['pkg/*.gem'].each do |gem_file|
+    sh 'gem', 'push', gem_file
+  end
+end
