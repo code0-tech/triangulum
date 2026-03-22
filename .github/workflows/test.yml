@@ -19,7 +19,7 @@ jobs:
 
   ruby:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: ruby ${{ matrix.ruby }}
     strategy:
       matrix:
         ruby:

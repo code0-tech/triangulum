@@ -7,8 +7,11 @@ module Triangulum
     class TriangulumFailed < Triangulum::Error
     end
 
-    Result = Struct.new(:valid?, :return_type, :diagnostics)
-    Diagnostic = Struct.new(:message, :code, :severity, :node_id, :parameter_index)
+    class BunNotFound < Triangulum::Error
+    end
+
+    Result = Struct.new(:valid?, :return_type, :diagnostics, keyword_init: true)
+    Diagnostic = Struct.new(:message, :code, :severity, :node_id, :parameter_index, keyword_init: true)
 
     ENTRYPOINT = File.expand_path('js/single-validation.js', __dir__)
     BUN_EXE = Dir.glob(File.expand_path('../../exe/*/bun', __dir__)).find do |path|
@@ -35,6 +38,8 @@ module Triangulum
     private
 
     def run_ts_triangulum(input)
+      raise BunNotFound, "No bundled bun binary found for #{Gem::Platform.local}" if BUN_EXE.nil?
+
       stdout_s, stderr_s, status = Open3.capture3(
         BUN_EXE, 'run', ENTRYPOINT,
         stdin_data: input
@@ -70,15 +75,15 @@ module Triangulum
       json = JSON.parse(output, symbolize_names: true)
 
       Result.new(
-        json[:isValid],
-        json[:returnType],
-        json[:diagnostics].map do |diagnostic|
+        valid?: json[:isValid],
+        return_type: json[:returnType],
+        diagnostics: json[:diagnostics].map do |diagnostic|
           Diagnostic.new(
-            diagnostic[:message],
-            diagnostic[:code],
-            diagnostic[:severity],
-            diagnostic[:nodeId],
-            diagnostic[:parameterIndex]
+            message: diagnostic[:message],
+            code: diagnostic[:code],
+            severity: diagnostic[:severity],
+            node_id: diagnostic[:nodeId],
+            parameter_index: diagnostic[:parameterIndex]
           )
         end
       )

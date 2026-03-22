@@ -19,8 +19,6 @@ Gem::Specification.new do |spec|
 
   # Specify which files should be added to the gem when it is released.
   spec.files = Dir.glob('lib/**/*', base: __dir__).select { |f| File.file?(File.join(__dir__, f)) } + ['README.md']
-  spec.bindir = 'exe'
-  spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ['lib']
 
   spec.add_dependency 'base64', '~> 0.3'
