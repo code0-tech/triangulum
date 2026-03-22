@@ -2,6 +2,10 @@ PATH
   remote: .
   specs:
     triangulum (0.0.0)
+      base64 (~> 0.3)
+      json (~> 2.19)
+      open3 (~> 0.2)
+      tucana (~> 0.0, >= 0.0.62)
 
 GEM
   remote: https://rubygems.org/
@@ -9,10 +13,19 @@ GEM
     addressable (2.8.9)
       public_suffix (>= 2.0.2, < 8.0)
     ast (2.4.3)
+    base64 (0.3.0)
     bigdecimal (4.0.1)
     date (3.5.1)
     diff-lcs (1.6.2)
     erb (6.0.2)
+    google-protobuf (4.34.1-x86_64-linux-gnu)
+      bigdecimal
+      rake (~> 13.3)
+    googleapis-common-protos-types (1.22.0)
+      google-protobuf (~> 4.26)
+    grpc (1.78.1-x86_64-linux-gnu)
+      google-protobuf (>= 3.25, < 5.0)
+      googleapis-common-protos-types (~> 1.0)
     io-console (0.8.2)
     irb (1.17.0)
       pp (>= 0.6.0)
@@ -27,6 +40,7 @@ GEM
     lint_roller (1.1.0)
     mcp (0.8.0)
       json-schema (>= 4.1)
+    open3 (0.2.1)
     parallel (1.27.0)
     parser (3.3.10.2)
       ast (~> 2.4.1)
@@ -84,23 +98,26 @@ GEM
       lint_roller (~> 1.1)
       rubocop (~> 1.72, >= 1.72.1)
     ruby-progressbar (1.13.0)
+    rubyzip (2.4.1)
     stringio (3.2.0)
     tsort (0.2.0)
+    tucana (0.0.62)
+      grpc (~> 1.64)
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)
     unicode-emoji (4.2.0)
 
 PLATFORMS
-  ruby
   x86_64-linux
 
 DEPENDENCIES
-  irb
+  irb (~> 1.17)
   rake (~> 13.0)
   rspec (~> 3.0)
   rubocop (~> 1.21)
   rubocop-rake (~> 0.7.0)
   rubocop-rspec (~> 3.0)
+  rubyzip (~> 2.3)
   triangulum!
 
 BUNDLED WITH
