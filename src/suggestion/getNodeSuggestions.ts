@@ -15,7 +15,7 @@ export const getNodeSuggestions = (
 
     if (type && functions) {
         function getGenericsCount(input: string): number {
-            const match = input.match(/<([^>]+)>/);
+            const match = input.trim().match(/^<([^>]+)>/);
             if (!match) return 0;
             return match[1].split(',').map(s => s.trim()).filter(Boolean).length;
         }
@@ -30,7 +30,8 @@ export const getNodeSuggestions = (
             `;
         }).join("\n")}
         ${functions?.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
-    `;
+        `;
+
 
         const fileName = "index.ts";
         const host = createCompilerHost(fileName, sourceCode);
@@ -54,7 +55,7 @@ export const getNodeSuggestions = (
     }
 
 
-    return functionToSuggest?.map(f=> {
+    return functionToSuggest?.map(f => {
         return {
             __typename: "NodeFunction",
             id: `gid://sagittarius/NodeFunction/1`,
