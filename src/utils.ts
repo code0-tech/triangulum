@@ -1,7 +1,7 @@
 // Utility functions for node validation
 import {
     DataType,
-    Flow,
+    Flow, FunctionDefinition,
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
@@ -10,6 +10,8 @@ import {
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
+import {getTypesFromNode} from "./extraction/getTypesFromNode";
+import {DataTypeVariant, getTypeVariant} from "./extraction/getTypeVariant";
 
 /**
  * Result of a node or flow validation.
@@ -43,6 +45,7 @@ export const MINIMAL_LIB = `
     interface NewableFunction extends Function {}
     interface IArguments { }
     interface RegExp { }
+    type Record<K extends keyof any, T> = { [P in K]: T; };
     type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 `;
 
@@ -81,7 +84,7 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[]): string {
         .join("\n");
 
     const typeAliasDeclarations = dataTypes?.map(dt =>
-        `type ${dt.identifier}${dt.genericKeys ? `<${dt.genericKeys.join(",")}>` : ""} = ${dt.type};`
+        `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 
     return `${genericDeclarations}\n${typeAliasDeclarations}`;
@@ -119,145 +122,203 @@ function findNodeById(flow?: Flow, nodeId?: string): NodeFunction | undefined {
 }
 
 /**
- * Extracts and returns the TypeScript code representation for a NodeParameter.
+ * Sanitizes an ID for use as a TypeScript variable name.
  */
-export function getParameterCode(
-    param?: NodeParameter,
+export const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
+
+/**
+ * Generates TypeScript source code for a flow, suitable for validation and type inference.
+ */
+export function generateFlowSourceCode(
     flow?: Flow,
-    getNodeValidation?: (flow?: Flow, node?: NodeFunction) => ValidationResult
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[],
+    isForInference: boolean = false
 ): string {
-    const value = param?.value;
-    if (!value) return 'undefined';
+    const nodes = flow?.nodes?.nodes || [];
+    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
+    const visited = new Set<string>();
 
-    if (value.__typename === "ReferenceValue") {
-        const refValue = value as ReferenceValue;
-        const refNode = findNodeById(flow, refValue.nodeFunctionId!);
+    const generateNodeCall = (nodeId: string, parentNodeId?: string, parentParamIndex?: number): string => {
+        const node = nodes.find(n => n?.id === nodeId);
+        if (!node || !node.functionDefinition?.identifier) return "undefined";
 
-        if (!refNode) return 'undefined';
+        const params = (node.parameters?.nodes as NodeParameter[]) || [];
+        const args = params.map((p, paramIdx) => {
+            const val = p.value;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            if (val.__typename === "ReferenceValue") {
+                const ref = val as ReferenceValue;
+                if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+                let refCode = ref.inputIndex !== undefined
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
+                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
+                ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
+                return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
+            }
+            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${paramIdx} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "NodeFunctionIdWrapper") {
+                const wrapper = val as NodeFunctionIdWrapper;
+                return generateNodeCall(wrapper.id!, nodeId, paramIdx);
+            }
+            return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+        }).join(", ");
 
-        let refType = getNodeValidation?.(flow, refNode).returnType;
+        const funcName = `fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
+        const call = `${funcName}(${args})`;
+        // Add position comment only for nested calls (when called from within an argument)
+        if (parentNodeId !== undefined && parentParamIndex !== undefined) {
+            return `${call}`;
+        }
+        return call;
+    };
 
-        if (refValue.referencePath && refValue.referencePath.length > 0) {
-            let refVal: any = undefined;
-            const nodes = refNode.parameters?.nodes;
-            if (nodes && nodes.length > 0) {
-                const firstParam = nodes[0];
-                if (firstParam?.value?.__typename === "LiteralValue") {
-                    refVal = firstParam.value.value;
+    const generateNodeCode = (nodeId: string, indent: string = ""): string => {
+        if (visited.has(nodeId)) return "";
+        const node = nodes.find(n => n?.id === nodeId);
+        if (!node || !node.functionDefinition) return "";
+        visited.add(nodeId);
+
+        const funcDef = funcMap.get(node.functionDefinition.identifier);
+        if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
+
+        // Only use getTypesFromNode if we are NOT already doing inference to avoid infinite recursion
+        let nodeTypes: any = { parameters: [] };
+        if (!isForInference) {
+            nodeTypes = getTypesFromNode(node, functions, dataTypes);
+        }
+
+        const params = (node.parameters?.nodes as NodeParameter[]) || [];
+        const args = params.map((p, index) => {
+            const val = p.value;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
+            if (val.__typename === "ReferenceValue") {
+                const ref = val as ReferenceValue;
+                if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
+                let refCode = ref.inputIndex !== undefined
+                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
+                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
+                ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
+                return `/* @pos ${nodeId} ${index} */ ${refCode}`;
+            }
+            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "NodeFunctionIdWrapper") {
+                const wrapper = val as NodeFunctionIdWrapper;
+
+                if (!isForInference) {
+                    const expectedType = nodeTypes.parameters[index];
+                    const isFunctionType = expectedType ? getTypeVariant(expectedType, dataTypes) === DataTypeVariant.NODE : false;
+
+                    if (isFunctionType) {
+                        const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
+                        const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
+                        return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
+                    } else {
+                        const nestedCall = generateNodeCall(wrapper.id!, nodeId, index);
+                        return `/* @pos ${nodeId} ${index} */ ${nestedCall}`;
+                    }
+                } else {
+                    // During inference, we just need something valid.
+                    // Defaulting to a lambda is safer for type inference of the parent node's parameters.
+                    const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
+                    const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
+                    return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
                 }
             }
-            refType = getTypeFromReferencePath(refVal, refValue.referencePath);
-        }
-        return `({} as ${refType})`;
-    }
+            return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
+        }).join(", ");
 
-    if (value.__typename === "NodeFunctionIdWrapper") {
-        const wrapperId = (value as NodeFunctionIdWrapper).id;
-        const refNode = findNodeById(flow, wrapperId!);
+        const varName = `node_${sanitizeId(node.id!)}`;
+        const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
+        const needsAnyCast = args.includes("undefined");
+        const isReturnNode = node.functionDefinition.identifier === "std::control::return";
+        let code = `${indent}${isReturnNode ? "return " : `const ${varName} = `}${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
+        if (node.nextNodeId) code += generateNodeCode(node.nextNodeId, indent);
+        return code;
+    };
 
-        if (!refNode) return '(() => undefined)';
+    const typeDefs = getSharedTypeDeclarations(dataTypes);
+    const funcDeclarations = functions?.map(f => `declare function fn_${f.identifier?.replace(/::/g, '_')}${f.signature}`).join('\n');
 
-        const findReturnNode = (node: NodeFunction): NodeFunction | undefined => {
-            if (node.functionDefinition?.identifier === "std::control::return") {
-                return node;
-            }
+    const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));
+    const subTreeIds = new Set<string>();
+    nodes.forEach(n => n?.parameters?.nodes?.forEach((p: any) => {
+        if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
+    }));
 
-            const nextNode = node.nextNodeId ? findNodeById(flow, node.nextNodeId) : undefined;
-            return nextNode ? findReturnNode(nextNode) : undefined;
-        };
+    const executionCode = nodes
+        .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
+        .map(n => generateNodeCode(n!.id!))
+        .join('\n');
 
-        const returnNode = findReturnNode(refNode);
-        if (!returnNode) return '(() => undefined)';
+    return `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
+}
 
-        const validation = getNodeValidation?.(flow, returnNode);
-        return `(() => ({} as ${validation?.returnType}))`;
-    }
-
-    if (value.__typename === "LiteralValue") {
-        return JSON.stringify(value.value);
-    }
-
-    return 'undefined';
+export interface InferredTypes {
+    nodes: Map<string, string>;
+    parameters: Map<string, string[]>;
 }
 
 /**
- * Finds the parent node that initiated this sub-tree via a NodeFunctionIdWrapper.
+ * Infers types for all nodes and parameters in a flow using the TypeScript compiler.
  */
-const getParentScopeNode = (flow?: Flow, currentNodeId?: string): NodeFunction | undefined => {
-    const nodes = flow?.nodes?.nodes;
-    if (!nodes) return undefined;
-
-    return nodes.find(n =>
-        n?.parameters?.nodes?.some(p =>
-            p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id === currentNodeId
-        )
-    )!;
-};
-
-/**
- * Checks if a target node is reachable (executed before) the current node.
- */
-const isNodeReachable = (flow?: Flow, currentNode?: NodeFunction, targetId?: string, visited = new Set<string>()): boolean => {
-    const currentId = currentNode?.id;
-    if (!currentId || visited.has(currentId)) return false;
-    visited.add(currentId);
-
-    // Scenario 1: Is the node a predecessor in the same execution chain?
-    const isPredecessor = (startId: string): boolean => {
-        const pred = flow?.nodes?.nodes?.find(n => n?.nextNodeId === startId);
-        if (!pred) return false;
-        if (pred.id === targetId) return true;
-        return isPredecessor(pred.id!);
-    };
-
-    if (isPredecessor(currentId)) return true;
-
-    // Scenario 2: Nested scope check (e.g., inside a forEach loop)
-    const parentNode = getParentScopeNode(flow, currentId);
-    if (parentNode) {
-        if (parentNode.id === targetId) return true;
-        return isNodeReachable(flow, parentNode, targetId, visited);
-    }
-
-    return false;
-};
-
-/**
- * Validates if a reference is accessible from the current node's scope.
- */
-export const validateReference = (
+export function getInferredTypesFromFlow(
     flow?: Flow,
-    currentNode?: NodeFunction,
-    ref?: ReferenceValue
-): { isValid: boolean, error?: string } => {
-    // Scenario 3: Global flow input
-    if (!ref?.nodeFunctionId) {
-        return {isValid: true};
-    }
+    functions?: FunctionDefinition[],
+    dataTypes?: DataType[]
+): InferredTypes {
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, true);
 
-    // Scenario 2: Parameter input reference (e.g., "item" in CONSUMER)
-    if (ref.parameterIndex !== undefined && ref.inputIndex !== undefined) {
-        if (currentNode?.id === ref.nodeFunctionId) return {isValid: true};
+    const fileName = "index.ts";
+    const host = createCompilerHost(fileName, sourceCode);
+    const sourceFile = host.getSourceFile(fileName)!;
+    const program = host.languageService.getProgram()!;
+    const checker = program.getTypeChecker();
 
-        let tempParent = getParentScopeNode(flow, currentNode?.id!);
-        while (tempParent) {
-            if (tempParent.id === ref.nodeFunctionId) return {isValid: true};
-            tempParent = getParentScopeNode(flow, tempParent.id!);
+    const nodeTypes = new Map<string, string>();
+    const parameterTypes = new Map<string, string[]>();
+    const nodeIdToNode = new Map<string, NodeFunction>();
+
+    // Build a map of nodes for later lookup
+    const nodes = flow?.nodes?.nodes || [];
+    nodes.forEach(node => {
+        if (node?.id) {
+            nodeIdToNode.set(sanitizeId(node.id), node);
         }
+    });
 
-        return {
-            isValid: false,
-            error: `Invalid input reference: Node ${currentNode?.id} is not in the scope of Node ${ref.nodeFunctionId}.`
-        };
-    }
+    const visit = (n: ts.Node) => {
+        if (ts.isVariableDeclaration(n) && n.name.getText().startsWith("node_")) {
+            const nodeId = n.name.getText().replace("node_", "");
+            const type = checker.getTypeAtLocation(n);
+            nodeTypes.set(nodeId, checker.typeToString(type, n, ts.TypeFormatFlags.NoTruncation));
 
-    // Scenario 1: Ordinary return value reference
-    if (!isNodeReachable(flow, currentNode, ref.nodeFunctionId)) {
-        return {
-            isValid: false,
-            error: `Node ${ref.nodeFunctionId} has not been executed yet or is not visible in this scope.`
-        };
-    }
+            if (n.initializer && ts.isCallExpression(n.initializer)) {
+                const sig = checker.getResolvedSignature(n.initializer);
+                if (sig) {
+                    // getResolvedSignature returns the signature with generics resolved based on actual arguments
+                    const resolvedParams = sig.getParameters().map((p) => {
+                        const t = checker.getTypeOfSymbolAtLocation(p, n.initializer!);
+                        return checker.typeToString(t, n.initializer, ts.TypeFormatFlags.NoTruncation);
+                    });
+                    parameterTypes.set(nodeId, resolvedParams);
+                }
+            }
+        }
+        if (ts.isReturnStatement(n) && n.expression && ts.isCallExpression(n.expression)) {
+            // Special handling for std::control::return which doesn't have a node_ variable
+            const call = n.expression;
+            const sig = checker.getResolvedSignature(call);
+            if (sig) {
+                // We need to find the node ID from the context or a comment if possible,
+                // but since generateFlowSourceCode doesn't currently label them easily for return,
+                // we might need a small adjustment if we need types for return nodes specifically.
+            }
+        }
+        ts.forEachChild(n, visit);
+    };
+    visit(sourceFile);
 
-    return {isValid: true};
-};
+    return { nodes: nodeTypes, parameters: parameterTypes };
+}
+

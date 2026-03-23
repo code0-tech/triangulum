@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getTypeVariant, DataTypeVariant } from '../src/extraction/getTypeVariant';
-import { DATA_TYPES } from "./data";
+import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
+import {getTypesFromNode} from "../src";
 
 describe('getTypeVariant', () => {
     it('sollte PRIMITIVE für einfache Typen zurückgeben', () => {
@@ -40,7 +41,16 @@ describe('getTypeVariant', () => {
 
     it('sollte NODE für Funktionstypen wie PREDICATE zurückgeben', () => {
         // In data.ts ist CONSUMER als (item:R) => void definiert
-        expect(getTypeVariant("PREDICATE<NUMBER, BOOLEAN>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+        expect(getTypeVariant("PREDICATE<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
+    });
+
+    it("Check if", () => {
+        const types = getTypesFromNode({
+            functionDefinition: {
+                identifier: "std::list::for_each"
+            }
+        }, FUNCTION_SIGNATURES, DATA_TYPES)
+        expect(getTypeVariant(types.parameters[1], DATA_TYPES)).toBe(DataTypeVariant.NODE);
     });
 });
 

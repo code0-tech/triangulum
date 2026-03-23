@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getValueSuggestions } from '../src/suggestion/getValueSuggestions';
+import {DATA_TYPES} from "./data";
 
 describe('getLanguageServiceSuggestions', () => {
 
@@ -75,5 +76,19 @@ describe('getLanguageServiceSuggestions', () => {
 
         expect(Array.isArray(values)).toBe(true);
         expect(values.length).toBe(0);
+    });
+
+    it('should suggest values from a type alias with dataTypes parameter', () => {
+        const type = 'HTTP_METHOD';
+        const suggestions = getValueSuggestions(type, DATA_TYPES as any);
+        const values = suggestions.map(s => s.value);
+
+        expect(values).toContain('GET');
+        expect(values).toContain('POST');
+        expect(values).toContain('DELETE');
+        expect(values).toContain('PUT');
+        expect(values).toContain('PATCH');
+        expect(values).toContain('HEAD');
+        expect(suggestions.length).toBe(6);
     });
 });

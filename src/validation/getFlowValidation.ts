@@ -1,16 +1,6 @@
 import {flattenDiagnosticMessageText} from "typescript";
-import {
-    DataType,
-    Flow,
-    FunctionDefinition,
-    NodeFunction,
-    NodeFunctionIdWrapper,
-    NodeParameter,
-    ReferenceValue
-} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
-
-const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
+import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {createCompilerHost, generateFlowSourceCode, ValidationResult} from "../utils";
 
 /**
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
@@ -20,91 +10,9 @@ export const getFlowValidation = (
     functions?: FunctionDefinition[],
     dataTypes?: DataType[]
 ): ValidationResult => {
-    const visited = new Set<string>();
-    const nodes = flow?.nodes?.nodes || [];
 
-    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
 
-    /**
-     * Recursive function to generate TypeScript code for a node and its execution path.
-     */
-    const generateNodeCode = (
-        nodeId: string,
-        indent: string = ""
-    ): string => {
-        if (visited.has(nodeId)) return "";
-
-        const node = nodes.find(n => n?.id === nodeId);
-        if (!node || !node.functionDefinition) return "";
-
-        visited.add(nodeId);
-
-        const funcDef = funcMap.get(node.functionDefinition?.identifier);
-        if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
-
-        const params = node.parameters?.nodes as NodeParameter[] || [];
-
-        const args = params.map((p, index) => {
-            const val = p.value;
-            if (!val) return "undefined";
-
-            if (val.__typename === "ReferenceValue") {
-                const ref = val as ReferenceValue;
-                if (!ref.nodeFunctionId) return "undefined";
-
-                let refCode = ref.parameterIndex !== undefined
-                    ? `/* @pos ${nodeId} ${index} */ p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}`
-                    : `/* @pos ${nodeId} ${index} */ node_${sanitizeId(ref.nodeFunctionId)}`;
-
-                ref.referencePath?.forEach(pathObj => {
-                    refCode += `?.${pathObj.path}`;
-                });
-
-                return refCode;
-            }
-
-            if (val.__typename === "LiteralValue") {
-                return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
-            }
-
-            if (val.__typename === "NodeFunctionIdWrapper") {
-                const wrapper = val as NodeFunctionIdWrapper;
-                const lambdaArgName = `p_${sanitizeId(node.id!)}_${index}`;
-                const subTreeCode = generateNodeCode(wrapper.id!, indent + "  ");
-                return `/* @pos ${nodeId} ${index} */ (${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
-            }
-
-            return "undefined";
-        }).join(", ");
-
-        const varName = `node_${sanitizeId(node.id!)}`;
-        const funcName = `fn_${funcDef.identifier?.replace(/::/g, '_')}`;
-
-        // Add 'as any' cast only if undefined arguments are passed to a generic function to avoid false-positive errors.
-        const needsAnyCast = args.includes("undefined");
-        let code = `${indent}const ${varName} = ${funcName}(${args})${needsAnyCast ? " as any" : ""} ;\n`;
-
-        if (node.nextNodeId) {
-            code += generateNodeCode(node.nextNodeId, indent);
-        }
-
-        return code;
-    };
-
-    // 1. Generate Declarations
-    const typeDefs = getSharedTypeDeclarations(dataTypes);
-
-    const funcDeclarations = functions?.map(funcDef => {
-        return `declare function fn_${funcDef.identifier?.replace(/::/g, '_')}${funcDef.signature}`;
-    }).join('\n');
-
-    // 2. Execution Code Generation
-    const executionCode = nodes
-        .map(n => n?.id ? generateNodeCode(n.id) : "")
-        .filter(line => line !== "")
-        .join('\n');
-
-    const sourceCode = `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes);
 
     // 3. Virtual TypeScript Compilation
     const fileName = "index.ts";
@@ -118,20 +26,44 @@ export const getFlowValidation = (
         const message = flattenDiagnosticMessageText(d.messageText, "\n");
         // "Argument of type 'undefined' is not assignable to parameter of type 'number'."
         // We ignore this in flow validation too because we might generate code for incomplete flows.
-        const isMockError = message.includes("Argument of type 'undefined'") || message.includes("not assignable to type 'undefined'");
-
-        if (isMockError) return null;
 
         let nodeId: NodeFunction['id'] | undefined;
         let parameterIndex: number | undefined;
 
         if (d.start !== undefined) {
             const fullText = sourceFile.getFullText();
-            const textBefore = fullText.substring(0, d.start);
-            const posMatch = textBefore.match(/\/\* @pos ([^ ]+) (\d+) \*\/\s*$/);
-            if (posMatch) {
-                nodeId = posMatch[1] as NodeFunction['id'];
-                parameterIndex = parseInt(posMatch[2], 10);
+
+            // Search for position marker comment near the error location
+            // The error position is typically the start of the problematic token (e.g., "undefined")
+            const searchStart = Math.max(0, d.start - 300);
+            const searchEnd = Math.min(fullText.length, d.start);
+            const searchText = fullText.substring(searchStart, searchEnd);
+
+            // Find all @pos comments in the search range
+            const posRegex = /\/\* @pos ([^ ]+) (\d+) \*\//g;
+            let match;
+            let closestMatch: RegExpExecArray | null = null;
+            let closestCommentEnd = -1;
+
+            // Collect all matches and find the one whose end is closest to d.start
+            // We want the comment that is immediately before the error
+            while ((match = posRegex.exec(searchText)) !== null) {
+                const commentStart = searchStart + match.index;
+                const commentEnd = commentStart + match[0].length;
+
+                // Only consider comments that end before or very close to the error start
+                // This ensures we get the @pos comment that directly precedes the problematic argument
+                if (commentEnd <= d.start!) {
+                    if (commentEnd > closestCommentEnd) {
+                        closestCommentEnd = commentEnd;
+                        closestMatch = match;
+                    }
+                }
+            }
+
+            if (closestMatch) {
+                nodeId = closestMatch[1] as NodeFunction['id'];
+                parameterIndex = parseInt(closestMatch[2], 10);
             }
         }
 

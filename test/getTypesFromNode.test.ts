@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {getTypesFromNode} from '../src/extraction/getTypesFromNode';
 import {FUNCTION_SIGNATURES, DATA_TYPES} from "./data";
+import {NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 
 describe('getTypesFromNode', () => {
     it('should resolve types for std::list::at with string array', () => {
@@ -55,7 +56,7 @@ describe('getTypesFromNode', () => {
     it('should resolve types for std::math::add', () => {
         const node = {
             functionDefinition: {
-                identifier: "std::math::add" as any
+                identifier: "std::number::add" as any
             },
             parameters: {
                 nodes: [{
@@ -87,6 +88,57 @@ describe('getTypesFromNode', () => {
 
         expect(result.returnType).toBe("any");
         expect(result.parameters).toEqual([]);
+    });
+
+    it('should return std::object::get', () => {
+        const node: NodeFunction = {
+            functionDefinition: {
+                identifier: "std::object::get"
+            },
+            parameters: {
+                nodes: [{
+                    value: {
+                        __typename: "LiteralValue",
+                        value: { id: 1, name: "Test" }
+                    }
+                }, {
+                    value: null
+                }]
+            }
+        };
+        const result = getTypesFromNode(node, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        console.log(result)
+
+        expect(result.returnType).toBe("string | number");
+        expect(result.parameters[1]).toEqual('"id" | "name"');
+    });
+
+    it('should return std::object::get with all values', () => {
+        const node: NodeFunction = {
+            functionDefinition: {
+                identifier: "std::object::get"
+            },
+            parameters: {
+                nodes: [{
+                    value: {
+                        __typename: "LiteralValue",
+                        value: { id: 1, name: "Test" }
+                    }
+                }, {
+                    value: {
+                        __typename: "LiteralValue",
+                        value: "id"
+                    }
+                }]
+            }
+        };
+        const result = getTypesFromNode(node, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        console.log(result)
+
+        expect(result.returnType).toBe("number");
+        expect(result.parameters[1]).toEqual('"id" | "name"');
     });
 });
 

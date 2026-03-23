@@ -1,7 +1,5 @@
-import ts from "typescript";
-import {DataType, Flow, FunctionDefinition, NodeFunction, NodeParameter} from "@code0-tech/sagittarius-graphql-types";
-import {createCompilerHost, getParameterCode, getSharedTypeDeclarations,} from "../utils";
-import {getNodeValidation} from "../validation/getNodeValidation"; // Wieder hinzugefügt
+import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {getInferredTypesFromFlow, sanitizeId} from "../utils";
 
 export interface NodeTypes {
     parameters: string[];
@@ -16,73 +14,71 @@ export const getTypesFromNode = (
     functions?: FunctionDefinition[],
     dataTypes?: DataType[]
 ): NodeTypes => {
-    const funcMap = new Map(functions?.map(f => [f.identifier, f]));
-    const funcDef = funcMap.get(node?.functionDefinition?.identifier);
+    if (!node) return { parameters: [], returnType: "any" };
 
-    if (!funcDef) {
-        return {
-            parameters: [],
-            returnType: "any",
-        };
-    }
+    const nodeId = node.id || "temp_node_id";
+
+    // To ensure generics and triangulated types are resolved without hardcoding,
+    // we must ensure the compiler has enough context.
+    // If some parameters are missing values, the compiler might return 'any'.
+    // We create a version of the node where missing values are filled with a marker
+    // that the TypeScript engine can use to infer the intended type from the signature.
+
+    const nodeWithDefaults = {
+        ...node,
+        id: nodeId,
+        parameters: {
+            ...node.parameters,
+            nodes: node.parameters?.nodes?.map(p => {
+                if (p?.value) return p;
+                // If value is missing, we still want the compiler to see the argument position
+                return { ...p, value: null };
+            }) || []
+        }
+    };
+
+    // Create a version of the node with primitive literals removed
+    // This allows inferring the "expected" type of parameters (e.g. keyof T)
+    // rather than the specific type of the argument provided (e.g. "id").
+    const nodeIdParams = nodeId + "_params";
+    const nodeForParams = {
+        ...nodeWithDefaults,
+        id: nodeIdParams,
+        parameters: {
+            ...nodeWithDefaults.parameters,
+            nodes: nodeWithDefaults.parameters.nodes.map(p => {
+                // If it's a primitive literal, remove it to allow wider type inference for parameters
+                if (p.value?.__typename === "LiteralValue" && p.value.value !== null && typeof p.value.value !== 'object') {
+                    return { ...p, value: null };
+                }
+                return p;
+            })
+        }
+    };
 
     const mockFlow: Flow = {
         id: "gid://sagittarius/Flow/0" as any,
-        nodes: {__typename: "NodeFunctionConnection", nodes: [node]}
+        nodes: { __typename: "NodeFunctionConnection", nodes: [nodeWithDefaults, nodeForParams] }
     } as Flow;
 
-    const params = (node?.parameters?.nodes as NodeParameter[]) || [];
-    const paramCodes = params.map(param => getParameterCode(param, mockFlow, (f, n) => getNodeValidation(f, n, functions, dataTypes)));
+    const inferred = getInferredTypesFromFlow(mockFlow, functions, dataTypes);
+    const sId = sanitizeId(nodeId);
+    const sIdParams = sanitizeId(nodeIdParams);
 
-    const funcCallArgs = paramCodes.map(code => code === 'undefined' ? '({} as any)' : code).join(", ");
+    const directParams = inferred.parameters.get(sId) || [];
+    const widenedParams = inferred.parameters.get(sIdParams) || [];
 
-    const signature = funcDef.signature;
-    const sourceCode = `
-        ${getSharedTypeDeclarations(dataTypes)}
-        declare function testFunc${signature};
-        const result = testFunc(${funcCallArgs});
-    `;
-
-    const fileName = "index.ts";
-    const host = createCompilerHost(fileName, sourceCode);
-    const sourceFile = host.getSourceFile(fileName)!;
-    const program = host.languageService.getProgram()!;
-    const checker = program.getTypeChecker();
-
-    let inferredReturnType = "any";
-    let inferredParameterTypes: string[] = [];
-
-    const visitor = (n: ts.Node) => {
-        if (ts.isVariableDeclaration(n) && n.name.getText() === "result") {
-            const resultType = checker.getTypeAtLocation(n);
-            inferredReturnType = checker.typeToString(
-                resultType,
-                n,
-                ts.TypeFormatFlags.NoTruncation
-            );
-
-            if (ts.isCallExpression(n.initializer!)) {
-                const callExpr = n.initializer;
-                const signature = checker.getResolvedSignature(callExpr);
-                if (signature) {
-                    inferredParameterTypes = signature.getParameters().map(p => {
-                        const type = checker.getTypeOfSymbolAtLocation(p, callExpr);
-                        return checker.typeToString(
-                            type,
-                            callExpr,
-                            ts.TypeFormatFlags.NoTruncation
-                        );
-                    });
-                }
-            }
+    // Merge parameters: prefer widened types unless they failed inference (any/unknown)
+    const parameters = directParams.map((p, i) => {
+        const wide = widenedParams[i];
+        if (wide && wide !== "any" && wide !== "unknown") {
+            return wide;
         }
-        ts.forEachChild(n, visitor);
-    };
-
-    visitor(sourceFile);
+        return p;
+    });
 
     return {
-        parameters: inferredParameterTypes,
-        returnType: inferredReturnType,
+        parameters,
+        returnType: inferred.nodes.get(sId) || "any",
     };
 };

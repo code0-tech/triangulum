@@ -62,10 +62,10 @@ export const getValueFromType = (
 
         // 2. Handle Primitives and Literals
         if (flags & ts.TypeFlags.StringLiteral) return (t as ts.StringLiteralType).value;
-        if (flags & ts.TypeFlags.String) return "sample";
+        if (flags & ts.TypeFlags.String) return "";
 
         if (flags & ts.TypeFlags.NumberLiteral) return (t as ts.NumberLiteralType).value;
-        if (flags & ts.TypeFlags.Number) return 1;
+        if (flags & ts.TypeFlags.Number) return 0;
 
         if (flags & ts.TypeFlags.BooleanLiteral) return (t as any).intrinsicName === "true";
         if (flags & ts.TypeFlags.Boolean) return false;

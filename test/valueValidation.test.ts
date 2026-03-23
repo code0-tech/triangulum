@@ -55,8 +55,8 @@ describe('getValueValidation', () => {
             }, DATA_TYPES).isValid).toBe(false);
         });
 
-        it('sollte STRING (Alias) validieren', () => {
-            expect(getValueValidation('STRING', {
+        it('sollte TEXT (Alias) validieren', () => {
+            expect(getValueValidation('TEXT', {
                 __typename: 'LiteralValue',
                 value: 'Test'
             }, DATA_TYPES).isValid).toBe(true);
@@ -67,7 +67,7 @@ describe('getValueValidation', () => {
                 __typename: 'LiteralValue',
                 value: [1, 2, 3]
             }, DATA_TYPES).isValid).toBe(true);
-            expect(getValueValidation('LIST<STRING>', {
+            expect(getValueValidation('LIST<TEXT>', {
                 __typename: 'LiteralValue',
                 value: ['A', 'B']
             }, DATA_TYPES).isValid).toBe(true);

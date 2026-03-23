@@ -1,5 +1,6 @@
 import {DataType, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
+import {DataTypeVariant, getTypeVariant} from "../extraction/getTypeVariant";
 
 /**
  * Suggests NodeFunctions based on a given type and a list of available FunctionDefinitions.
@@ -13,9 +14,11 @@ export const getNodeSuggestions = (
 
     let functionToSuggest = functions
 
-    if (type && functions) {
+    const typeVariant = type ? getTypeVariant(type, dataTypes) : null;
+
+    if (type && functions && typeVariant !== DataTypeVariant.NODE) {
         function getGenericsCount(input: string): number {
-            const match = input.match(/<([^>]+)>/);
+            const match = input.trim().match(/^<([^>]+)>/);
             if (!match) return 0;
             return match[1].split(',').map(s => s.trim()).filter(Boolean).length;
         }
@@ -30,7 +33,8 @@ export const getNodeSuggestions = (
             `;
         }).join("\n")}
         ${functions?.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
-    `;
+        `;
+
 
         const fileName = "index.ts";
         const host = createCompilerHost(fileName, sourceCode);
@@ -54,7 +58,7 @@ export const getNodeSuggestions = (
     }
 
 
-    return functionToSuggest?.map(f=> {
+    return functionToSuggest?.map(f => {
         return {
             __typename: "NodeFunction",
             id: `gid://sagittarius/NodeFunction/1`,
