@@ -5,7 +5,7 @@ on:
       - 'main'
   pull_request:
 jobs:
-  test:
+  typescript:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -16,3 +16,40 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test
+
+  ruby:
+    runs-on: ubuntu-latest
+    name: ruby ${{ matrix.ruby }}
+    strategy:
+      matrix:
+        ruby:
+          - '3.4.7'
+    defaults:
+      run:
+        working-directory: gem
+
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".tool-versions"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+        working-directory: .
+      - run: npm run build
+        working-directory: .
+      - run: npm ci
+        working-directory: entrypoint
+      - name: Install gems
+        run: bundle install
+      - name: Run the default task
+        run: bundle exec rake
+      - name: Build all gems
+        run: bundle exec rake package

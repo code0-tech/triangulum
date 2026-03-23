@@ -1,0 +1,21 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+# bun binaries
+/exe/*/bun
+
+# built entrypoints
+/lib/triangulum/js/
+
+# intellij
+/.idea/
+*.iml
+
+# rspec failure tracking
+.rspec_status
