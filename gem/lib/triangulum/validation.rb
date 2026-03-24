@@ -19,6 +19,8 @@ module Triangulum
       Gem::Platform.match_gem?(platform, Gem::Platform.local.to_s)
     end
 
+    IS_RUBY_PLATFORM_GEM = Dir.glob(File.expand_path('../../exe/*/bun', __dir__)).empty?
+
     attr_reader :flow, :runtime_function_definitions, :data_types
 
     def initialize(flow, runtime_function_definitions, data_types)
@@ -38,10 +40,8 @@ module Triangulum
     private
 
     def run_ts_triangulum(input)
-      raise BunNotFound, "No bundled bun binary found for #{Gem::Platform.local}" if BUN_EXE.nil?
-
       stdout_s, stderr_s, status = Open3.capture3(
-        BUN_EXE, 'run', ENTRYPOINT,
+        bun, 'run', ENTRYPOINT,
         stdin_data: input
       )
 
@@ -87,6 +87,16 @@ module Triangulum
           )
         end
       )
+    end
+
+    def bun
+      if IS_RUBY_PLATFORM_GEM
+        'bun'
+      else
+        raise BunNotFound, "No bundled bun binary found for #{Gem::Platform.local}" if BUN_EXE.nil?
+
+        BUN_EXE
+      end
     end
   end
 end

@@ -19,6 +19,11 @@ exepaths = []
 
 TRIANGULUM_GEMSPEC = Bundler.load_gemspec('triangulum.gemspec')
 
+ruby_gem_path = Gem::PackageTask.new(TRIANGULUM_GEMSPEC).define
+
+desc 'Build the ruby (platform-independent) gem'
+task 'gem:ruby' => [ruby_gem_path]
+
 BUN_PLATFORMS.each do |platform, (zip_filename, expected_checksum)|
   TRIANGULUM_GEMSPEC.dup.tap do |gemspec|
     exedir = File.join('exe', platform)
