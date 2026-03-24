@@ -101,6 +101,7 @@ export const getValueFromType = (
     // However, if we return null from the function, result.value access fails.
     // So we return an object { value: null } if sample is null.
     return {
+        __typename: 'LiteralValue',
         value: sample
     };
 };
