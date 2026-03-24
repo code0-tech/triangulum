@@ -74,7 +74,8 @@ export const getValueFromType = (
         if (checker.isArrayType(t)) {
             const typeRef = t as ts.TypeReference;
             const elementType = typeRef.typeArguments?.[0] || checker.getAnyType();
-            return [generateSample(elementType, node, visited)];
+            const sample = generateSample(elementType, node, visited);
+            return sample === "null" ? [generateSample(elementType, node, visited)] : [];
         }
 
         // 4. Handle Objects / Interfaces

@@ -34,6 +34,11 @@ describe('getValueFromType', () => {
             const result = getValueFromType('LIST<LIST<NUMBER>>', DATA_TYPES);
             expect(result.value).toEqual([[0]]);
         });
+
+        it('sollte LIST Typen generieren', () => {
+            const result = getValueFromType('LIST<unknown>', DATA_TYPES);
+            expect(result.value).toEqual([]);
+        });
     });
 
     describe('Unions & Literals', () => {
