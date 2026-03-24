@@ -49,12 +49,7 @@ export const getTypeVariant = (
             ) {
                 discoveredVariant = DataTypeVariant.PRIMITIVE;
             } else if (type.isClassOrInterface() || (type.getFlags() & ts.TypeFlags.Object) !== 0) {
-                // Check if it's literally just a type alias to something else or a complex object
-                if (type.getProperties().length > 0) {
-                    discoveredVariant = DataTypeVariant.OBJECT;
-                } else {
-                    discoveredVariant = DataTypeVariant.TYPE;
-                }
+                discoveredVariant = DataTypeVariant.OBJECT;
             } else {
                 discoveredVariant = DataTypeVariant.TYPE;
             }

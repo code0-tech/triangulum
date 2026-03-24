@@ -17,6 +17,7 @@ describe('getTypeVariant', () => {
 
     it('sollte OBJECT für Interfaces oder Objekte mit Properties zurückgeben', () => {
         expect(getTypeVariant("{ name: string }", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
+        expect(getTypeVariant("{}", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
     });
 
     it('sollte TYPE für einfache Type-Aliase oder void zurückgeben', () => {
@@ -27,6 +28,7 @@ describe('getTypeVariant', () => {
     it('sollte LIST (NUMBER) als ARRAY erkennen (wenn in DATA_TYPES definiert)', () => {
         // In data.ts ist LIST als T[] definiert
         expect(getTypeVariant("LIST<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
+        expect(getTypeVariant("LIST<unknown>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
     });
 
     it('sollte NODE für Funktionstypen wie CONSUMER zurückgeben', () => {
@@ -43,6 +45,7 @@ describe('getTypeVariant', () => {
         // In data.ts ist CONSUMER als (item:R) => void definiert
         expect(getTypeVariant("PREDICATE<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.NODE);
     });
+
 
     it("Check if", () => {
         const types = getTypesFromNode({
