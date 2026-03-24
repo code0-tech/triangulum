@@ -48,6 +48,8 @@ jobs:
         run: bundle install
       - name: Set version
         run: sed -i "s/VERSION = '0.0.0'/VERSION = '${GITHUB_REF_NAME#v}'/" lib/triangulum/version.rb && bundle
+      - name: Prepare build
+        run: bundle exec rake prepare_build
       - name: Package gems
         run: bundle exec rake package
 
