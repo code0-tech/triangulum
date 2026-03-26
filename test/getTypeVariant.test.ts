@@ -18,7 +18,7 @@ describe('getTypeVariant', () => {
     it('sollte OBJECT für Interfaces oder Objekte mit Properties zurückgeben', () => {
         expect(getTypeVariant("{ name: string }", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
         expect(getTypeVariant("{}", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
-        expect(getTypeVariant("OBJECT<T>", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
+        expect(getTypeVariant("OBJECT<any>", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
     });
 
     it('sollte TYPE für einfache Type-Aliase oder void zurückgeben', () => {

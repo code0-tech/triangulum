@@ -279,7 +279,7 @@ export const DATA_TYPES: DataType[] = [
         "genericKeys": [
             "T"
         ],
-        "type": "T & {}",
+        "type": "{ [K in keyof T]: T[K] }",
         "name": [
             {
                 "__typename": "Translation",
@@ -7702,7 +7702,7 @@ export const FUNCTION_SIGNATURES: FunctionDefinition[] = [
         "id": "gid://sagittarius/FunctionDefinition/69",
         "createdAt": "2026-03-15T16:27:29Z",
         "updatedAt": "2026-03-15T16:27:29Z",
-        "signature": "<T, K extends TEXT, V>(object: OBJECT<T>, key: K, value: V): OBJECT<T & Record<K, V>>",
+        "signature": "<T, K extends TEXT, V>(object: OBJECT<T>, key: K, value: V): OBJECT<T & { [P in K]: V }>",
         "linkedDataTypes": {
             "count": 2,
             "nodes": [

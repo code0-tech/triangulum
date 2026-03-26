@@ -78,9 +78,9 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
-export function getSharedTypeDeclarations(dataTypes?: DataType[]): string {
+export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: string = "any"): string {
     const genericDeclarations = Array.from(new Set(dataTypes?.flatMap(dt => dt.genericKeys || [])))
-        .map(g => `type ${g} = unknown;`)
+        .map(g => `type ${g} = ${genericType};`)
         .join("\n");
 
     const typeAliasDeclarations = dataTypes?.map(dt =>
