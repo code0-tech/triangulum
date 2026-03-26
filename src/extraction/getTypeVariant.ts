@@ -26,8 +26,6 @@ export const getTypeVariant = (
         const val: TargetType = {} as any;
     `;
 
-    console.log(sourceCode)
-
     const fileName = `index.ts`;
     const host = createCompilerHost(fileName, sourceCode);
     const sourceFile = host.getSourceFile(fileName)!;

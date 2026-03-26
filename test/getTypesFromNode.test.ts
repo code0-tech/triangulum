@@ -108,8 +108,6 @@ describe('getTypesFromNode', () => {
         };
         const result = getTypesFromNode(node, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        console.log(result)
-
         expect(result.returnType).toBe("string | number");
         expect(result.parameters[1]).toEqual('"id" | "name"');
     });
@@ -134,8 +132,6 @@ describe('getTypesFromNode', () => {
             }
         };
         const result = getTypesFromNode(node, FUNCTION_SIGNATURES, DATA_TYPES);
-
-        console.log(result)
 
         expect(result.returnType).toBe("number");
         expect(result.parameters[1]).toEqual('"id" | "name"');

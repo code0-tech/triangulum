@@ -128,8 +128,6 @@ describe('getReferenceSuggestions', () => {
 
         const suggestions = getReferenceSuggestions(flow, "gid://sagittarius/NodeFunction/4", 0, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        console.log(JSON.stringify(suggestions))
-
         //expect(suggestions.some(s => !s.nodeFunctionId)).toBe(true);
     });
 
@@ -500,8 +498,6 @@ describe('getReferenceSuggestions', () => {
         };
 
         const suggestions = getReferenceSuggestions(flow, "gid://sagittarius/NodeFunction/36", 0, FUNCTION_SIGNATURES, DATA_TYPES);
-
-        console.log(JSON.stringify(suggestions))
 
         //expect(suggestions.some(s => !s.nodeFunctionId)).toBe(true);
     });
