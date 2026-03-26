@@ -2,6 +2,7 @@ export * from './extraction/getTypeFromValue';
 export * from './extraction/getTypeVariant';
 export * from './extraction/getValueFromType';
 export * from './extraction/getTypesFromNode';
+export * from './extraction/getTypesFromFunction';
 export * from './suggestion/getNodeSuggestions';
 export * from './suggestion/getReferenceSuggestions';
 export * from './suggestion/getValueSuggestions';
