@@ -18,6 +18,7 @@ describe('getTypeVariant', () => {
     it('sollte OBJECT für Interfaces oder Objekte mit Properties zurückgeben', () => {
         expect(getTypeVariant("{ name: string }", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
         expect(getTypeVariant("{}", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
+        expect(getTypeVariant("OBJECT<T>", DATA_TYPES)).toBe(DataTypeVariant.OBJECT);
     });
 
     it('sollte TYPE für einfache Type-Aliase oder void zurückgeben', () => {
@@ -29,6 +30,7 @@ describe('getTypeVariant', () => {
         // In data.ts ist LIST als T[] definiert
         expect(getTypeVariant("LIST<NUMBER>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
         expect(getTypeVariant("LIST<unknown>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
+        expect(getTypeVariant("LIST<T>", DATA_TYPES)).toBe(DataTypeVariant.ARRAY);
     });
 
     it('sollte NODE für Funktionstypen wie CONSUMER zurückgeben', () => {

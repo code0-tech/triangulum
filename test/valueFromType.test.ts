@@ -73,6 +73,8 @@ describe('getValueFromType', () => {
             const type = 'LIST<{ uid: TEXT, tags: LIST<NUMBER> }>';
             const result = getValueFromType(type, DATA_TYPES);
 
+            console.log(result)
+
             expect(result.value).toEqual([
                 {
                     uid: '',

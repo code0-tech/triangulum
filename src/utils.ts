@@ -80,7 +80,7 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
  */
 export function getSharedTypeDeclarations(dataTypes?: DataType[]): string {
     const genericDeclarations = Array.from(new Set(dataTypes?.flatMap(dt => dt.genericKeys || [])))
-        .map(g => `type ${g} = any;`)
+        .map(g => `type ${g} = unknown;`)
         .join("\n");
 
     const typeAliasDeclarations = dataTypes?.map(dt =>
