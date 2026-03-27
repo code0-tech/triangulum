@@ -1,17 +1,17 @@
 // Utility functions for node validation
 import {
     DataType,
-    Flow, FunctionDefinition,
+    Flow,
+    FunctionDefinition,
     NodeFunction,
     NodeFunctionIdWrapper,
     NodeParameter,
-    ReferencePath,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
-import {getTypesFromNode} from "./extraction/getTypesFromNode";
 import {DataTypeVariant, getTypeVariant} from "./extraction/getTypeVariant";
+import {getTypesFromFunction} from "./extraction/getTypesFromFunction";
 
 /**
  * Result of a node or flow validation.
@@ -91,37 +91,6 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
 }
 
 /**
- * Determines the type along a reference path for objects.
- * @param value The base value to traverse.
- * @param referencePath The path of properties to follow.
- * @returns The typeof the final value or 'unknown' if path is broken.
- */
-export function getTypeFromReferencePath(value: any, referencePath: ReferencePath[]): string {
-    let current = value;
-    for (const ref of referencePath) {
-        if (current == null) return 'unknown';
-        if (typeof ref.path === 'string') {
-            current = current[ref.path];
-        }
-    }
-    return typeof current;
-}
-
-/**
- * Helper to find a node by ID within the flow structure.
- */
-function findNodeById(flow?: Flow, nodeId?: string): NodeFunction | undefined {
-    const nodes = flow?.nodes;
-    if (!nodes) return undefined;
-
-    if (Array.isArray(nodes)) {
-        return nodes.find((n: any) => n.id === nodeId);
-    }
-
-    return nodes.nodes?.find((n: any) => n.id === nodeId)!;
-}
-
-/**
  * Sanitizes an ID for use as a TypeScript variable name.
  */
 export const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
@@ -146,14 +115,16 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, paramIdx) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
                 let refCode = ref.inputIndex !== undefined
                     ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
-                ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
+                ref.referencePath?.forEach(pathObj => {
+                    refCode += `?.${pathObj.path}`;
+                });
                 return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${paramIdx} */ ${JSON.stringify(val.value)}`;
@@ -161,7 +132,7 @@ export function generateFlowSourceCode(
                 const wrapper = val as NodeFunctionIdWrapper;
                 return generateNodeCall(wrapper.id!, nodeId, paramIdx);
             }
-            return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` :  `/* @pos ${nodeId} ${paramIdx} */ undefined`;
+            return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
         }).join(", ");
 
         const funcName = `fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
@@ -183,22 +154,24 @@ export function generateFlowSourceCode(
         if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
 
         // Only use getTypesFromNode if we are NOT already doing inference to avoid infinite recursion
-        let nodeTypes: any = { parameters: [] };
+        let nodeTypes: any = {parameters: []};
         if (!isForInference) {
-            nodeTypes = getTypesFromNode(node, functions, dataTypes);
+            nodeTypes = getTypesFromFunction(funcDef);
         }
 
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
                 let refCode = ref.inputIndex !== undefined
                     ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
-                ref.referencePath?.forEach(pathObj => { refCode += `?.${pathObj.path}`; });
+                ref.referencePath?.forEach(pathObj => {
+                    refCode += `?.${pathObj.path}`;
+                });
                 return `/* @pos ${nodeId} ${index} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
@@ -225,7 +198,7 @@ export function generateFlowSourceCode(
                     return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
                 }
             }
-            return isForInference ? `/* @pos ${nodeId} ${index} */ {}` :  `/* @pos ${nodeId} ${index} */ undefined`;
+            return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
         }).join(", ");
 
         const varName = `node_${sanitizeId(node.id!)}`;
@@ -319,6 +292,6 @@ export function getInferredTypesFromFlow(
     };
     visit(sourceFile);
 
-    return { nodes: nodeTypes, parameters: parameterTypes };
+    return {nodes: nodeTypes, parameters: parameterTypes};
 }
 
