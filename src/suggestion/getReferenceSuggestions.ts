@@ -3,8 +3,84 @@ import {DataType, Flow, FunctionDefinition, NodeFunction, ReferenceValue} from "
 import {createCompilerHost, generateFlowSourceCode} from "../utils";
 
 /**
- * Calculates all available reference suggestions for a specific target node in a flow
- * and filters them by a required type.
+ * Determines whether a type is a real object type (not a primitive type).
+ * Excludes built-in primitive types like string, number, boolean, etc.
+ * to ensure only actual object properties are extracted.
+ *
+ * @param type The TypeScript type to check
+ * @returns true if the type is an object, false if it's a primitive
+ */
+const isRealObjectType = (type: ts.Type): boolean => {
+    const primitiveFlags =
+        ts.TypeFlags.String |
+        ts.TypeFlags.Number |
+        ts.TypeFlags.Boolean |
+        ts.TypeFlags.Undefined |
+        ts.TypeFlags.Null |
+        ts.TypeFlags.BigInt |
+        ts.TypeFlags.ESSymbol;
+
+    return (type.flags & primitiveFlags) === 0;
+};
+
+/**
+ * Recursively extracts all nested properties of an object type that are assignable
+ * to the expected type, along with their access paths.
+ *
+ * For example, given an object type {user: {id: number, name: string}} and
+ * an expected type of 'number', this function returns:
+ * - { path: ['user', 'id'], type: number }
+ *
+ * @param type The type to extract properties from
+ * @param checker The TypeScript type checker
+ * @param expectedType The expected type to match against
+ * @param currentPath The current property path (used for recursion)
+ * @returns Array of matching properties with their paths
+ */
+const extractObjectProperties = (
+    type: ts.Type,
+    checker: ts.TypeChecker,
+    expectedType: ts.Type,
+    currentPath: string[] = []
+): Array<{ path: string[]; type: ts.Type }> => {
+    const results: Array<{ path: string[]; type: ts.Type }> = [];
+
+    // Add the current type if it matches the expected type
+    if (checker.isTypeAssignableTo(type, expectedType)) {
+        results.push({ path: currentPath, type });
+    }
+
+    // Only extract properties from real object types, not primitives
+    if (isRealObjectType(type)) {
+        const properties = type.getProperties();
+        if (properties && properties.length > 0) {
+            properties.forEach(property => {
+                const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
+                const propName = property.getName();
+                const newPath = [...currentPath, propName];
+
+                // Recursively extract nested properties
+                results.push(...extractObjectProperties(propType, checker, expectedType, newPath));
+            });
+        }
+    }
+
+    return results;
+};
+
+/**
+ * Calculates all available reference suggestions for a specific target parameter in a flow.
+ *
+ * This function analyzes the flow's generated source code to find all variables
+ * (node_ and p_ prefixed) that are in scope and compatible with the target parameter's
+ * expected type. For object types, it also extracts nested properties and their access paths.
+ *
+ * @param flow The flow configuration
+ * @param nodeId The ID of the node containing the target parameter
+ * @param targetIndex The index of the target parameter
+ * @param functions Available function definitions for type resolution
+ * @param dataTypes Available data type definitions
+ * @returns Array of ReferenceValue objects representing available suggestions
  */
 export const getReferenceSuggestions = (
     flow?: Flow,
@@ -21,15 +97,15 @@ export const getReferenceSuggestions = (
     const program = host.languageService.getProgram()!;
     const checker = program.getTypeChecker();
 
-    // 2. Suche die exakte Text-Position des Kommentars
+    // Find the exact position of the target node using a marker comment
     const fullText = sourceFile.getFullText();
     const commentPattern = `/* @pos ${nodeId} ${targetIndex} */`;
     const commentIndex = fullText.indexOf(commentPattern);
-
-    // Die Position des eigentlichen Nodes ist direkt nach dem Kommentar
     const targetPos = commentIndex + commentPattern.length;
 
-    // 3. Finde den kleinsten AST-Node an dieser Position
+    /**
+     * Recursively finds the smallest AST node at the given position
+     */
     function findNodeAtPosition(node: ts.Node, pos: number): ts.Node {
         let found = node;
         ts.forEachChild(node, child => {
@@ -43,18 +119,17 @@ export const getReferenceSuggestions = (
     let targetNode = findNodeAtPosition(sourceFile, targetPos);
     const targetExpression = targetNode as ts.Expression;
 
-    // 4. Umschließenden Funktionsaufruf finden (identisch zu deinem Code)
+    // Find the enclosing function call
     let parentCall: ts.CallExpression | undefined;
-
     if (ts.isCallExpression(targetExpression)) {
         parentCall = targetExpression;
     }
 
     if (!parentCall) {
-        return []
+        return [];
     }
 
-    // 5. Typ-Check und Variablen-Extraktion
+    // Get the signature and expected type of the target parameter
     const signature = checker.getResolvedSignature(parentCall);
     if (!signature) return [];
 
@@ -62,46 +137,53 @@ export const getReferenceSuggestions = (
     const paramSymbol = params[targetIndex!] || params[params.length - 1];
     const expectedType = checker.getTypeOfSymbolAtLocation(paramSymbol, targetExpression);
 
+    // Collect all variables in scope (node_ and p_ prefixed)
     const allSymbols = checker.getSymbolsInScope(targetExpression, ts.SymbolFlags.Variable);
-
     const referenceValues: ReferenceValue[] = [];
 
     allSymbols.forEach(symbol => {
         const name = symbol.getName();
         if (!name.startsWith("node_") && !name.startsWith("p_")) return;
 
-        // 1. Erhalte die Deklaration der Variable
+        // Get the variable declaration
         const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
         if (!declaration) return;
 
-        // 2. Reachability-Check:
-        // Die Deklaration muss VOR der targetPos enden.
-        // (Damit schließen wir die aktuelle Zeile und alles danach aus)
+        // Skip variables declared after the target position
         if (declaration.getEnd() >= targetPos) {
             return;
         }
 
         const symbolType = checker.getTypeOfSymbolAtLocation(symbol, targetExpression!);
 
-        // FALL 1: Node-Ergebnis (node_)
+        // Handle node_ variables (node function results)
         if (name.startsWith("node_")) {
-            // Nur hinzufügen, wenn der Typ grundsätzlich auf den Slot passt
-            if (!((symbolType.flags & ts.TypeFlags.Void) !== 0) && checker.isTypeAssignableTo(symbolType, expectedType)) {
+            if (!((symbolType.flags & ts.TypeFlags.Void) !== 0)) {
                 const nodeFunctionId = name
                     .replace("node_", "")
                     .replace(/___/g, "://")
                     .replace(/__/g, "/")
                     .replace(/_/g, "/");
 
-                referenceValues.push({
-                    __typename: 'ReferenceValue',
-                    nodeFunctionId: nodeFunctionId as any
-                    // Bei node_ keine Indizes laut Vorgabe
+                // Extract all compatible properties including nested ones
+                const propertyPaths = extractObjectProperties(symbolType, checker, expectedType);
+
+                propertyPaths.forEach(({ path }) => {
+                    const referenceValue: ReferenceValue = {
+                        __typename: 'ReferenceValue',
+                        nodeFunctionId: nodeFunctionId as any
+                    };
+
+                    if (path.length > 0) {
+                        //@ts-ignore
+                        referenceValue.referencePath = path;
+                    }
+
+                    referenceValues.push(referenceValue);
                 });
             }
         }
-
-        // FALL 2: Parameter / Input (p_)
+        // Handle p_ variables (parameter/input values)
         else if (name.startsWith("p_")) {
             const idPart = name.replace("p_", "");
             const lastUnderscoreIndex = idPart.lastIndexOf("_");
@@ -114,23 +196,32 @@ export const getReferenceSuggestions = (
                 .replace(/__/g, "/")
                 .replace(/_/g, "/");
 
-            // Da p_ oft ein Rest-Parameter (...p) ist, prüfen wir auf Array/Tupel
+            // Handle tuple types (e.g., destructured parameters like [item, index])
             if (checker.isTupleType(symbolType)) {
-                // Bei einem Tupel (z.B. [item, index]) extrahieren wir die Element-Typen
                 const typeReference = symbolType as ts.TypeReference;
                 const typeArguments = checker.getTypeArguments(typeReference);
 
                 typeArguments.forEach((tupleElementType, tupleIndex) => {
-                    if (checker.isTypeAssignableTo(tupleElementType, expectedType)) {
-                        referenceValues.push({
+                    // Extract all compatible properties for this tuple element
+                    const propertyPaths = extractObjectProperties(tupleElementType, checker, expectedType);
+
+                    propertyPaths.forEach(({ path }) => {
+                        const referenceValue: ReferenceValue = {
                             __typename: 'ReferenceValue',
                             nodeFunctionId: nodeFunctionId as any,
                             parameterIndex: isNaN(paramIndexFromName) ? 0 : paramIndexFromName,
                             inputIndex: tupleIndex,
                             //@ts-ignore
                             inputTypeIdentifier: (typeReference.target as any).labeledElementDeclarations?.[tupleIndex].name.getText()
-                        });
-                    }
+                        };
+
+                        if (path.length > 0) {
+                            //@ts-ignore
+                            referenceValue.referencePath = path;
+                        }
+
+                        referenceValues.push(referenceValue);
+                    });
                 });
             }
         }
