@@ -178,7 +178,7 @@ export function generateFlowSourceCode(
 
                 if (!isForInference) {
                     const expectedType = nodeTypes.parameters[index];
-                    const isFunctionType = expectedType ? getTypeVariant(expectedType, dataTypes) === DataTypeVariant.NODE : false;
+                    const isFunctionType = expectedType ? getTypeVariant(expectedType, dataTypes)[0].variant === DataTypeVariant.NODE : false;
 
                     if (isFunctionType) {
                         const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
