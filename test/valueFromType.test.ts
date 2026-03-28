@@ -47,6 +47,11 @@ describe('getValueFromType', () => {
             expect(result.value).toBe('GET');
         });
 
+        it('sollte das erste Element einer String-Union nehmen 2', () => {
+            const result = getValueFromType('HTTP_METHOD', DATA_TYPES);
+            expect(result.value).toBe('GET');
+        });
+
         it('sollte bei einer Union aus verschiedenen Typen den ersten Typ wählen', () => {
             const result = getValueFromType('number | string', DATA_TYPES);
 

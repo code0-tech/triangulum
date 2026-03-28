@@ -45,8 +45,6 @@ export const MINIMAL_LIB = `
     interface NewableFunction extends Function {}
     interface IArguments { }
     interface RegExp { }
-    type Record<K extends keyof any, T> = { [P in K]: T; };
-    type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 `;
 
 /**
@@ -78,7 +76,7 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
-export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: string = "any"): string {
+export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: string = "any", useGenericDeclarations: boolean = true): string {
     const genericDeclarations = Array.from(new Set(dataTypes?.flatMap(dt => dt.genericKeys || [])))
         .map(g => `type ${g} = ${genericType};`)
         .join("\n");
@@ -87,7 +85,7 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 
-    return `${genericDeclarations}\n${typeAliasDeclarations}`;
+    return `${useGenericDeclarations ? genericDeclarations : ""}\n${typeAliasDeclarations}`;
 }
 
 /**
