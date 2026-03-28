@@ -14,7 +14,7 @@ export const getNodeSuggestions = (
 
     let functionToSuggest = functions
 
-    const typeVariant = type ? getTypeVariant(type, dataTypes) : null;
+    const typeVariant = type ? getTypeVariant(type, dataTypes)[0].variant : null;
 
     if (type && functions && typeVariant !== DataTypeVariant.NODE) {
         function getGenericsCount(input: string): number {
