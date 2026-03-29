@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "@code0-tech/triangulum": "file:../",
-    "@code0-tech/tucana": "0.0.62",
+    "@code0-tech/tucana": "0.0.65",
     "@protobuf-ts/runtime": "^2.11.1"
   },
   "devDependencies": {
