@@ -36,8 +36,11 @@ export const getValueFromType = (
      * Recursively generates a sample JavaScript value for a given TypeScript Type.
      */
     const generateSample = (t: ts.Type, node: ts.Node, visited = new Set<ts.Type>()): any => {
-        if (visited.has(t)) return null;
-        visited.add(t);
+        // Create a NEW visited set for each object/array to avoid blocking reuse of primitive types
+        // We only want to prevent infinite recursion on the SAME OBJECT, not on primitive types
+        const localVisited = new Set(visited);
+
+        if (localVisited.has(t)) return null;
 
         const flags = t.getFlags();
 
@@ -49,7 +52,7 @@ export const getValueFromType = (
             if (ts.isTypeAliasDeclaration(node) && node.type && ts.isUnionTypeNode(node.type)) {
                 // Try to follow the order in the source code if we are at the top level
                 const firstType = checker.getTypeFromTypeNode(node.type.types[0]);
-                return generateSample(firstType, node, visited);
+                return generateSample(firstType, node, localVisited);
             }
 
             const filteredTypes = t.types.filter(subType => {
@@ -57,7 +60,7 @@ export const getValueFromType = (
                 return !(f & ts.TypeFlags.Undefined) && !(f & ts.TypeFlags.Null);
             });
             const typeToUse = filteredTypes.length > 0 ? filteredTypes[0] : t.types[0];
-            return generateSample(typeToUse, node, visited);
+            return generateSample(typeToUse, node, localVisited);
         }
 
         // 2. Handle Primitives and Literals
@@ -72,21 +75,24 @@ export const getValueFromType = (
 
         // 3. Handle Arrays
         if (checker.isArrayType(t)) {
+            localVisited.add(t);
             const typeRef = t as ts.TypeReference;
             const elementType = typeRef.typeArguments?.[0] || checker.getAnyType();
-            const sample = generateSample(elementType, node, visited);
+            const sample = generateSample(elementType, node, localVisited);
             return sample !== null ? [sample] : [];
         }
 
         // 4. Handle Objects / Interfaces
         if (t.isClassOrInterface() || (flags & ts.TypeFlags.Object) || t.getProperties().length > 0) {
+            localVisited.add(t);
             const obj: any = {};
             const props = t.getProperties();
 
             props.forEach(prop => {
                 const propType = checker.getTypeOfSymbolAtLocation(prop, node);
+                const propDeclaration = prop.valueDeclaration;
                 if (propType) {
-                    obj[prop.getName()] = generateSample(propType, node, visited);
+                    obj[prop.getName()] = generateSample(propType, propDeclaration || node, localVisited);
                 }
             });
             return obj;

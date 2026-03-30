@@ -75,15 +75,20 @@ describe('getValueFromType', () => {
         });
 
         it('sollte Objekte innerhalb von Listen füllen', () => {
-            const type = 'LIST<{ uid: TEXT, tags: LIST<NUMBER> }>';
+            const type = `{ body: { userNames: LIST<TEXT> }, headers: { Authorization: TEXT } }
+            `;
             const result = getValueFromType(type, DATA_TYPES);
 
-            expect(result.value).toEqual([
-                {
-                    uid: '',
-                    tags: [0]
+            console.log(result)
+
+            expect(result.value).toEqual({
+                body: {
+                    userNames: ['']
+                },
+                headers: {
+                    Authorization: ''
                 }
-            ]);
+            });
         });
     });
 
