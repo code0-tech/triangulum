@@ -5,7 +5,15 @@
     "target": "es2020",
     "lib": ["es2020", "dom"],
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "baseUrl": "src/"
   },
-  "include": ["src/**/*"]
+  "exclude": [
+    "node_modules",
+    "dist",
+  ],
+  "types": [
+    "typePatches"
+  ]
 }
