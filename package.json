@@ -15,13 +15,6 @@
   "main": "./dist/triangulum.cjs.js",
   "module": "./dist/triangulum.es.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/triangulum.es.js",
-      "require": "./dist/triangulum.cjs.js"
-    }
-  },
   "files": [
     "dist"
   ],
