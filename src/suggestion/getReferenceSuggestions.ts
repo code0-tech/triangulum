@@ -1,5 +1,12 @@
 import ts from "typescript";
-import {DataType, Flow, FunctionDefinition, NodeFunction, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    ReferencePath,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, generateFlowSourceCode} from "../utils";
 
 /**
@@ -41,9 +48,9 @@ const extractObjectProperties = (
     type: ts.Type,
     checker: ts.TypeChecker,
     expectedType: ts.Type,
-    currentPath: string[] = []
-): Array<{ path: string[]; type: ts.Type }> => {
-    const results: Array<{ path: string[]; type: ts.Type }> = [];
+    currentPath: ReferencePath[] = []
+): Array<{ path: ReferencePath[]; type: ts.Type }> => {
+    const results: Array<{ path: ReferencePath[]; type: ts.Type }> = [];
 
     // Add the current type if it matches the expected type
     if (checker.isTypeAssignableTo(type, expectedType)) {
@@ -56,7 +63,7 @@ const extractObjectProperties = (
         if (properties && properties.length > 0) {
             properties.forEach(property => {
                 const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
-                const propName = property.getName();
+                const propName = property.getName() as ReferencePath;
                 const newPath = [...currentPath, propName];
 
                 // Recursively extract nested properties
@@ -211,12 +218,10 @@ export const getReferenceSuggestions = (
                             nodeFunctionId: nodeFunctionId as any,
                             parameterIndex: isNaN(paramIndexFromName) ? 0 : paramIndexFromName,
                             inputIndex: tupleIndex,
-                            //@ts-ignore
                             inputTypeIdentifier: (typeReference.target as any).labeledElementDeclarations?.[tupleIndex].name.getText()
                         };
 
                         if (path.length > 0) {
-                            //@ts-ignore
                             referenceValue.referencePath = path;
                         }
 
