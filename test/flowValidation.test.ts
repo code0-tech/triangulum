@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {getFlowValidation} from '../src/validation/getFlowValidation';
 import {Flow} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
+// @ts-ignore
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
 describe('getFlowValidation - Integrationstest', () => {
@@ -69,7 +70,6 @@ describe('getFlowValidation - Integrationstest', () => {
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
         result.diagnostics.forEach((error) => {
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });
@@ -142,7 +142,6 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });
@@ -192,7 +191,6 @@ describe('getFlowValidation - Integrationstest', () => {
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
         result.diagnostics.forEach((error) => {
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });
@@ -249,7 +247,6 @@ describe('getFlowValidation - Integrationstest', () => {
         expect(result.isValid).toBe(true);
         expect(result.diagnostics).toHaveLength(0);
         result.diagnostics.forEach((error) => {
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });
@@ -261,8 +258,7 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "inputType": "REST_ADAPTER_INPUT",
-            "returnType": "HTTP_RESPONSE",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -364,7 +360,6 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });
@@ -376,8 +371,7 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "inputType": "REST_ADAPTER_INPUT",
-            "returnType": "HTTP_RESPONSE",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -539,8 +533,6 @@ describe('getFlowValidation - Integrationstest', () => {
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
-
-            expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
     });

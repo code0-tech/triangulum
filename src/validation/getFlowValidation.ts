@@ -62,7 +62,7 @@ export const getFlowValidation = (
             }
 
             if (closestMatch) {
-                nodeId = closestMatch[1] as NodeFunction['id'];
+                nodeId = closestMatch[1] === "undefined" ? undefined : closestMatch[1] as NodeFunction['id'];
                 parameterIndex = parseInt(closestMatch[2], 10);
             }
         }

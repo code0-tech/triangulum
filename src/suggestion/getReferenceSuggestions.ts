@@ -1,5 +1,12 @@
 import ts from "typescript";
-import {DataType, Flow, FunctionDefinition, NodeFunction, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {
+    DataType,
+    Flow,
+    FunctionDefinition,
+    NodeFunction,
+    ReferencePath,
+    ReferenceValue
+} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, generateFlowSourceCode} from "../utils";
 
 /**
@@ -41,9 +48,9 @@ const extractObjectProperties = (
     type: ts.Type,
     checker: ts.TypeChecker,
     expectedType: ts.Type,
-    currentPath: string[] = []
-): Array<{ path: string[]; type: ts.Type }> => {
-    const results: Array<{ path: string[]; type: ts.Type }> = [];
+    currentPath: ReferencePath[] = []
+): Array<{ path: ReferencePath[]; type: ts.Type }> => {
+    const results: Array<{ path: ReferencePath[]; type: ts.Type }> = [];
 
     // Add the current type if it matches the expected type
     if (checker.isTypeAssignableTo(type, expectedType)) {
@@ -56,7 +63,7 @@ const extractObjectProperties = (
         if (properties && properties.length > 0) {
             properties.forEach(property => {
                 const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
-                const propName = property.getName();
+                const propName = property.getName() as ReferencePath;
                 const newPath = [...currentPath, propName];
 
                 // Recursively extract nested properties
@@ -143,7 +150,7 @@ export const getReferenceSuggestions = (
 
     allSymbols.forEach(symbol => {
         const name = symbol.getName();
-        if (!name.startsWith("node_") && !name.startsWith("p_")) return;
+        if (!name.startsWith("node_") && !name.startsWith("p_") && !name.startsWith("flow_")) return;
 
         // Get the variable declaration
         const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
@@ -175,7 +182,6 @@ export const getReferenceSuggestions = (
                     };
 
                     if (path.length > 0) {
-                        //@ts-ignore
                         referenceValue.referencePath = path;
                     }
 
@@ -211,12 +217,10 @@ export const getReferenceSuggestions = (
                             nodeFunctionId: nodeFunctionId as any,
                             parameterIndex: isNaN(paramIndexFromName) ? 0 : paramIndexFromName,
                             inputIndex: tupleIndex,
-                            //@ts-ignore
                             inputTypeIdentifier: (typeReference.target as any).labeledElementDeclarations?.[tupleIndex].name.getText()
                         };
 
                         if (path.length > 0) {
-                            //@ts-ignore
                             referenceValue.referencePath = path;
                         }
 
@@ -224,6 +228,21 @@ export const getReferenceSuggestions = (
                     });
                 });
             }
+        }
+        else if (name.startsWith("flow_")) {
+            const propertyPaths = extractObjectProperties(symbolType, checker, expectedType)
+            propertyPaths.forEach(({ path }) => {
+                const referenceValue: ReferenceValue = {
+                    __typename: 'ReferenceValue',
+                    nodeFunctionId: null
+                };
+
+                if (path.length > 0) {
+                    referenceValue.referencePath = path;
+                }
+
+                referenceValues.push(referenceValue);
+            })
         }
     });
 

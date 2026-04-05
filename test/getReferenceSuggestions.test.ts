@@ -10,8 +10,7 @@ describe('getReferenceSuggestions', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "inputType": "REST_ADAPTER_INPUT",
-            "returnType": "HTTP_RESPONSE",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -95,7 +94,7 @@ describe('getReferenceSuggestions', () => {
                         "id": "gid://sagittarius/FlowSetting/1",
                         "createdAt": "2026-03-17T14:17:48Z",
                         "updatedAt": "2026-03-17T14:17:48Z",
-                        "flowSettingIdentifier": "HTTP_METHOD",
+                        "flowSettingIdentifier": "httpURL",
                         "value": ""
                     },
                     {
@@ -103,7 +102,7 @@ describe('getReferenceSuggestions', () => {
                         "id": "gid://sagittarius/FlowSetting/2",
                         "createdAt": "2026-03-17T14:17:48Z",
                         "updatedAt": "2026-03-17T14:17:48Z",
-                        "flowSettingIdentifier": "HTTP_URL",
+                        "flowSettingIdentifier": "httpMethod",
                         "value": ""
                     }
                 ],
@@ -137,8 +136,7 @@ describe('getReferenceSuggestions', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "inputType": "REST_ADAPTER_INPUT",
-            "returnType": "HTTP_RESPONSE",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [

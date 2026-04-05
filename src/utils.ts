@@ -209,6 +209,7 @@ export function generateFlowSourceCode(
     };
 
     const typeDefs = getSharedTypeDeclarations(dataTypes);
+    const flowTypeDeclaration = `declare function flow${flow?.signature ?? "(): void"}`
     const funcDeclarations = functions?.map(f => `declare function fn_${f.identifier?.replace(/::/g, '_')}${f.signature}`).join('\n');
 
     const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));
@@ -217,12 +218,14 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
     }));
 
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${JSON.stringify(setting?.value)}`).join(", ") ?? ""});` : ""
+
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
         .map(n => generateNodeCode(n!.id!))
         .join('\n');
 
-    return `${typeDefs}\n${funcDeclarations}\n\n// --- Flow ---\n${executionCode}`;
+    return `${typeDefs}\n${flowTypeDeclaration}\n${funcDeclarations}\n\n// --- Flow ---\n${flowCode}\n${executionCode}`;
 }
 
 export interface InferredTypes {
