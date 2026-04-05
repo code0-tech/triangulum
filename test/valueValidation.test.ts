@@ -51,6 +51,10 @@ describe('getValueValidation', () => {
             }, DATA_TYPES).isValid).toBe(true);
             expect(getValueValidation('NUMBER', {
                 __typename: 'LiteralValue',
+                value: BigInt(42)
+            }, DATA_TYPES).isValid).toBe(true);
+            expect(getValueValidation('NUMBER', {
+                __typename: 'LiteralValue',
                 value: 'not a number'
             }, DATA_TYPES).isValid).toBe(false);
         });
