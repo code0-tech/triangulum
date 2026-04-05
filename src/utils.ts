@@ -12,6 +12,7 @@ import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
 import {DataTypeVariant, getTypeVariant} from "./extraction/getTypeVariant";
 import {getTypesFromFunction} from "./extraction/getTypesFromFunction";
+import {stringify} from "lossless-json";
 
 /**
  * Result of a node or flow validation.
@@ -126,9 +127,7 @@ export function generateFlowSourceCode(
                 return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") {
-                const jsonString = JSON.stringify(val?.value, (key, val) =>
-                    typeof val === 'bigint' ? val.toString() : val
-                )
+                const jsonString = stringify(val?.value)
                 return `/* @pos ${nodeId} ${paramIdx} */ ${jsonString}`;
             }
             if (val.__typename === "NodeFunctionIdWrapper") {

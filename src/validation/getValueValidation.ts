@@ -1,6 +1,7 @@
 import ts from "typescript";
 import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
+import { stringify } from 'lossless-json'
 
 
 export const getValueValidation = (
@@ -9,9 +10,7 @@ export const getValueValidation = (
     dataTypes?: DataType[]
 ): ValidationResult => {
 
-    const jsonString = JSON.stringify(value?.value, (key, val) =>
-        typeof val === 'bigint' ? val.toString() : val
-    )
+    const jsonString = stringify(value?.value)
 
     // 1. Construct the source code for validation.
     const sourceCode = `

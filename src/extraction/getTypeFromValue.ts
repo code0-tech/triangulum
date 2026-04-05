@@ -1,6 +1,7 @@
 import ts from "typescript";
 import {createCompilerHost, getSharedTypeDeclarations} from "../utils";
 import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
+import {stringify} from "lossless-json";
 
 /**
  * Uses the TypeScript compiler to generate a precise type string from any runtime value.
@@ -12,9 +13,7 @@ export const getTypeFromValue = (
 
 
     // 1. Serialize value to a JSON string for embedding in source code.
-    const literal = JSON.stringify(value?.value, (key, val) =>
-        typeof val === 'bigint' ? val.toString() : val
-    )
+    const literal = stringify(value?.value)
 
     if (!literal) return "any"
 
