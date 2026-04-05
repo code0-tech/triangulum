@@ -218,7 +218,7 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map(setting => JSON.stringify(setting?.value)).join(", ")});` : ""
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${JSON.stringify(setting?.value)}`).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
