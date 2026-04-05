@@ -125,7 +125,12 @@ export function generateFlowSourceCode(
                 });
                 return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
             }
-            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${paramIdx} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "LiteralValue") {
+                const jsonString = JSON.stringify(val?.value, (key, val) =>
+                    typeof val === 'bigint' ? val.toString() : val
+                )
+                return `/* @pos ${nodeId} ${paramIdx} */ ${jsonString}`;
+            }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
                 return generateNodeCall(wrapper.id!, nodeId, paramIdx);
@@ -172,7 +177,12 @@ export function generateFlowSourceCode(
                 });
                 return `/* @pos ${nodeId} ${index} */ ${refCode}`;
             }
-            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "LiteralValue") {
+                const jsonString = JSON.stringify(val?.value, (key, val) =>
+                    typeof val === 'bigint' ? val.toString() : val
+                )
+                return `/* @pos ${nodeId} ${index} */ ${jsonString}`;
+            }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
 

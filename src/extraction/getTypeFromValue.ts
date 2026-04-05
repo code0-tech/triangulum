@@ -9,8 +9,12 @@ export const getTypeFromValue = (
     value?: LiteralValue | null,
     dataTypes?: DataType[]
 ): string => {
+
+
     // 1. Serialize value to a JSON string for embedding in source code.
-    const literal = JSON.stringify(value?.value);
+    const literal = JSON.stringify(value?.value, (key, val) =>
+        typeof val === 'bigint' ? val.toString() : val
+    )
 
     if (!literal) return "any"
 
