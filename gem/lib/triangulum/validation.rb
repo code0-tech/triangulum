@@ -21,11 +21,11 @@ module Triangulum
 
     IS_RUBY_PLATFORM_GEM = Dir.glob(File.expand_path('../../exe/*/bun', __dir__)).empty?
 
-    attr_reader :flow, :runtime_function_definitions, :data_types
+    attr_reader :flow, :function_definitions, :data_types
 
     def initialize(flow, runtime_function_definitions, data_types)
       @flow = flow
-      @runtime_function_definitions = runtime_function_definitions
+      @function_definitions = runtime_function_definitions
       @data_types = data_types
     end
 
@@ -56,7 +56,7 @@ module Triangulum
       input << Base64.strict_encode64(flow.to_proto)
       input << ''
 
-      runtime_function_definitions.each do |rfd|
+      function_definitions.each do |rfd|
         input << Base64.strict_encode64(rfd.to_proto)
       end
 
