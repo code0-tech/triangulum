@@ -177,9 +177,7 @@ export function generateFlowSourceCode(
                 return `/* @pos ${nodeId} ${index} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") {
-                const jsonString = JSON.stringify(val?.value, (key, val) =>
-                    typeof val === 'bigint' ? val.toString() : val
-                )
+                const jsonString = stringify(val?.value)
                 return `/* @pos ${nodeId} ${index} */ ${jsonString}`;
             }
             if (val.__typename === "NodeFunctionIdWrapper") {
@@ -227,7 +225,7 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${JSON.stringify(setting?.value)}`).join(", ") ?? ""});` : ""
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
