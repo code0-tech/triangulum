@@ -28,11 +28,11 @@ bundle lock --add-platform x86_64-linux-gnu
 ## Usage
 
 ```ruby
-result = Triangulum::Validation.new(flow, runtime_function_definitions, data_types).validate
+result = Triangulum::Validation.new(flow, function_definitions, data_types).validate
 
-result.valid?       # => true / false
-result.return_type  # => "void"
-result.diagnostics  # => [Triangulum::Validation::Diagnostic, ...]
+result.valid? # => true / false
+result.return_type # => "void"
+result.diagnostics # => [Triangulum::Validation::Diagnostic, ...]
 ```
 
 The arguments are [Tucana](https://github.com/code0-tech/tucana) protobuf objects:

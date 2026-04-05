@@ -61,19 +61,19 @@ module ProtobufFactories
 
   def default_functions
     [
-      Tucana::Shared::RuntimeFunctionDefinition.new(
+      Tucana::Shared::FunctionDefinition.new(
         runtime_name: 'std::math::add',
         signature: '(a: NUMBER, b: NUMBER): NUMBER'
       ),
-      Tucana::Shared::RuntimeFunctionDefinition.new(
+      Tucana::Shared::FunctionDefinition.new(
         runtime_name: 'std::list::at',
         signature: '<R>(list: LIST<R>, index: NUMBER): R'
       ),
-      Tucana::Shared::RuntimeFunctionDefinition.new(
+      Tucana::Shared::FunctionDefinition.new(
         runtime_name: 'std::control::for_each',
         signature: '<R>(list: LIST<R>, consumer: CONSUMER<R>): void'
       ),
-      Tucana::Shared::RuntimeFunctionDefinition.new(
+      Tucana::Shared::FunctionDefinition.new(
         runtime_name: 'std::control::return',
         signature: '<R>(value: R): R'
       )
