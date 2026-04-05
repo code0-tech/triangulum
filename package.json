@@ -29,14 +29,13 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "lossless-json": "^4.3.0"
   },
   "peerDependencies": {
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2430052572-f89aa9d01636e56a17463920775d073b09dd132b",
     "@typescript/vfs": "^1.6.4",
-    "typescript": "^5.9.3 || ^6.0.2"
-  },
-  "dependencies": {
+    "typescript": "^5.9.3 || ^6.0.2",
     "lossless-json": "^4.3.0"
   }
 }
