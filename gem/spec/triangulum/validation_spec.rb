@@ -100,6 +100,7 @@ RSpec.describe Triangulum::Validation do
       result = described_class.new(flow, functions, data_types).validate
 
       expect(result.valid?).to be true
+      expect(result.diagnostics).to be_empty
     end
 
     it 'returns diagnostics with node_id and parameter_index' do

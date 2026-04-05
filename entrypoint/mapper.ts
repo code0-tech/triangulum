@@ -3,15 +3,17 @@ import {
     DataType,
     Flow,
     FunctionDefinition,
-    LiteralValue,
     NodeFunction,
     NodeParameter,
-    NodeParameterValue, ParameterDefinition,
+    NodeParameterValue,
+    ParameterDefinition,
 } from "@code0-tech/sagittarius-graphql-types";
 import {
     DefinitionDataType,
     NodeFunction as TucanaNodeFunction,
-    NodeParameter as TucanaNodeParameter, RuntimeFunctionDefinition, RuntimeParameterDefinition,
+    NodeParameter as TucanaNodeParameter,
+    FunctionDefinition as TucanaFunctionDefinition,
+    ParameterDefinition as TucanaParameterDefinition,
     ValidationFlow,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
@@ -38,8 +40,7 @@ function mapFlow(flow: ValidationFlow): Flow {
     return {
         __typename: "Flow",
         id: gid('Flow', flow.flowId) as Flow['id'],
-        inputType: flow.inputType,
-        returnType: flow.returnType,
+        signature: flow.signature,
         startingNodeId: gid('NodeFunction', flow.startingNodeId) as NodeFunction['id'],
         nodes: {
             nodes: flow.nodeFunctions.map(mapNodeFunction)
@@ -101,17 +102,17 @@ function mapNodeParameter(nodeParameter: TucanaNodeParameter): NodeParameter {
     }
 }
 
-function mapFunctionDefinition(functionDefinition: RuntimeFunctionDefinition): FunctionDefinition {
+function mapFunctionDefinition(functionDefinition: TucanaFunctionDefinition): FunctionDefinition {
     return {
         identifier: functionDefinition.runtimeName,
         signature: functionDefinition.signature,
         parameterDefinitions: {
-            nodes: functionDefinition.runtimeParameterDefinitions.map(mapParameterDefinition)
+            nodes: functionDefinition.parameterDefinitions.map(mapParameterDefinition)
         }
     }
 }
 
-function mapParameterDefinition(parameterDefinition: RuntimeParameterDefinition): ParameterDefinition {
+function mapParameterDefinition(parameterDefinition: TucanaParameterDefinition): ParameterDefinition {
     return {
         identifier: parameterDefinition.runtimeName,
     }

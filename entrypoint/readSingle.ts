@@ -1,12 +1,12 @@
 import {
     DefinitionDataType,
-    RuntimeFunctionDefinition,
+    FunctionDefinition,
     ValidationFlow
 } from "@code0-tech/tucana/shared";
 
 export type SingleValidationInputData = {
     flow?: ValidationFlow,
-    functions: RuntimeFunctionDefinition[],
+    functions: FunctionDefinition[],
     dataTypes: DefinitionDataType[]
 };
 
@@ -28,7 +28,7 @@ export async function readSingleValidation(input: AsyncIterable<string>) {
         if(parsingState === 0) {
             data.flow = ValidationFlow.fromBinary(message);
         } else if(parsingState === 1) {
-            data.functions.push(RuntimeFunctionDefinition.fromBinary(message));
+            data.functions.push(FunctionDefinition.fromBinary(message));
         } else if(parsingState === 2) {
             data.dataTypes.push(DefinitionDataType.fromBinary(message));
         }

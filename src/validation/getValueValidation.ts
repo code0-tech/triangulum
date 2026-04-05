@@ -1,18 +1,21 @@
 import ts from "typescript";
 import {DataType, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, getSharedTypeDeclarations, ValidationResult} from "../utils";
+import { stringify } from 'lossless-json'
+
 
 export const getValueValidation = (
     type?: string,
     value?: LiteralValue,
     dataTypes?: DataType[]
 ): ValidationResult => {
-    const valueAsCode = JSON.stringify(value?.value);
+
+    const jsonString = stringify(value?.value)
 
     // 1. Construct the source code for validation.
     const sourceCode = `
         ${getSharedTypeDeclarations(dataTypes)}
-        const testValue: ${type} = ${valueAsCode};
+        const testValue: ${type} = ${jsonString};
     `;
 
     const fileName = "index.ts";

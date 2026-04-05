@@ -12,6 +12,10 @@ RSpec.configure do |config|
   config.disable_monkey_patching!
   config.include ProtobufFactories
 
+  config.define_derived_metadata do |metadata|
+    metadata[:aggregate_failures] = true
+  end
+
   config.expect_with :rspec do |c|
     c.syntax = :expect
   end

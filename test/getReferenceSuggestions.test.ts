@@ -125,8 +125,6 @@ describe('getReferenceSuggestions', () => {
 
         const suggestions = getReferenceSuggestions(flow, "gid://sagittarius/NodeFunction/4", 0, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        console.log(suggestions)
-
         //expect(suggestions.some(s => !s.nodeFunctionId)).toBe(true);
     });
 

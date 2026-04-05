@@ -12,6 +12,7 @@ import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
 import {DataTypeVariant, getTypeVariant} from "./extraction/getTypeVariant";
 import {getTypesFromFunction} from "./extraction/getTypesFromFunction";
+import {stringify} from "lossless-json";
 
 /**
  * Result of a node or flow validation.
@@ -125,7 +126,10 @@ export function generateFlowSourceCode(
                 });
                 return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
             }
-            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${paramIdx} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "LiteralValue") {
+                const jsonString = stringify(val?.value)
+                return `/* @pos ${nodeId} ${paramIdx} */ ${jsonString}`;
+            }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
                 return generateNodeCall(wrapper.id!, nodeId, paramIdx);
@@ -172,7 +176,10 @@ export function generateFlowSourceCode(
                 });
                 return `/* @pos ${nodeId} ${index} */ ${refCode}`;
             }
-            if (val.__typename === "LiteralValue") return `/* @pos ${nodeId} ${index} */ ${JSON.stringify(val.value)}`;
+            if (val.__typename === "LiteralValue") {
+                const jsonString = stringify(val?.value)
+                return `/* @pos ${nodeId} ${index} */ ${jsonString}`;
+            }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
 
@@ -218,7 +225,7 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${JSON.stringify(setting?.value)}`).join(", ") ?? ""});` : ""
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
