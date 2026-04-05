@@ -150,7 +150,7 @@ export const getReferenceSuggestions = (
 
     allSymbols.forEach(symbol => {
         const name = symbol.getName();
-        if (!name.startsWith("node_") && !name.startsWith("p_")) return;
+        if (!name.startsWith("node_") && !name.startsWith("p_") && !name.startsWith("flow_")) return;
 
         // Get the variable declaration
         const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
@@ -182,7 +182,6 @@ export const getReferenceSuggestions = (
                     };
 
                     if (path.length > 0) {
-                        //@ts-ignore
                         referenceValue.referencePath = path;
                     }
 
@@ -229,6 +228,21 @@ export const getReferenceSuggestions = (
                     });
                 });
             }
+        }
+        else if (name.startsWith("flow_")) {
+            const propertyPaths = extractObjectProperties(symbolType, checker, expectedType)
+            propertyPaths.forEach(({ path }) => {
+                const referenceValue: ReferenceValue = {
+                    __typename: 'ReferenceValue',
+                    nodeFunctionId: null
+                };
+
+                if (path.length > 0) {
+                    referenceValue.referencePath = path;
+                }
+
+                referenceValues.push(referenceValue);
+            })
         }
     });
 
