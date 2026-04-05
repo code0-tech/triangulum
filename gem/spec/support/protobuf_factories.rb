@@ -8,7 +8,8 @@ module ProtobufFactories
       type: 'test',
       starting_node_id: starting_node_id,
       node_functions: node_functions,
-      project_slug: 'test'
+      project_slug: 'test',
+      signature: '(): void'
     )
   end
 
