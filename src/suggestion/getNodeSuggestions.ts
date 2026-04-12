@@ -35,7 +35,6 @@ export const getNodeSuggestions = (
         ${functions?.map((_, i) => `const check${i}: TargetType = {} as F${i};`).join("\n")}
         `;
 
-
         const fileName = "index.ts";
         const host = createCompilerHost(fileName, sourceCode);
         const sourceFile = host.getSourceFile(fileName)!;
