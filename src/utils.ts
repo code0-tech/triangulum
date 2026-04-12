@@ -46,6 +46,12 @@ export const MINIMAL_LIB = `
     interface NewableFunction extends Function {}
     interface IArguments { }
     interface RegExp { }
+  
+    declare namespace Utils {
+        type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
+    }
+
+    import ReturnType = Utils.ReturnType;
 `;
 
 /**
