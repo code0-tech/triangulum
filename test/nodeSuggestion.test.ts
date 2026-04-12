@@ -44,6 +44,10 @@ describe("getNodeSuggestions", () => {
             'std::control::value'
         ]))
 
+        expect(map).toEqual(expect.not.arrayContaining([
+            "std::number::add"
+        ]))
+
     });
 
     it("should suggest functions with compatible return types and prioritize exact matches for boolean", () => {
