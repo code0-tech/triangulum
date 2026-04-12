@@ -124,7 +124,7 @@ export function generateFlowSourceCode(
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
-                let refCode = ref.inputIndex !== undefined
+                let refCode = typeof ref.inputIndex === "number"
                     ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
                 ref.referencePath?.forEach(pathObj => {
@@ -174,7 +174,7 @@ export function generateFlowSourceCode(
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
-                let refCode = ref.inputIndex !== undefined
+                let refCode = typeof ref.inputIndex === "number"
                     ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
                     : `node_${sanitizeId(ref.nodeFunctionId)}`;
                 ref.referencePath?.forEach(pathObj => {
