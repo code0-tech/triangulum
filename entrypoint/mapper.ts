@@ -1,7 +1,7 @@
 import {SingleValidationInputData} from "./readSingle";
 import {
     DataType,
-    Flow,
+    Flow, FlowSetting,
     FunctionDefinition,
     NodeFunction,
     NodeParameter,
@@ -10,10 +10,11 @@ import {
 } from "@code0-tech/sagittarius-graphql-types";
 import {
     DefinitionDataType,
+    FunctionDefinition as TucanaFunctionDefinition,
     NodeFunction as TucanaNodeFunction,
     NodeParameter as TucanaNodeParameter,
-    FunctionDefinition as TucanaFunctionDefinition,
     ParameterDefinition as TucanaParameterDefinition,
+    FlowSetting as TucanaFlowSetting,
     ValidationFlow,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
@@ -42,10 +43,22 @@ function mapFlow(flow: ValidationFlow): Flow {
         id: gid('Flow', flow.flowId) as Flow['id'],
         signature: flow.signature,
         startingNodeId: gid('NodeFunction', flow.startingNodeId) as NodeFunction['id'],
+        settings: {
+            nodes: flow.settings.map(mapFlowSetting)
+        },
         nodes: {
             nodes: flow.nodeFunctions.map(mapNodeFunction)
         }
     };
+}
+
+function mapFlowSetting(flowSetting: TucanaFlowSetting): FlowSetting {
+    return {
+        __typename: "FlowSetting",
+        id: gid('FlowSetting', flowSetting.databaseId) as FlowSetting['id'],
+        flowSettingIdentifier: flowSetting.flowSettingId,
+        value: flowSetting.value ? toAllowedValue(flowSetting.value) : null,
+    }
 }
 
 function mapNodeFunction(nodeFunction: TucanaNodeFunction): NodeFunction {
