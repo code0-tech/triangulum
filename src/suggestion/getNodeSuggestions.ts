@@ -58,7 +58,7 @@ export const getNodeSuggestions = (
 
 
     return functionToSuggest?.map(f => {
-        return {
+        const node: NodeFunction = {
             __typename: "NodeFunction",
             id: `gid://sagittarius/NodeFunction/1`,
             functionDefinition: {
@@ -75,9 +75,13 @@ export const getNodeSuggestions = (
                         id: p?.id,
                         identifier: p?.identifier
                     },
-                    value: null
+                    value: p?.defaultValue ? {
+                        __typename: "LiteralValue",
+                        value: p.defaultValue.value
+                    } : null
                 }))
             }
-        } as any as NodeFunction;
+        }
+        return node
     }).filter((f): f is NodeFunction => f !== null) ?? [];
 }
