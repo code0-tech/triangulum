@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import {describe, it} from 'vitest';
 import {getReferenceSuggestions} from '../src/suggestion/getReferenceSuggestions';
 import {Flow} from "@code0-tech/sagittarius-graphql-types";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
