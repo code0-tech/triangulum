@@ -63,8 +63,8 @@ const extractObjectProperties = (
         if (properties && properties.length > 0) {
             properties.forEach(property => {
                 const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
-                const propName = property.getName() as ReferencePath;
-                const newPath = [...currentPath, propName];
+                const propName = property.getName();
+                const newPath = [...currentPath, {path: propName}];
 
                 // Recursively extract nested properties
                 results.push(...extractObjectProperties(propType, checker, expectedType, newPath));
