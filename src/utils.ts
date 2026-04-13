@@ -238,7 +238,15 @@ export function generateFlowSourceCode(
         .map(n => generateNodeCode(n!.id!))
         .join('\n');
 
-    return `${typeDefs}\n${flowTypeDeclaration}\n${funcDeclarations}\n\n// --- Flow ---\n${flowCode}\n${executionCode}`;
+    return `
+        ${typeDefs}\n
+        ${flowTypeDeclaration}\n
+        ${funcDeclarations}\n
+        (() =>
+            ${flowCode}
+            ${executionCode}
+        )();
+    `;
 }
 
 export interface InferredTypes {

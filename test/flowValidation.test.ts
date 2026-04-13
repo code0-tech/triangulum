@@ -537,4 +537,146 @@ describe('getFlowValidation - Integrationstest', () => {
         })
     });
 
+    it('8', () => {
+
+        const flow: Flow = {
+            "__typename": "Flow",
+            "id": "gid://sagittarius/Flow/1",
+            "createdAt": "2026-04-12T13:46:13Z",
+            "name": "Test",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }",
+            "nodes": {
+                "__typename": "NodeFunctionConnection",
+                "nodes": [
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/1",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/9",
+                            "identifier": "std::boolean::from_number"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/11",
+                                        "identifier": "value"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": 1
+                                    }
+                                }
+                            ]
+                        },
+                        "nextNodeId": "gid://sagittarius/NodeFunction/2"
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/2",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/4",
+                            "identifier": "std::control::return"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/4",
+                                        "identifier": "value"
+                                    },
+                                    "value": null
+                                }
+                            ]
+                        },
+                        "nextNodeId": "gid://sagittarius/NodeFunction/3"
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/3",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/12",
+                            "identifier": "std::boolean::as_text"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/15",
+                                        "identifier": "value"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": false
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "project": {
+                "__typename": "NamespaceProject",
+                "id": "gid://sagittarius/NamespaceProject/1"
+            },
+            "settings": {
+                "__typename": "FlowSettingConnection",
+                "count": 2,
+                "nodes": [
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/1",
+                        "createdAt": "2026-04-12T13:47:31Z",
+                        "updatedAt": "2026-04-12T13:47:31Z",
+                        "flowSettingIdentifier": "httpURL",
+                        "value": "/test"
+                    },
+                    {
+                        "__typename": "FlowSetting",
+                        "id": "gid://sagittarius/FlowSetting/2",
+                        "createdAt": "2026-04-12T13:47:31Z",
+                        "updatedAt": "2026-04-12T13:47:31Z",
+                        "flowSettingIdentifier": "httpMethod",
+                        "value": "GET"
+                    }
+                ],
+                "pageInfo": {
+                    "__typename": "PageInfo",
+                    "endCursor": "Mg",
+                    "hasNextPage": false
+                }
+            },
+            "startingNodeId": "gid://sagittarius/NodeFunction/1",
+            "type": {
+                "__typename": "FlowType",
+                "id": "gid://sagittarius/FlowType/1"
+            },
+            "disabledReason": null,
+            "updatedAt": "2026-04-13T00:07:31Z",
+            "userAbilities": {
+                "__typename": "FlowUserAbilities",
+                "deleteFlow": true
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(true);
+        result.diagnostics.forEach((error) => {
+            expect(error.parameterIndex).toBeDefined()
+        })
+    });
+
 });
