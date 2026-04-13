@@ -679,4 +679,262 @@ describe('getFlowValidation - Integrationstest', () => {
         })
     });
 
+    it('9', () => {
+
+        const flow: Flow = {
+            "__typename": "Flow",
+            "id": "gid://sagittarius/Flow/1",
+            "createdAt": "2026-04-13T19:45:44Z",
+            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { payload: { test: BOOLEAN }, headers: { bla: TEXT } }",
+            "disabledReason": null,
+            "name": "Test",
+            "project": {
+                "__typename": "NamespaceProject",
+                "id": "gid://sagittarius/NamespaceProject/1"
+            },
+            "settings": {
+                "nodes": [
+                    {
+                        "value": "/test",
+                        "flowSettingIdentifier": "httpURL"
+                    },
+                    {
+                        "value": "GET",
+                        "flowSettingIdentifier": "httpMethod"
+                    }
+                ]
+            },
+            "startingNodeId": "gid://sagittarius/NodeFunction/3",
+            "type": {
+                "id": "gid://sagittarius/FlowType/2",
+                "__typename": "FlowType"
+            },
+            "updatedAt": "2026-04-13T19:54:55Z",
+            "userAbilities": {
+                "deleteFlow": true,
+                "__typename": "FlowUserAbilities"
+            },
+            "nodes": {
+                "nodes": [
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/1",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/42",
+                            "identifier": "http::response::create"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/66",
+                                        "identifier": "http_status_code"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": 200
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/67",
+                                        "identifier": "headers"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": {}
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/68",
+                                        "identifier": "payload"
+                                    },
+                                    "value": {
+                                        "__typename": "ReferenceValue",
+                                        "nodeFunctionId": null,
+                                        "referencePath": [
+                                            {
+                                                "path": "payload"
+                                            },
+                                            {
+                                                "path": "test"
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "nextNodeId": "gid://sagittarius/NodeFunction/2"
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/2",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/114",
+                            "identifier": "rest::control::respond"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/177",
+                                        "identifier": "http_response"
+                                    },
+                                    "value": {
+                                        "__typename": "ReferenceValue",
+                                        "nodeFunctionId": "gid://sagittarius/NodeFunction/1"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/3",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/5",
+                            "identifier": "std::control::if"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/6",
+                                        "identifier": "condition"
+                                    },
+                                    "value": {
+                                        "__typename": "ReferenceValue",
+                                        "nodeFunctionId": null,
+                                        "referencePath": [
+                                            {
+                                                "path": "payload"
+                                            },
+                                            {
+                                                "path": "test"
+                                            }
+                                        ]
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/7",
+                                        "identifier": "runnable"
+                                    },
+                                    "value": {
+                                        "id": "gid://sagittarius/NodeFunction/4",
+                                        "__typename": "NodeFunctionIdWrapper"
+                                    }
+                                }
+                            ]
+                        },
+                        "nextNodeId": "gid://sagittarius/NodeFunction/1"
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/4",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/42",
+                            "identifier": "http::response::create"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/66",
+                                        "identifier": "http_status_code"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": 200
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/67",
+                                        "identifier": "headers"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": {}
+                                    }
+                                },
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/68",
+                                        "identifier": "payload"
+                                    },
+                                    "value": {
+                                        "__typename": "LiteralValue",
+                                        "value": "boolean"
+                                    }
+                                }
+                            ]
+                        },
+                        "nextNodeId": "gid://sagittarius/NodeFunction/5"
+                    },
+                    {
+                        "__typename": "NodeFunction",
+                        "id": "gid://sagittarius/NodeFunction/5",
+                        "functionDefinition": {
+                            "__typename": "FunctionDefinition",
+                            "id": "gid://sagittarius/FunctionDefinition/114",
+                            "identifier": "rest::control::respond"
+                        },
+                        "parameters": {
+                            "__typename": "NodeParameterConnection",
+                            "nodes": [
+                                {
+                                    "__typename": "NodeParameter",
+                                    "parameterDefinition": {
+                                        "__typename": "ParameterDefinition",
+                                        "id": "gid://sagittarius/ParameterDefinition/177",
+                                        "identifier": "http_response"
+                                    },
+                                    "value": {
+                                        "__typename": "ReferenceValue",
+                                        "nodeFunctionId": "gid://sagittarius/NodeFunction/4"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(true);
+        result.diagnostics.forEach((error) => {
+            expect(error.parameterIndex).toBeDefined()
+        })
+    });
+
 });
