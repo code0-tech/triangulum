@@ -123,10 +123,9 @@ export function generateFlowSourceCode(
             if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
-                if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${paramIdx} */ undefined`;
                 let refCode = typeof ref.inputIndex === "number"
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
-                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
+                    ? `p_${sanitizeId(ref.nodeFunctionId ?? "undefined")}_${ref.parameterIndex}[${ref.inputIndex}]`
+                    : ref.nodeFunctionId ? `node_${sanitizeId(ref.nodeFunctionId)}` : `flow_${sanitizeId(flow?.id ?? "undefined")}`;
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
@@ -173,10 +172,9 @@ export function generateFlowSourceCode(
             if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
-                if (!ref.nodeFunctionId) return `/* @pos ${nodeId} ${index} */ undefined`;
                 let refCode = typeof ref.inputIndex === "number"
-                    ? `p_${sanitizeId(ref.nodeFunctionId)}_${ref.parameterIndex}[${ref.inputIndex}]`
-                    : `node_${sanitizeId(ref.nodeFunctionId)}`;
+                    ? `p_${sanitizeId(ref.nodeFunctionId ?? "undefined")}_${ref.parameterIndex}[${ref.inputIndex}]`
+                    : ref.nodeFunctionId ? `node_${sanitizeId(ref.nodeFunctionId)}` : `flow_${sanitizeId(flow?.id ?? "undefined")}`;
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
