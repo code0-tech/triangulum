@@ -97,6 +97,12 @@ export const getReferenceSuggestions = (
     dataTypes?: DataType[]
 ): ReferenceValue[] => {
 
+    const nodeIndex = flow?.nodes?.nodes?.findIndex(n => n?.id == nodeId);
+
+    if (typeof nodeIndex == "number" && nodeIndex >= 0 && typeof targetIndex == "number" && targetIndex >= 0 && flow?.nodes?.nodes?.[nodeIndex]?.parameters?.nodes?.[targetIndex]) {
+        flow.nodes.nodes[nodeIndex].parameters.nodes[targetIndex].value = null
+    }
+
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, true);
     const fileName = "index.ts";
     const host = createCompilerHost(fileName, sourceCode);
@@ -161,7 +167,7 @@ export const getReferenceSuggestions = (
             return;
         }
 
-        const symbolType = checker.getTypeOfSymbolAtLocation(symbol, targetExpression!);
+        const symbolType = checker.getTypeOfSymbolAtLocation(symbol, targetExpression);
 
         // Handle node_ variables (node function results)
         if (name.startsWith("node_")) {
