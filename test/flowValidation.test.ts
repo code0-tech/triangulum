@@ -8,6 +8,7 @@ describe('getFlowValidation - Integrationstest', () => {
     it('1', () => {
 
         const flow: Flow = {
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
             nodes: {
                 nodes: [
                     {
@@ -51,7 +52,7 @@ describe('getFlowValidation - Integrationstest', () => {
                                         __typename: "ReferenceValue",
                                         nodeFunctionId: "gid://sagittarius/NodeFunction/2",
                                         parameterIndex: 1,
-                                        inputIndex: 0, //TODO: Das wird gerade einfach nicht berücksichtigt
+                                        inputIndex: 0,
                                         referencePath: [{path: "test"}]
                                     }
                                 },
@@ -149,6 +150,7 @@ describe('getFlowValidation - Integrationstest', () => {
     it('4', () => {
 
         const flow: Flow = {
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
             nodes: {
                 nodes: [
                     {
@@ -198,6 +200,7 @@ describe('getFlowValidation - Integrationstest', () => {
     it('5', () => {
 
         const flow: Flow = {
+            startingNodeId: "gid://sagittarius/NodeFunction/2",
             nodes: {
                 nodes: [
                     {
