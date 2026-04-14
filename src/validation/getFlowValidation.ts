@@ -28,7 +28,7 @@ export const getFlowValidation = (
         // We ignore this in flow validation too because we might generate code for incomplete flows.
 
         let nodeId: NodeFunction['id'] | undefined;
-        let parameterIndex: number | undefined;
+        let parameterIndex: number | null = null;
 
         if (d.start !== undefined) {
             const fullText = sourceFile.getFullText();
@@ -40,7 +40,7 @@ export const getFlowValidation = (
             const searchText = fullText.substring(searchStart, searchEnd);
 
             // Find all @pos comments in the search range
-            const posRegex = /\/\* @pos ([^ ]+) (\d+) \*\//g;
+            const posRegex = /\/\* @pos ([^ ]+) (\d+|null) \*\//g;
             let match;
             let closestMatch: RegExpExecArray | null = null;
             let closestCommentEnd = -1;
@@ -62,7 +62,7 @@ export const getFlowValidation = (
             }
 
             if (closestMatch) {
-                nodeId = closestMatch[1] === "undefined" ? undefined : closestMatch[1] as NodeFunction['id'];
+                nodeId = closestMatch[1] === "null" ? null : closestMatch[1] as NodeFunction['id'];
                 parameterIndex = parseInt(closestMatch[2], 10);
             }
         }
@@ -72,7 +72,7 @@ export const getFlowValidation = (
             code: d.code,
             severity: "error" as const,
             nodeId,
-            parameterIndex
+            parameterIndex: typeof parameterIndex == "number" && Number.isSafeInteger(parameterIndex) ? parameterIndex : null,
         };
     }).filter((e) => e !== null);
 
