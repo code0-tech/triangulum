@@ -63,7 +63,7 @@ export const getFlowValidation = (
 
             if (closestMatch) {
                 nodeId = closestMatch[1] === "null" ? null : closestMatch[1] as NodeFunction['id'];
-                parameterIndex = parseInt(closestMatch[2], 10) || null;
+                parameterIndex = parseInt(closestMatch[2], 10);
             }
         }
 
@@ -72,7 +72,7 @@ export const getFlowValidation = (
             code: d.code,
             severity: "error" as const,
             nodeId,
-            parameterIndex
+            parameterIndex: typeof parameterIndex == "number" && Number.isSafeInteger(parameterIndex) ? parameterIndex : null,
         };
     }).filter((e) => e !== null);
 
