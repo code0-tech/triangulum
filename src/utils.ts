@@ -25,7 +25,7 @@ export interface ValidationResult {
         code: number
         severity: "error" | "warning"
         nodeId?: NodeFunction["id"]
-        parameterIndex?: number
+        parameterIndex?: number | null
     }>;
 }
 
@@ -142,7 +142,7 @@ export function generateFlowSourceCode(
             return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
         }).join(", ");
 
-        const funcName = `fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
+        const funcName = `/* @pos ${nodeId} null */ fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
         const call = `${funcName}(${args})`;
         // Add position comment only for nested calls (when called from within an argument)
         if (parentNodeId !== undefined && parentParamIndex !== undefined) {
@@ -214,7 +214,7 @@ export function generateFlowSourceCode(
         const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
         const needsAnyCast = args.includes("undefined");
         const isReturnNode = node.functionDefinition.identifier === "std::control::return";
-        let code = `${indent}${isReturnNode ? "return " : `const ${varName} = `}${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
+        let code = `${indent}${isReturnNode ? "return " : `const ${varName} = `}/* @pos ${nodeId} null */ ${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
         if (node.nextNodeId) code += generateNodeCode(node.nextNodeId, indent);
         return code;
     };
@@ -229,7 +229,7 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos undefined ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos null ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
