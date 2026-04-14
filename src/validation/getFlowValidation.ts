@@ -12,6 +12,34 @@ export const getFlowValidation = (
 ): ValidationResult => {
 
 
+    if (!flow?.startingNodeId) {
+        return {
+            isValid: false,
+            returnType: "void",
+            diagnostics: [{
+                nodeId: null,
+                parameterIndex: null,
+                code: 0,
+                message: "You need to provide a starting node to be able to execute this flow.",
+                severity: "error",
+            }]
+        }
+    }
+
+    if (!flow.nodes?.nodes?.find(n => n?.id == flow.startingNodeId)) {
+        return {
+            isValid: false,
+            returnType: "void",
+            diagnostics: [{
+                nodeId: null,
+                parameterIndex: null,
+                code: 0,
+                message: "The starting node is not linked within the flow. Please make sure the starting node is connected to the rest of the flow.",
+                severity: "error",
+            }]
+        }
+    }
+
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes);
 
     // 3. Virtual TypeScript Compilation
