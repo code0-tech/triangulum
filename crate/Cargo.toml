@@ -1,0 +1,12 @@
+[package]
+name = "triangulum"
+version = "0.0.0"
+edition = "2024"
+description = "Rust wrapper for Triangulum"
+license = "MIT"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tucana = "0.0.68"
