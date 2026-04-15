@@ -1,8 +1,9 @@
-import {SingleValidationInputData} from "./readSingle";
+import {SingleValidationInputData, ValueValidationInputData} from "./readSingle";
 import {
     DataType,
     Flow, FlowSetting,
     FunctionDefinition,
+    LiteralValue,
     NodeFunction,
     NodeParameter,
     NodeParameterValue,
@@ -25,10 +26,24 @@ export type TriangulumFlowValidationInput = {
     dataTypes?: DataType[]
 }
 
+export type TriangulumValueValidationInput = {
+    type: string,
+    value?: LiteralValue,
+    dataTypes: DataType[]
+}
+
 export function mapToFlowValidation(data: SingleValidationInputData): TriangulumFlowValidationInput {
     return {
         flow: mapFlow(data.flow!),
         functions: data.functions.map(mapFunctionDefinition),
+        dataTypes: data.dataTypes.map(mapDataType)
+    }
+}
+
+export function mapToValueValidation(data: ValueValidationInputData): TriangulumValueValidationInput {
+    return {
+        type: data.type,
+        value: data.value,
         dataTypes: data.dataTypes.map(mapDataType)
     }
 }
