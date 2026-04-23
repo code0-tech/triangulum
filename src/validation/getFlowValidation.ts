@@ -11,7 +11,6 @@ export const getFlowValidation = (
     dataTypes?: DataType[]
 ): ValidationResult => {
 
-
     if (!flow?.startingNodeId) {
         return {
             isValid: false,

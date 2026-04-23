@@ -1594,4 +1594,68 @@ describe('getFlowValidation - Integrationstest', () => {
         expect(result.diagnostics[0].parameterIndex).toBe(null)
     });
 
+    it('13', () => {
+
+        const flow: Flow = {
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::control::if"},
+                        parameters: {
+                            nodes: [
+                                {
+                                    value: {
+                                        __typename: "LiteralValue",
+                                        value: true
+                                    }
+                                },
+                                {
+                                    value: {
+                                        __typename: "NodeFunctionIdWrapper",
+                                        id: "gid://sagittarius/NodeFunction/2"
+                                    }
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: 0}},
+                                {value: {__typename: "LiteralValue", value: 0}}
+                            ]
+                        },
+                        nextNodeId: "gid://sagittarius/NodeFunction/3",
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/3",
+                        functionDefinition: {identifier: "std::control::return"},
+                        parameters: {
+                            nodes: [
+                                {
+                                    value: {
+                                        __typename: "ReferenceValue",
+                                        nodeFunctionId: "gid://sagittarius/NodeFunction/2",
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(true);
+        result.diagnostics.forEach((error) => {
+            expect(error.nodeId).toBeDefined()
+            expect(error.parameterIndex).toBeDefined()
+        })
+    });
+
 });
