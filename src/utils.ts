@@ -10,8 +10,6 @@ import {
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
-import {DataTypeVariant, getTypeVariant} from "./extraction/getTypeVariant";
-import {getTypesFromFunction} from "./extraction/getTypesFromFunction";
 import {stringify} from "lossless-json";
 
 /**
@@ -113,58 +111,13 @@ export function generateFlowSourceCode(
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
     const visited = new Set<string>();
 
-    const generateNodeCall = (nodeId: string, parentNodeId?: string, parentParamIndex?: number): string => {
-        const node = nodes.find(n => n?.id === nodeId);
-        if (!node || !node.functionDefinition?.identifier) return "undefined";
-
-        const params = (node.parameters?.nodes as NodeParameter[]) || [];
-        const args = params.map((p, paramIdx) => {
-            const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ {}` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
-            if (val.__typename === "ReferenceValue") {
-                const ref = val as ReferenceValue;
-                let refCode = typeof ref.inputIndex === "number"
-                    ? `p_${sanitizeId(ref.nodeFunctionId ?? "undefined")}_${ref.parameterIndex}[${ref.inputIndex}]`
-                    : ref.nodeFunctionId ? `node_${sanitizeId(ref.nodeFunctionId)}` : `flow_${sanitizeId(flow?.id ?? "undefined")}`;
-                ref.referencePath?.forEach(pathObj => {
-                    refCode += `?.${pathObj.path}`;
-                });
-                return `/* @pos ${nodeId} ${paramIdx} */ ${refCode}`;
-            }
-            if (val.__typename === "LiteralValue") {
-                const jsonString = stringify(val?.value)
-                return `/* @pos ${nodeId} ${paramIdx} */ ${jsonString}`;
-            }
-            if (val.__typename === "NodeFunctionIdWrapper") {
-                const wrapper = val as NodeFunctionIdWrapper;
-                return generateNodeCall(wrapper.id!, nodeId, paramIdx);
-            }
-            return isForInference ? `/* @pos ${nodeId} ${paramIdx} */ ({} as any)` : `/* @pos ${nodeId} ${paramIdx} */ undefined`;
-        }).join(", ");
-
-        const funcName = `/* @pos ${nodeId} null */ fn_${node.functionDefinition.identifier.replace(/::/g, '_')}`;
-        const call = `${funcName}(${args})`;
-        // Add position comment only for nested calls (when called from within an argument)
-        if (parentNodeId !== undefined && parentParamIndex !== undefined) {
-            return `${call}`;
-        }
-        return call;
-    };
-
     const generateNodeCode = (nodeId: string, indent: string = ""): string => {
-        if (visited.has(nodeId)) return "";
         const node = nodes.find(n => n?.id === nodeId);
         if (!node || !node.functionDefinition) return "";
         visited.add(nodeId);
 
         const funcDef = funcMap.get(node.functionDefinition.identifier);
         if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
-
-        // Only use getTypesFromNode if we are NOT already doing inference to avoid infinite recursion
-        let nodeTypes: any = {parameters: []};
-        if (!isForInference) {
-            nodeTypes = getTypesFromFunction(funcDef);
-        }
 
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
@@ -186,35 +139,37 @@ export function generateFlowSourceCode(
             }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
-
-                if (!isForInference) {
-                    const expectedType = nodeTypes.parameters[index];
-                    const isFunctionType = expectedType ? getTypeVariant(expectedType, dataTypes)[0].variant === DataTypeVariant.NODE : false;
-
-                    if (isFunctionType) {
-                        const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
-                        const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
-                        return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
-                    } else {
-                        const nestedCall = generateNodeCall(wrapper.id!, nodeId, index);
-                        return `/* @pos ${nodeId} ${index} */ ${nestedCall}`;
-                    }
-                } else {
-                    // During inference, we just need something valid.
-                    // Defaulting to a lambda is safer for type inference of the parent node's parameters.
-                    const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
-                    const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
-                    return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
-                }
+                const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
+                const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
+                return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
             }
             return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
-        }).join(", ");
+        });
 
         const varName = `node_${sanitizeId(node.id!)}`;
         const funcName = `fn_${node?.functionDefinition?.identifier?.replace(/::/g, '_')}`;
         const needsAnyCast = args.includes("undefined");
-        const isReturnNode = node.functionDefinition.identifier === "std::control::return";
-        let code = `${indent}${isReturnNode ? "return " : `const ${varName} = `}/* @pos ${nodeId} null */ ${funcName}(${args})${needsAnyCast ? "" : ""} ;\n`;
+
+
+
+        let code = `${indent}`;
+
+        if (node.functionDefinition.identifier === "std::control::return") {
+            code += `return /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+        } else if (node.functionDefinition.identifier === "std::control::if") {
+            code += `/* @pos ${nodeId} null */ if(${args[0]}) {
+                ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+            }`
+        } else if (node.functionDefinition.identifier === "std::control::if_else") {
+            code += `/* @pos ${nodeId} null */ if(${args[0]}) {
+                ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+            } else {
+                ${generateNodeCode((node.parameters?.nodes?.[2]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+            }`
+        } else {
+            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+        }
+
         if (node.nextNodeId) code += generateNodeCode(node.nextNodeId, indent);
         return code;
     };
