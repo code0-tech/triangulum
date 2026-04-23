@@ -157,11 +157,13 @@ export function generateFlowSourceCode(
         if (node.functionDefinition.identifier === "std::control::return") {
             code += `return /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
         } else if (node.functionDefinition.identifier === "std::control::if") {
-            code += `/* @pos ${nodeId} null */ if(${args[0]}) {
+            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `if(${args[0]}) {
                 ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
             }`
         } else if (node.functionDefinition.identifier === "std::control::if_else") {
-            code += `/* @pos ${nodeId} null */ if(${args[0]}) {
+            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `if(${args[0]}) {
                 ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
             } else {
                 ${generateNodeCode((node.parameters?.nodes?.[2]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
