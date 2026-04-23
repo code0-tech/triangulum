@@ -32,10 +32,10 @@ export const getTypeVariant = (
     const isArrayType = Array.isArray(types);
     const typesToAnalyze = isArrayType ? (types as DataType[]) : isStringType ? [{ identifier: types, type: types }] : [types];
     const identifiers = isArrayType
-        ? (types as DataType[]).map(t => t.identifier)
+        ? (types as DataType[]).map(t => t?.identifier)
         : isStringType
         ? [types as string]
-        : [(types as DataType).identifier];
+        : [(types as DataType)?.identifier];
 
     const results: TypeVariantResult[] = [];
 
