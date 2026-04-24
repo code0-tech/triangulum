@@ -2,6 +2,7 @@ import {describe, it} from 'vitest';
 import {getReferenceSuggestions} from '../src/suggestion/getReferenceSuggestions';
 import {Flow} from "@code0-tech/sagittarius-graphql-types";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
+import {getSchema} from "../src/suggestion/getSchema";
 
 describe('getReferenceSuggestions', () => {
     it('sd', () => {
@@ -75,7 +76,7 @@ describe('getReferenceSuggestions', () => {
                                         "identifier": "value"
                                     },
                                     "value": null
-                                }
+                                },
                             ]
                         }
                     }
@@ -123,9 +124,9 @@ describe('getReferenceSuggestions', () => {
             }
         };
 
-        const suggestions = getReferenceSuggestions(flow, "gid://sagittarius/NodeFunction/4", 0, FUNCTION_SIGNATURES, DATA_TYPES);
+        const schema = getSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES,  "gid://sagittarius/NodeFunction/3");
 
-        //expect(suggestions.some(s => !s.nodeFunctionId)).toBe(true);
+        console.dir(schema, { depth: null, colors: true });
     });
 
     it('2', () => {
