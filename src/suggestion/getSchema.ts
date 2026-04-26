@@ -3,7 +3,8 @@ import {
     Flow,
     FunctionDefinition,
     LiteralValue,
-    NodeFunction, ReferencePath,
+    NodeFunction,
+    ReferencePath,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
@@ -54,7 +55,8 @@ export const getSchema = (
     flow: Flow,
     dataTypes: DataType[],
     functions: FunctionDefinition[],
-    nodeId?: NodeFunction['id']
+    nodeId?: NodeFunction['id'],
+    schema?: (type: ts.Type) => Schema | null
 ): ParameterSchema[] => {
 
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes)
@@ -139,6 +141,9 @@ export const getSchema = (
         const suggestions = {
             suggestions: [...literalValueSuggestions, ...referenceSuggestions, ...nodeSuggestions],
         }
+
+        const customSchema = schema?.(type)
+        if (customSchema) return customSchema
 
         if (isPrimitiveLiteralUnion(type)) return {input: "select", ...suggestions}
 
@@ -249,18 +254,16 @@ function getLiteralValueSuggestions(type: ts.Type): LiteralValue[] {
 
 function getNodeSuggestions(checker: ts.TypeChecker, functionDeclarations: ts.FunctionDeclaration[], functions: FunctionDefinition[], paramType: ts.Type): NodeFunction[] {
 
-    //TODO: if paramType is callable than we should parse in all functions that match the parameters
-    //TODO: otherwise we should only parse in functions that match the return type
-    //TODO: we should differentiate between inline usable suggestions and not
+    if (isSubFlow(paramType)) return []
 
-     return functionDeclarations.flatMap(func => {
+    return functionDeclarations.flatMap(func => {
 
         const signature = checker.getSignatureFromDeclaration(func)
         const returnType = checker.getReturnTypeOfSignature(signature!)
 
-         const simplifiedReturnType = returnType.isTypeParameter()
-             ? (checker.getBaseConstraintOfType(returnType) || checker.getAnyType())
-             : returnType
+        const simplifiedReturnType = returnType.isTypeParameter()
+            ? (checker.getBaseConstraintOfType(returnType) || checker.getAnyType())
+            : returnType
 
         if (checker.isTypeAssignableTo(simplifiedReturnType, paramType)) {
             const functionName = func.name?.getText().replace("fn_", "").replace("_", "::").replace("_", "::")
@@ -274,30 +277,28 @@ function getNodeSuggestions(checker: ts.TypeChecker, functionDeclarations: ts.Fu
                     id: funktion?.id,
                     identifier: funktion?.identifier,
                 },
-                parameters: {
-                    __typename: "NodeParameterConnection",
-                    nodes: (funktion?.parameterDefinitions?.nodes || []).map(p => ({
-                        __typename: "NodeParameter",
-                        parameterDefinition: {
-                            __typename: "ParameterDefinition",
-                            id: p?.id,
-                            identifier: p?.identifier
-                        },
-                        value: p?.defaultValue ? {
-                            __typename: "LiteralValue",
-                            value: p.defaultValue.value
-                        } : null
-                    }))
-                }
+                ...((funktion?.parameterDefinitions?.nodes?.length ?? 0) > 0 ? {
+                    parameters: {
+                        __typename: "NodeParameterConnection",
+                        nodes:
+                            (funktion?.parameterDefinitions?.nodes || []).map(p => ({
+                                __typename: "NodeParameter",
+                                parameterDefinition: {
+                                    __typename: "ParameterDefinition",
+                                    id: p?.id,
+                                    identifier: p?.identifier
+                                },
+                                value: p?.defaultValue ? {
+                                    __typename: "LiteralValue",
+                                    value: p.defaultValue.value
+                                } : null
+                            }))
+                    }
+                } : {}),
             }
-
             return node
-
         }
-
         return []
-
-
     })
 
 }
@@ -358,7 +359,7 @@ function getReferenceSuggestions(checker: ts.TypeChecker, node: ts.VariableDecla
                 return typeArguments.flatMap((tupleElementType, tupleIndex) => {
                     const propertyPaths = extractObjectProperties(tupleElementType, checker, paramType)
 
-                    return propertyPaths.flatMap(({ path }) => {
+                    return propertyPaths.flatMap(({path}) => {
                         const referenceValue: ReferenceValue = {
                             __typename: 'ReferenceValue',
                             nodeFunctionId: nodeFunctionId as any,
@@ -380,7 +381,7 @@ function getReferenceSuggestions(checker: ts.TypeChecker, node: ts.VariableDecla
         } else if (name.startsWith("flow_")) {
             const propertyPaths = extractObjectProperties(symbolType, checker, paramType)
 
-            return propertyPaths.flatMap(({ path }) => {
+            return propertyPaths.flatMap(({path}) => {
                 const referenceValue: ReferenceValue = {
                     __typename: 'ReferenceValue',
                     nodeFunctionId: null
@@ -462,7 +463,7 @@ const extractObjectProperties = (
 ): Array<{ path: ReferencePath[], type: ts.Type }> => {
     const results: Array<{ path: ReferencePath[], type: ts.Type }> = []
 
-    if (checker.isTypeAssignableTo(type, expectedType)) results.push({ path: currentPath, type })
+    if (checker.isTypeAssignableTo(type, expectedType)) results.push({path: currentPath, type})
 
     if (isRealObjectType(type)) {
         const properties = type.getProperties()
