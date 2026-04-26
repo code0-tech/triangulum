@@ -3,15 +3,11 @@ import {
     Flow,
     FunctionDefinition,
     LiteralValue,
-    NodeFunction,
+    NodeFunction, ReferencePath,
     ReferenceValue
 } from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
 import ts, {NumberLiteralType, StringLiteralType, Type} from "typescript"
-
-export interface TemporaryLiteralValue extends LiteralValue {
-    references?: Record<string, ReferenceValue>
-}
 
 interface Input {
     input?: string
@@ -107,39 +103,41 @@ export const getSchema = (
 
     const funktionParameterTypes: Type[] | undefined = funktion?.parameters?.map(p => {
         const symbol = checker.getSymbolAtLocation(p.name)
-        return checker.getTypeOfSymbolAtLocation(symbol!, funktion)
+        return checker.getTypeOfSymbolAtLocation(symbol!, node?.initializer as ts.CallExpression)
     })
 
     const combinedParameterTypes: Type[] | undefined = funktionParameterTypes?.map((p, i) => {
-        const nodeType = nodeParameterTypes?.[i];
-        if (!nodeType) return p;
+        const nodeType = nodeParameterTypes?.[i]
+        if (!nodeType) return p
 
-        const pSymbol = p.getSymbol();
-        const nodeSymbol = nodeType.getSymbol();
+        const pSymbol = p.getSymbol()
+        const nodeSymbol = nodeType.getSymbol()
 
         if (pSymbol && nodeSymbol && pSymbol === nodeSymbol) {
-            return nodeType;
+            return nodeType
         }
 
         if (p.isTypeParameter()) {
-            const constraint = checker.getBaseConstraintOfType(p);
+            const constraint = checker.getBaseConstraintOfType(p)
             if (!constraint || checker.isTypeAssignableTo(nodeType, constraint)) {
-                return nodeType;
+                return nodeType
             }
         }
 
         if (checker.isTypeAssignableTo(nodeType, p)) {
-            return nodeType;
+            return nodeType
         }
 
-        return p;
+        return p
     })
 
     const generateSchema = (type: ts.Type): Schema => {
 
         const literalValueSuggestions = getLiteralValueSuggestions(type)
+        const referenceSuggestions = getReferenceSuggestions(checker, node!, type, checker.getSymbolsInScope(node!, ts.SymbolFlags.Variable))
+        const nodeSuggestions = getNodeSuggestions(checker, Array.from(declaredFunctionsMap.values()), functions, type)
         const suggestions = {
-            suggestions: [...literalValueSuggestions]
+            suggestions: [...literalValueSuggestions, ...referenceSuggestions, ...nodeSuggestions],
         }
 
         if (isPrimitiveLiteralUnion(type)) return {input: "select", ...suggestions}
@@ -249,6 +247,156 @@ function getLiteralValueSuggestions(type: ts.Type): LiteralValue[] {
     return []
 }
 
+function getNodeSuggestions(checker: ts.TypeChecker, functionDeclarations: ts.FunctionDeclaration[], functions: FunctionDefinition[], paramType: ts.Type): NodeFunction[] {
+
+    //TODO: if paramType is callable than we should parse in all functions that match the parameters
+    //TODO: otherwise we should only parse in functions that match the return type
+    //TODO: we should differentiate between inline usable suggestions and not
+
+     return functionDeclarations.flatMap(func => {
+
+        const signature = checker.getSignatureFromDeclaration(func)
+        const returnType = checker.getReturnTypeOfSignature(signature!)
+
+         const simplifiedReturnType = returnType.isTypeParameter()
+             ? (checker.getBaseConstraintOfType(returnType) || checker.getAnyType())
+             : returnType
+
+        if (checker.isTypeAssignableTo(simplifiedReturnType, paramType)) {
+            const functionName = func.name?.getText().replace("fn_", "").replace("_", "::").replace("_", "::")
+            const funktion = functions.find(f => f.identifier === functionName)
+
+            const node: NodeFunction = {
+                __typename: "NodeFunction",
+                id: `gid://sagittarius/NodeFunction/1`,
+                functionDefinition: {
+                    __typename: "FunctionDefinition",
+                    id: funktion?.id,
+                    identifier: funktion?.identifier,
+                },
+                parameters: {
+                    __typename: "NodeParameterConnection",
+                    nodes: (funktion?.parameterDefinitions?.nodes || []).map(p => ({
+                        __typename: "NodeParameter",
+                        parameterDefinition: {
+                            __typename: "ParameterDefinition",
+                            id: p?.id,
+                            identifier: p?.identifier
+                        },
+                        value: p?.defaultValue ? {
+                            __typename: "LiteralValue",
+                            value: p.defaultValue.value
+                        } : null
+                    }))
+                }
+            }
+
+            return node
+
+        }
+
+        return []
+
+
+    })
+
+}
+
+function getReferenceSuggestions(checker: ts.TypeChecker, node: ts.VariableDeclaration, paramType: ts.Type, symbols: ts.Symbol[]): ReferenceValue[] {
+
+    return symbols.flatMap(symbol => {
+        const name = symbol.getName()
+
+        if (!name.startsWith("node_") && !name.startsWith("p_") && !name.startsWith("flow_")) return []
+
+        const symbolDeclaration = symbol.getDeclarations()?.[0]
+        if (!symbolDeclaration) return []
+        if (symbolDeclaration.getEnd() >= node.getEnd()!) return []
+
+        const symbolType = checker.getTypeOfSymbolAtLocation(symbol, node)
+
+        if (name.startsWith("node_")) {
+            if (!((symbolType.flags & ts.TypeFlags.Void) !== 0)) {
+
+                const nodeFunctionId = name
+                    .replace("node_", "")
+                    .replace(/___/g, "://")
+                    .replace(/__/g, "/")
+                    .replace(/_/g, "/")
+
+                const propertyPaths = extractObjectProperties(symbolType, checker, paramType)
+
+                return propertyPaths.flatMap(({path}) => {
+                    const referenceValue: ReferenceValue = {
+                        __typename: 'ReferenceValue',
+                        nodeFunctionId: nodeFunctionId as any
+                    }
+
+                    if (path.length > 0) referenceValue.referencePath = path
+
+                    return referenceValue
+                })
+
+            }
+        } else if (name.startsWith("p_")) {
+
+            const idPart = name.replace("p_", "")
+            const lastUnderscoreIndex = idPart.lastIndexOf("_")
+            const rawId = idPart.substring(0, lastUnderscoreIndex)
+            const paramIndexFromName = parseInt(idPart.substring(lastUnderscoreIndex + 1), 10)
+
+            const nodeFunctionId = rawId
+                .replace("p_", "")
+                .replace(/___/g, "://")
+                .replace(/__/g, "/")
+                .replace(/_/g, "/")
+
+            if (checker.isTupleType(symbolType)) {
+                const typeReference = symbolType as ts.TypeReference
+                const typeArguments = checker.getTypeArguments(typeReference)
+
+                return typeArguments.flatMap((tupleElementType, tupleIndex) => {
+                    const propertyPaths = extractObjectProperties(tupleElementType, checker, paramType)
+
+                    return propertyPaths.flatMap(({ path }) => {
+                        const referenceValue: ReferenceValue = {
+                            __typename: 'ReferenceValue',
+                            nodeFunctionId: nodeFunctionId as any,
+                            parameterIndex: isNaN(paramIndexFromName) ? 0 : paramIndexFromName,
+                            inputIndex: tupleIndex,
+                            inputTypeIdentifier: (typeReference.target as any).labeledElementDeclarations?.[tupleIndex].name.getText()
+                        }
+
+                        if (path.length > 0) {
+                            referenceValue.referencePath = path
+                        }
+
+                        return referenceValue
+                    })
+
+                })
+            }
+
+        } else if (name.startsWith("flow_")) {
+            const propertyPaths = extractObjectProperties(symbolType, checker, paramType)
+
+            return propertyPaths.flatMap(({ path }) => {
+                const referenceValue: ReferenceValue = {
+                    __typename: 'ReferenceValue',
+                    nodeFunctionId: null
+                }
+
+                if (path.length > 0) referenceValue.referencePath = path
+
+                return referenceValue
+            })
+        }
+
+        return []
+    })
+
+}
+
 function isBoolean(type: ts.Type): boolean {
     return (
         (type.flags & ts.TypeFlags.Boolean) !== 0 ||
@@ -290,18 +438,57 @@ function isArrayType(checker: ts.TypeChecker, type: ts.Type): boolean {
 }
 
 function getParameterDependencies(node: ts.FunctionDeclaration) {
-    const typeParamNames = node.typeParameters?.map(tp => tp.name.getText()) || [];
-    const usage: Record<string, number[]> = {};
+    const typeParamNames = node.typeParameters?.map(tp => tp.name.getText()) || []
+    const usage: Record<string, number[]> = {}
 
     node.parameters.forEach((p, i) => {
-        const text = p.type?.getText() || "";
+        const text = p.type?.getText() || ""
         typeParamNames.forEach(t => {
-            if (text.includes(t)) (usage[t] ??= []).push(i);
-        });
-    });
+            if (text.includes(t)) (usage[t] ??= []).push(i)
+        })
+    })
 
     return Object.values(usage)
         .filter(indices => indices.length > 1)
         .map(([first, ...rest]) => rest.map(idx => ({parameterIndex: idx, dependsOnIndex: first})))
-        .flat();
+        .flat()
+}
+
+const extractObjectProperties = (
+    type: ts.Type,
+    checker: ts.TypeChecker,
+    expectedType: ts.Type,
+    currentPath: ReferencePath[] = []
+): Array<{ path: ReferencePath[], type: ts.Type }> => {
+    const results: Array<{ path: ReferencePath[], type: ts.Type }> = []
+
+    if (checker.isTypeAssignableTo(type, expectedType)) results.push({ path: currentPath, type })
+
+    if (isRealObjectType(type)) {
+        const properties = type.getProperties()
+        if (properties && properties.length > 0) {
+            properties.forEach(property => {
+                const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!)
+                const propName = property.getName()
+                const newPath = [...currentPath, {path: propName}]
+
+                results.push(...extractObjectProperties(propType, checker, expectedType, newPath))
+            })
+        }
+    }
+
+    return results
+}
+
+const isRealObjectType = (type: ts.Type): boolean => {
+    const primitiveFlags =
+        ts.TypeFlags.String |
+        ts.TypeFlags.Number |
+        ts.TypeFlags.Boolean |
+        ts.TypeFlags.Undefined |
+        ts.TypeFlags.Null |
+        ts.TypeFlags.BigInt |
+        ts.TypeFlags.ESSymbol
+
+    return (type.flags & primitiveFlags) === 0
 }

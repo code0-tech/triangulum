@@ -7,120 +7,61 @@ import {getSchema} from "../src/suggestion/getSchema";
 describe('getReferenceSuggestions', () => {
     it('sd', () => {
         const flow: Flow = {
-            "__typename": "Flow",
-            "id": "gid://sagittarius/Flow/1",
-            "createdAt": "2026-03-17T14:02:31Z",
-            "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
-            "nodes": {
-                "__typename": "NodeFunctionConnection",
-                "nodes": [
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            nodes: {
+                nodes: [
                     {
-                        "__typename": "NodeFunction",
-                        "id": "gid://sagittarius/NodeFunction/3",
-                        "functionDefinition": {
-                            "__typename": "FunctionDefinition",
-                            "id": "gid://sagittarius/FunctionDefinition/7",
-                            "identifier": "std::list::for_each"
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: 0}},
+                                {value: {__typename: "LiteralValue", value: 0}}
+                            ]
                         },
-                        "parameters": {
-                            "__typename": "NodeParameterConnection",
-                            "nodes": [
+                        nextNodeId: "gid://sagittarius/NodeFunction/2"
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {
+                            nodes: [
                                 {
-                                    "__typename": "NodeParameter",
-                                    "parameterDefinition": {
-                                        "__typename": "ParameterDefinition",
-                                        "id": "gid://sagittarius/ParameterDefinition/10",
-                                        "identifier": "list"
-                                    },
-                                    "value": {
-                                        "__typename": "LiteralValue",
-                                        "value": [
-                                            {
-                                                "test": "test"
-                                            }
-                                        ]
+                                    value: {
+                                        __typename: "ReferenceValue",
+                                        nodeFunctionId: "gid://sagittarius/NodeFunction/1"
                                     }
                                 },
                                 {
-                                    "__typename": "NodeParameter",
-                                    "parameterDefinition": {
-                                        "__typename": "ParameterDefinition",
-                                        "id": "gid://sagittarius/ParameterDefinition/11",
-                                        "identifier": "consumer"
-                                    },
-                                    "value": {
-                                        "id": "gid://sagittarius/NodeFunction/4",
-                                        "__typename": "NodeFunctionIdWrapper"
+                                    value: {
+                                        __typename: "LiteralValue",
+                                        value: 10,
                                     }
                                 }
                             ]
                         }
                     },
                     {
-                        "__typename": "NodeFunction",
-                        "id": "gid://sagittarius/NodeFunction/4",
-                        "functionDefinition": {
-                            "__typename": "FunctionDefinition",
-                            "id": "gid://sagittarius/FunctionDefinition/112",
-                            "identifier": "std::control::value"
-                        },
-                        "parameters": {
-                            "__typename": "NodeParameterConnection",
-                            "nodes": [
+                        id: "gid://sagittarius/NodeFunction/3",
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {
+                            nodes: [
                                 {
-                                    "__typename": "NodeParameter",
-                                    "parameterDefinition": {
-                                        "__typename": "ParameterDefinition",
-                                        "id": "gid://sagittarius/ParameterDefinition/174",
-                                        "identifier": "value"
-                                    },
-                                    "value": null
+                                    value: {
+                                        __typename: "ReferenceValue",
+                                        nodeFunctionId: "gid://sagittarius/NodeFunction/1"
+                                    }
                                 },
+                                {
+                                    value: {
+                                        __typename: "LiteralValue",
+                                        value: 10,
+                                    }
+                                }
                             ]
                         }
                     }
                 ]
-            },
-            "project": {
-                "__typename": "NamespaceProject",
-                "id": "gid://sagittarius/NamespaceProject/1"
-            },
-            "settings": {
-                "__typename": "FlowSettingConnection",
-                "count": 2,
-                "nodes": [
-                    {
-                        "__typename": "FlowSetting",
-                        "id": "gid://sagittarius/FlowSetting/1",
-                        "createdAt": "2026-03-17T14:17:48Z",
-                        "updatedAt": "2026-03-17T14:17:48Z",
-                        "flowSettingIdentifier": "httpURL",
-                        "value": ""
-                    },
-                    {
-                        "__typename": "FlowSetting",
-                        "id": "gid://sagittarius/FlowSetting/2",
-                        "createdAt": "2026-03-17T14:17:48Z",
-                        "updatedAt": "2026-03-17T14:17:48Z",
-                        "flowSettingIdentifier": "httpMethod",
-                        "value": ""
-                    }
-                ],
-                "pageInfo": {
-                    "__typename": "PageInfo",
-                    "endCursor": "Mg",
-                    "hasNextPage": false
-                }
-            },
-            "startingNodeId": "gid://sagittarius/NodeFunction/3",
-            "type": {
-                "__typename": "FlowType",
-                "id": "gid://sagittarius/FlowType/1"
-            },
-            "userAbilities": {
-                "__typename": "FlowUserAbilities",
-                "deleteFlow": true
             }
         };
 
