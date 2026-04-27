@@ -45,7 +45,7 @@ interface ParameterDependency {
  *   console.log(`Parameter schema: ${schema}, blocked by: ${blockedBy?.join(',')}`);
  * });
  */
-export const getNodeSchema = (
+export const getSignatureSchema = (
     flow: Flow,
     dataTypes: DataType[],
     functions: FunctionDefinition[],
