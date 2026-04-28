@@ -7,7 +7,8 @@ import { getSchema, Schema } from "../util/schema.util"
  * Represents the schema information for a node parameter.
  * Includes the parameter's schema definition and any parameter dependencies that block it.
  */
-interface NodeSchema {
+export interface NodeSchema {
+    nodeId: NodeFunction["id"]
     /** The schema definition for this node parameter */
     schema: Schema
     /** Array of parameter indices that must be resolved before this parameter */
@@ -96,6 +97,7 @@ export const getSignatureSchema = (
 
     // Generate schema for each parameter
     return generateNodeSchemas(
+        nodeId,
         checker,
         node!,
         combinedParameterTypes,
@@ -289,6 +291,7 @@ const getParameterDependencies = (node: ts.FunctionDeclaration): ParameterDepend
  * Generates node schemas for all parameters.
  * Creates schema objects for each parameter with their dependencies.
  *
+ * @param nodeId -
  * @param checker - The TypeScript type checker
  * @param node - The node's variable declaration
  * @param combinedParameterTypes - Merged parameter types to use for schema generation
@@ -298,6 +301,7 @@ const getParameterDependencies = (node: ts.FunctionDeclaration): ParameterDepend
  * @returns Array of NodeSchema objects
  */
 const generateNodeSchemas = (
+    nodeId: NodeFunction["id"],
     checker: ts.TypeChecker,
     node: ts.VariableDeclaration,
     combinedParameterTypes: Type[] | undefined,
@@ -310,6 +314,7 @@ const generateNodeSchemas = (
     }
 
     return combinedParameterTypes.map((parameterType, index) => ({
+        nodeId: nodeId,
         schema: getSchema(
             checker,
             node,
