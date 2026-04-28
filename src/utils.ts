@@ -96,7 +96,7 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
 /**
  * Sanitizes an ID for use as a TypeScript variable name.
  */
-export const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
+export const sanitizeId = (id: string) => id?.replace(/[^a-zA-Z0-9]/g, '_');
 
 /**
  * Generates TypeScript source code for a flow, suitable for validation and type inference.
@@ -203,72 +203,3 @@ export function generateFlowSourceCode(
         )();
     `;
 }
-
-export interface InferredTypes {
-    nodes: Map<string, string>;
-    parameters: Map<string, string[]>;
-}
-
-/**
- * Infers types for all nodes and parameters in a flow using the TypeScript compiler.
- */
-export function getInferredTypesFromFlow(
-    flow?: Flow,
-    functions?: FunctionDefinition[],
-    dataTypes?: DataType[]
-): InferredTypes {
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, true);
-
-    const fileName = "index.ts";
-    const host = createCompilerHost(fileName, sourceCode);
-    const sourceFile = host.getSourceFile(fileName)!;
-    const program = host.languageService.getProgram()!;
-    const checker = program.getTypeChecker();
-
-    const nodeTypes = new Map<string, string>();
-    const parameterTypes = new Map<string, string[]>();
-    const nodeIdToNode = new Map<string, NodeFunction>();
-
-    // Build a map of nodes for later lookup
-    const nodes = flow?.nodes?.nodes || [];
-    nodes.forEach(node => {
-        if (node?.id) {
-            nodeIdToNode.set(sanitizeId(node.id), node);
-        }
-    });
-
-    const visit = (n: ts.Node) => {
-        if (ts.isVariableDeclaration(n) && n.name.getText().startsWith("node_")) {
-            const nodeId = n.name.getText().replace("node_", "");
-            const type = checker.getTypeAtLocation(n);
-            nodeTypes.set(nodeId, checker.typeToString(type, n, ts.TypeFormatFlags.NoTruncation));
-
-            if (n.initializer && ts.isCallExpression(n.initializer)) {
-                const sig = checker.getResolvedSignature(n.initializer);
-                if (sig) {
-                    // getResolvedSignature returns the signature with generics resolved based on actual arguments
-                    const resolvedParams = sig.getParameters().map((p) => {
-                        const t = checker.getTypeOfSymbolAtLocation(p, n.initializer!);
-                        return checker.typeToString(t, n.initializer, ts.TypeFormatFlags.NoTruncation);
-                    });
-                    parameterTypes.set(nodeId, resolvedParams);
-                }
-            }
-        }
-        if (ts.isReturnStatement(n) && n.expression && ts.isCallExpression(n.expression)) {
-            // Special handling for std::control::return which doesn't have a node_ variable
-            const call = n.expression;
-            const sig = checker.getResolvedSignature(call);
-            if (sig) {
-                // We need to find the node ID from the context or a comment if possible,
-                // but since generateFlowSourceCode doesn't currently label them easily for return,
-                // we might need a small adjustment if we need types for return nodes specifically.
-            }
-        }
-        ts.forEachChild(n, visit);
-    };
-    visit(sourceFile);
-
-    return {nodes: nodeTypes, parameters: parameterTypes};
-}
-
