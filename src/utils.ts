@@ -96,7 +96,7 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
 /**
  * Sanitizes an ID for use as a TypeScript variable name.
  */
-export const sanitizeId = (id: string) => id.replace(/[^a-zA-Z0-9]/g, '_');
+export const sanitizeId = (id: string) => id?.replace(/[^a-zA-Z0-9]/g, '_');
 
 /**
  * Generates TypeScript source code for a flow, suitable for validation and type inference.

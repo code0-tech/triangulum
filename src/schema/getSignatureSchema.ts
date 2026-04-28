@@ -25,6 +25,8 @@ interface ParameterDependency {
     dependsOnIndex: number
 }
 
+//TODO: Need to work also for flow signature
+//TODO: needs a way to declare custom datatypes with there schema
 /**
  * Generates node schemas for all parameters of a specified function node.
  *
@@ -63,8 +65,8 @@ export const getSignatureSchema = (
 
     // Retrieve and identify the target node
     const targetNode = flow.nodes?.nodes?.find((n) => n?.id === nodeId)
-    const functionId = `fn_${targetNode?.functionDefinition?.identifier?.replace(/::/g, "_")}`
-    const realNodeId = `node_${sanitizeId(nodeId || "")}`
+    const functionId = nodeId ? `fn_${targetNode?.functionDefinition?.identifier?.replace(/::/g, "_")}` : `flow`
+    const realNodeId = nodeId ? `node_${sanitizeId(nodeId)}` : `flow_${sanitizeId(flow.id!)}`
 
     // Build map of declared functions for easy lookup
     const declaredFunctionsMap = createFunctionMap(sourceFile)
@@ -98,8 +100,8 @@ export const getSignatureSchema = (
         node!,
         combinedParameterTypes,
         funktionDependencies,
-        declaredFunctionsMap,
-        functions,
+        nodeId ? declaredFunctionsMap : new Map(),
+        nodeId ? functions : [],
     )
 }
 
