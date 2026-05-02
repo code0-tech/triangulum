@@ -144,11 +144,6 @@ export const getSchema = (
     ],
   };
 
-  // Check primitive literal union first (e.g., "a" | "b" | "c")
-  if (isPrimitiveLiteralUnion(parameterType)) {
-    return { input: "select", ...suggestions };
-  }
-
   // Check individual primitive types
   if (isBoolean(parameterType)) {
     return { input: "boolean", ...suggestions };
@@ -158,6 +153,11 @@ export const getSchema = (
   }
   if (isString(parameterType)) {
     return { input: "text", ...suggestions };
+  }
+
+  // Check primitive literal union first (e.g., "a" | "b" | "c")
+  if (isPrimitiveLiteralUnion(parameterType)) {
+    return { input: "select", ...suggestions };
   }
 
   // Check if type has call signatures (is callable/sub-flow)
