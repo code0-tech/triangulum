@@ -168,6 +168,9 @@ const buildNodeFunction = (
             __typename: "FunctionDefinition",
             id: functionDefinition?.id,
             identifier: functionDefinition?.identifier,
+            names: functionDefinition?.names,
+            descriptions: functionDefinition?.descriptions,
+            displayIcon: functionDefinition?.displayIcon
         },
     };
 
