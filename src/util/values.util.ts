@@ -50,7 +50,7 @@ export const getValues = (type: ts.Type): LiteralValue[] => {
   if ((type as any).intrinsicName === "true") {
     return [
       {
-        value: "true",
+        value: true,
         __typename: "LiteralValue",
       },
     ];
@@ -60,7 +60,7 @@ export const getValues = (type: ts.Type): LiteralValue[] => {
   if ((type as any).intrinsicName === "false") {
     return [
       {
-        value: "false",
+        value: false,
         __typename: "LiteralValue",
       },
     ];
