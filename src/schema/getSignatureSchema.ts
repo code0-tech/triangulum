@@ -26,8 +26,6 @@ interface ParameterDependency {
     dependsOnIndex: number
 }
 
-//TODO: Need to work also for flow signature
-//TODO: needs a way to declare custom datatypes with there schema
 /**
  * Generates node schemas for all parameters of a specified function node.
  *
