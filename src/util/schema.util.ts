@@ -25,7 +25,7 @@ interface Input {
  * Represents a generic input type with no specific structure.
  * Used as a fallback when the type cannot be determined.
  */
-interface GenericInput {
+interface GenericInput extends Input {
   input?: "generic";
 }
 
@@ -33,7 +33,7 @@ interface GenericInput {
  * Represents a sub-flow input type (callable/function type).
  * Used for types that have call signatures.
  */
-interface SubFlowInput {
+interface SubFlowInput extends Input {
   input?: "sub-flow";
 }
 
