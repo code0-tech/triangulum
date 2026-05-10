@@ -135,7 +135,7 @@ export function generateFlowSourceCode(
             }
             if (val.__typename === "LiteralValue") {
                 const jsonString = stringify(val?.value)
-                return `/* @pos ${nodeId} ${index} */ ${jsonString}`;
+                return `/* @pos ${nodeId} ${index} */ ${jsonString} as const`;
             }
             if (val.__typename === "NodeFunctionIdWrapper") {
                 const wrapper = val as NodeFunctionIdWrapper;
