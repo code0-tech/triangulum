@@ -1,13 +1,8 @@
-import ts, { FunctionDeclaration } from "typescript";
-import { getValues } from "./values.util";
-import { getReferences } from "./references.util";
-import { getNodes } from "./nodes.util";
-import {
-  FunctionDefinition,
-  LiteralValue,
-  NodeFunction,
-  ReferenceValue,
-} from "@code0-tech/sagittarius-graphql-types";
+import ts, {FunctionDeclaration} from "typescript";
+import {getValues} from "./values.util";
+import {getReferences} from "./references.util";
+import {getNodes} from "./nodes.util";
+import {FunctionDefinition, LiteralValue, NodeFunction, ReferenceValue,} from "@code0-tech/sagittarius-graphql-types";
 
 
 /**
@@ -15,10 +10,10 @@ import {
  * Provides common properties for suggestions and input metadata.
  */
 interface Input {
-  /** The type of input (string representation) */
-  input?: string;
-  /** Array of suggested values (functions, references, or literals) */
-  suggestions?: (NodeFunction | ReferenceValue | LiteralValue)[];
+    /** The type of input (string representation) */
+    input?: string;
+    /** Array of suggested values (functions, references, or literals) */
+    suggestions?: (NodeFunction | ReferenceValue | LiteralValue)[];
 }
 
 /**
@@ -26,7 +21,7 @@ interface Input {
  * Used as a fallback when the type cannot be determined.
  */
 interface GenericInput extends Input {
-  input?: "generic";
+    input?: "generic";
 }
 
 /**
@@ -34,7 +29,7 @@ interface GenericInput extends Input {
  * Used for types that have call signatures.
  */
 interface SubFlowInput extends Input {
-  input?: "sub-flow";
+    input?: "sub-flow";
 }
 
 /**
@@ -42,7 +37,7 @@ interface SubFlowInput extends Input {
  * Extends the base Input interface to include suggestions.
  */
 interface PrimitiveInput extends Input {
-  input?: "boolean" | "number" | "text" | "select";
+    input?: "boolean" | "number" | "text" | "select";
 }
 
 /**
@@ -50,11 +45,11 @@ interface PrimitiveInput extends Input {
  * Includes property definitions and required field tracking.
  */
 interface DataInput extends Input {
-  input?: "data";
-  /** Record mapping property names to their schemas */
-  properties?: Record<string, Schema | Schema[]>;
-  /** Array of required property names */
-  required?: string[];
+    input?: "data";
+    /** Record mapping property names to their schemas */
+    properties?: Record<string, Schema | Schema[]>;
+    /** Array of required property names */
+    required?: string[];
 }
 
 /**
@@ -62,9 +57,9 @@ interface DataInput extends Input {
  * Supports homogeneous or heterogeneous arrays.
  */
 interface ListInput extends Input {
-  input?: "list";
-  /** Schema or array of schemas for list items */
-  items?: Schema | Schema[];
+    input?: "list";
+    /** Schema or array of schemas for list items */
+    items?: Schema | Schema[];
 }
 
 /**
@@ -72,11 +67,11 @@ interface ListInput extends Input {
  * Similar to DataInput but used for type definitions.
  */
 interface TypeInput extends Input {
-  input?: "type";
-  /** Record mapping property names to their schemas */
-  properties?: Record<string, Schema | Schema[]>;
-  /** Array of required property names */
-  required?: string[];
+    input?: "type";
+    /** Record mapping property names to their schemas */
+    properties?: Record<string, Schema | Schema[]>;
+    /** Array of required property names */
+    required?: string[];
 }
 
 /**
@@ -84,12 +79,12 @@ interface TypeInput extends Input {
  * Discriminated union based on the 'input' field.
  */
 export type Schema =
-  | PrimitiveInput
-  | DataInput
-  | ListInput
-  | TypeInput
-  | SubFlowInput
-  | GenericInput;
+    | PrimitiveInput
+    | DataInput
+    | ListInput
+    | TypeInput
+    | SubFlowInput
+    | GenericInput;
 
 
 /**
@@ -113,133 +108,139 @@ export type Schema =
  * @param parameterType - The type to generate a schema for
  * @param functionDeclarations - Array of function declaration nodes
  * @param functions - Array of function definitions for matching
+ * @param suggestions
  * @returns A Schema object describing how to handle the parameter type
  */
 export const getSchema = (
-  checker: ts.TypeChecker,
-  node: ts.VariableDeclaration,
-  parameterType: ts.Type,
-  functionDeclarations: FunctionDeclaration[],
-  functions: FunctionDefinition[]
+    checker: ts.TypeChecker,
+    node: ts.VariableDeclaration,
+    parameterType: ts.Type,
+    functionDeclarations: FunctionDeclaration[],
+    functions: FunctionDefinition[],
+    suggestions: boolean = true
 ): Schema => {
-  // Collect all available suggestions for this parameter
-  const literalValueSuggestions = getValues(parameterType);
-  const referenceSuggestions = getReferences(
-    checker,
-    node!,
-    parameterType,
-    checker.getSymbolsInScope(node!, ts.SymbolFlags.Variable)
-  );
-  const nodeSuggestions = getNodes(
-    checker,
-    functionDeclarations,
-    functions,
-    parameterType
-  );
-  const suggestions = {
-    suggestions: [
-      ...literalValueSuggestions,
-      ...referenceSuggestions,
-      ...nodeSuggestions,
-    ],
-  };
-
-  // Check individual primitive types
-  if (isBoolean(parameterType)) {
-    return { input: "boolean", ...suggestions };
-  }
-  if (isNumber(parameterType)) {
-    return { input: "number", ...suggestions };
-  }
-  if (isString(parameterType)) {
-    return { input: "text", ...suggestions };
-  }
-
-  // Check primitive literal union first (e.g., "a" | "b" | "c")
-  if (isPrimitiveLiteralUnion(parameterType)) {
-    return { input: "select", ...suggestions };
-  }
-
-  // Check if type has call signatures (is callable/sub-flow)
-  if (isSubFlow(parameterType)) {
-    return { input: "sub-flow", ...suggestions };
-  }
-
-  // Handle array and tuple types
-  if (isArrayType(checker, parameterType)) {
-    const itemType = checker.getTypeArguments(
-      parameterType as ts.TypeReference
-    )[0];
-    const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
-    const itemSchemas = itemTypes.map((itemType) =>
-      getSchema(checker, node, itemType, functionDeclarations, functions)
+    // Collect all available suggestions for this parameter
+    const literalValueSuggestions = getValues(parameterType);
+    const referenceSuggestions = getReferences(
+        checker,
+        node!,
+        parameterType,
+        checker.getSymbolsInScope(node!, ts.SymbolFlags.Variable)
     );
+    const nodeSuggestions = getNodes(
+        checker,
+        functionDeclarations,
+        functions,
+        parameterType
+    );
+    const combinedSuggestions = suggestions ? {
+        suggestions: [
+            ...literalValueSuggestions,
+            ...referenceSuggestions,
+            ...nodeSuggestions,
+        ],
+    } : {};
 
-    return {
-      input: "list",
-      items: itemSchemas.length === 1 ? itemSchemas[0] : itemSchemas,
-      ...suggestions,
-    };
-  }
-
-  // Handle complex object types with properties
-  if ((parameterType.flags & ts.TypeFlags.Object) !== 0) {
-    const properties: Record<string, Schema | Schema[]> = {};
-    const required: string[] = [];
-
-    // Iterate through all properties of the object type
-    for (const property of checker.getPropertiesOfType(parameterType)) {
-      const declaration =
-        property.valueDeclaration ?? property.declarations?.[0];
-
-      if (!declaration) continue;
-
-      const propertyType = checker.getTypeOfSymbolAtLocation(
-        property,
-        declaration
-      );
-
-      // Determine if the property is optional
-      const isOptional =
-        (property.flags & ts.SymbolFlags.Optional) !== 0 ||
-        (propertyType.isUnion() &&
-          propertyType.types.some(
-            (t) => (t.flags & ts.TypeFlags.Undefined) !== 0
-          ));
-
-      // Filter out undefined type from union types
-      const propertyTypes = propertyType.isUnion()
-        ? propertyType.types.filter(
-            (t) => (t.flags & ts.TypeFlags.Undefined) === 0
-          )
-        : [propertyType];
-
-      // Recursively generate schemas for property types
-      const propertySchemas = propertyTypes.map((type) =>
-        getSchema(checker, node, type, functionDeclarations, functions)
-      );
-
-      properties[property.name] =
-        propertySchemas.length === 1 ? propertySchemas[0] : propertySchemas;
-
-      // Track required properties
-      if (!isOptional) {
-        required.push(property.name);
-      }
+    // Check individual primitive types
+    if (isBoolean(parameterType)) {
+        return {input: "boolean", ...combinedSuggestions};
+    }
+    if (isNumber(parameterType)) {
+        return {input: "number", ...combinedSuggestions};
+    }
+    if (isString(parameterType)) {
+        return {input: "text", ...combinedSuggestions};
     }
 
-    return {
-      input: "data",
-      properties,
-      required,
-      ...suggestions,
-    };
-  }
+    // Check primitive literal union first (e.g., "a" | "b" | "c")
+    if (isPrimitiveLiteralUnion(parameterType)) {
+        return {input: "select", ...combinedSuggestions};
+    }
 
-  // Fallback for unknown or generic types
-  return {
-    input: "generic",
-  };
+    // Check if type has call signatures (is callable/sub-flow)
+    if (isSubFlow(parameterType)) {
+        return {input: "sub-flow", ...combinedSuggestions};
+    }
+
+    // Handle array and tuple types
+    if (isArrayType(checker, parameterType)) {
+        const itemTypes = checker.getTypeArguments(
+            parameterType as ts.TypeReference
+        );
+
+        const itemSchemas = itemTypes.flatMap(itemType => {
+            const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
+            return itemTypes.map((itemType) =>
+                getSchema(checker, node, itemType, functionDeclarations, functions, suggestions)
+            )
+        })
+
+
+        return {
+            input: "list",
+            items: itemSchemas.length === 1 ? itemSchemas[0] : itemSchemas,
+            ...combinedSuggestions,
+        };
+    }
+
+    // Handle complex object types with properties
+    if ((parameterType.flags & ts.TypeFlags.Object) !== 0) {
+        const properties: Record<string, Schema | Schema[]> = {};
+        const required: string[] = [];
+
+        // Iterate through all properties of the object type
+        for (const property of checker.getPropertiesOfType(parameterType)) {
+            const declaration =
+                property.valueDeclaration ?? property.declarations?.[0];
+
+            if (!declaration) continue;
+
+            const propertyType = checker.getTypeOfSymbolAtLocation(
+                property,
+                declaration
+            );
+
+            // Determine if the property is optional
+            const isOptional =
+                (property.flags & ts.SymbolFlags.Optional) !== 0 ||
+                (propertyType.isUnion() &&
+                    propertyType.types.some(
+                        (t) => (t.flags & ts.TypeFlags.Undefined) !== 0
+                    ));
+
+            // Filter out undefined type from union types
+            const propertyTypes = propertyType.isUnion()
+                ? propertyType.types.filter(
+                    (t) => (t.flags & ts.TypeFlags.Undefined) === 0
+                )
+                : [propertyType];
+
+            // Recursively generate schemas for property types
+            const propertySchemas = propertyTypes.map((type) =>
+                getSchema(checker, node, type, functionDeclarations, functions, suggestions)
+            );
+
+            properties[property.name] =
+                propertySchemas.length === 1 ? propertySchemas[0] : propertySchemas;
+
+            // Track required properties
+            if (!isOptional) {
+                required.push(property.name);
+            }
+        }
+
+        return {
+            input: "data",
+            properties,
+            required,
+            ...combinedSuggestions,
+        };
+    }
+
+    // Fallback for unknown or generic types
+    return {
+        input: "generic",
+    };
 };
 
 /**
@@ -252,10 +253,10 @@ export const getSchema = (
  * @returns True if the type is a boolean or boolean literal, false otherwise
  */
 function isBoolean(type: ts.Type): boolean {
-  return (
-    (type.flags & ts.TypeFlags.Boolean) !== 0 ||
-    (type.flags & ts.TypeFlags.BooleanLiteral) !== 0
-  );
+    return (
+        (type.flags & ts.TypeFlags.Boolean) !== 0 ||
+        (type.flags & ts.TypeFlags.BooleanLiteral) !== 0
+    );
 }
 
 /**
@@ -268,10 +269,10 @@ function isBoolean(type: ts.Type): boolean {
  * @returns True if the type is a number or number literal, false otherwise
  */
 function isNumber(type: ts.Type): boolean {
-  return (
-    (type.flags & ts.TypeFlags.Number) !== 0 ||
-    (type.flags & ts.TypeFlags.NumberLiteral) !== 0
-  );
+    return (
+        (type.flags & ts.TypeFlags.Number) !== 0 ||
+        (type.flags & ts.TypeFlags.NumberLiteral) !== 0
+    );
 }
 
 /**
@@ -284,10 +285,10 @@ function isNumber(type: ts.Type): boolean {
  * @returns True if the type is a string or string literal, false otherwise
  */
 function isString(type: ts.Type): boolean {
-  return (
-    (type.flags & ts.TypeFlags.String) !== 0 ||
-    (type.flags & ts.TypeFlags.StringLiteral) !== 0
-  );
+    return (
+        (type.flags & ts.TypeFlags.String) !== 0 ||
+        (type.flags & ts.TypeFlags.StringLiteral) !== 0
+    );
 }
 
 /**
@@ -297,7 +298,7 @@ function isString(type: ts.Type): boolean {
  * @returns True if the type is a string, number, or boolean, false otherwise
  */
 function isPrimitive(type: ts.Type): boolean {
-  return isString(type) || isNumber(type) || isBoolean(type);
+    return isString(type) || isNumber(type) || isBoolean(type);
 }
 
 /**
@@ -310,8 +311,8 @@ function isPrimitive(type: ts.Type): boolean {
  * @returns True if the type is a union where all members are primitives, false otherwise
  */
 function isPrimitiveLiteralUnion(type: ts.Type): boolean {
-  if (!type.isUnion()) return false;
-  return type.types.every(isPrimitive);
+    if (!type.isUnion()) return false;
+    return type.types.every(isPrimitive);
 }
 
 /**
@@ -322,7 +323,7 @@ function isPrimitiveLiteralUnion(type: ts.Type): boolean {
  * @returns True if the type is an array or tuple, false otherwise
  */
 function isArrayType(checker: ts.TypeChecker, type: ts.Type): boolean {
-  return checker.isArrayType(type) || checker.isTupleType(type);
+    return checker.isArrayType(type) || checker.isTupleType(type);
 }
 
 /**
@@ -335,5 +336,5 @@ function isArrayType(checker: ts.TypeChecker, type: ts.Type): boolean {
  * @returns True if the type has call signatures, false otherwise
  */
 export function isSubFlow(type: ts.Type): boolean {
-  return type.getCallSignatures().length > 0;
+    return type.getCallSignatures().length > 0;
 }
