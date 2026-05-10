@@ -26,7 +26,7 @@
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2462825049-b5d5dce99ef9bf2f81df41d896ec36fa5e28559c",
     "@types/node": "^25.6.0",
     "@typescript/vfs": "^1.6.4",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.0.8",
     "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.1.4",
