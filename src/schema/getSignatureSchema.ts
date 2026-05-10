@@ -1,7 +1,7 @@
-import { DataType, Flow, FunctionDefinition, NodeFunction } from "@code0-tech/sagittarius-graphql-types"
-import { createCompilerHost, generateFlowSourceCode, sanitizeId } from "../utils"
-import ts, { Type } from "typescript"
-import { getSchema, Schema } from "../util/schema.util"
+import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
+import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
+import ts, {Type} from "typescript"
+import {getSchema, Schema} from "../util/schema.util"
 
 /**
  * Represents the schema information for a node parameter.
@@ -11,6 +11,8 @@ export interface NodeSchema {
     nodeId: NodeFunction["id"]
     /** The schema definition for this node parameter */
     schema: Schema
+    /** The schema definition for the function parameter */
+    functionSchema: Schema
     /** Array of parameter indices that must be resolved before this parameter */
     blockedBy?: number[]
 }
@@ -83,13 +85,6 @@ export const getSignatureSchema = (
     // Extract parameter types from the function definition
     const funktionParameterTypes = extractFunctionParameterTypes(checker, funktion, node)
 
-    // Combine node and function parameter types, preferring node types when assignable
-    const combinedParameterTypes = mergeParameterTypes(
-        checker,
-        funktionParameterTypes,
-        nodeParameterTypes,
-    )
-
     // Identify parameter dependencies based on type parameters
     const funktionDependencies = getParameterDependencies(funktion!)
 
@@ -98,7 +93,8 @@ export const getSignatureSchema = (
         nodeId,
         checker,
         node!,
-        combinedParameterTypes,
+        nodeParameterTypes,
+        funktionParameterTypes,
         funktionDependencies,
         nodeId ? declaredFunctionsMap : new Map(),
         nodeId ? functions : [],
@@ -164,9 +160,9 @@ const extractNodeParameterTypes = (
         return undefined
     }
 
-    const signature = checker.getResolvedSignature(node.initializer)
-    return signature?.parameters.map((p) =>
-        checker.getTypeOfSymbolAtLocation(p, node.initializer as ts.CallExpression),
+    return node.initializer?.arguments.map((p) => {
+            return checker.getTypeAtLocation(p)
+        }
     )
 }
 
@@ -194,57 +190,6 @@ const extractFunctionParameterTypes = (
             symbol!,
             node.initializer as ts.CallExpression,
         )
-    })
-}
-
-/**
- * Merges function and node parameter types by applying type assignability rules.
- * Prefers node types when they are assignable to the function's parameter type.
- * Handles generic type parameters with constraints.
- *
- * @param checker - The TypeScript type checker
- * @param funktionParameterTypes - Parameter types from function definition
- * @param nodeParameterTypes - Parameter types from node's call expression
- * @returns Array of resolved parameter types
- */
-const mergeParameterTypes = (
-    checker: ts.TypeChecker,
-    funktionParameterTypes: Type[] | undefined,
-    nodeParameterTypes: Type[] | undefined,
-): Type[] | undefined => {
-    if (!funktionParameterTypes) {
-        return undefined
-    }
-
-    return funktionParameterTypes.map((paramType, index) => {
-        const nodeType = nodeParameterTypes?.[index]
-        if (!nodeType) {
-            return paramType
-        }
-
-        // If both types refer to the same symbol, use the node type
-        const paramSymbol = paramType.getSymbol()
-        const nodeSymbol = nodeType.getSymbol()
-        if (paramSymbol && nodeSymbol && paramSymbol === nodeSymbol) {
-            return nodeType
-        }
-
-        // Handle generic type parameters
-        if (paramType.isTypeParameter()) {
-            const constraint = checker.getBaseConstraintOfType(paramType)
-            // Use node type if it satisfies the constraint
-            if (!constraint || checker.isTypeAssignableTo(nodeType, constraint)) {
-                return nodeType
-            }
-        }
-
-        // Use node type if assignable to parameter type
-        if (checker.isTypeAssignableTo(nodeType, paramType)) {
-            return nodeType
-        }
-
-        // Default to function parameter type
-        return paramType
     })
 }
 
@@ -292,7 +237,7 @@ const getParameterDependencies = (node: ts.FunctionDeclaration): ParameterDepend
  * @param nodeId -
  * @param checker - The TypeScript type checker
  * @param node - The node's variable declaration
- * @param combinedParameterTypes - Merged parameter types to use for schema generation
+ * @param nodeParameterTypes - Merged parameter types to use for schema generation
  * @param funktionDependencies - Parameter dependencies to link with each parameter
  * @param declaredFunctionsMap - Map of available functions for schema context
  * @param functions - Array of function definitions
@@ -302,23 +247,32 @@ const generateNodeSchemas = (
     nodeId: NodeFunction["id"],
     checker: ts.TypeChecker,
     node: ts.VariableDeclaration,
-    combinedParameterTypes: Type[] | undefined,
+    nodeParameterTypes: Type[] | undefined,
+    functionParameterTypes: Type[] | undefined,
     funktionDependencies: ParameterDependency[],
     declaredFunctionsMap: Map<string, ts.FunctionDeclaration>,
     functions: FunctionDefinition[],
 ): NodeSchema[] => {
-    if (!combinedParameterTypes) {
+    if (!nodeParameterTypes) {
         return []
     }
 
-    return combinedParameterTypes.map((parameterType, index) => ({
+    return nodeParameterTypes.map((parameterType, index) => ({
         nodeId: nodeId,
         schema: getSchema(
             checker,
             node,
             parameterType,
             Array.from(declaredFunctionsMap.values()),
+            functions
+        ),
+        functionSchema: getSchema(
+            checker,
+            node,
+            functionParameterTypes?.[index]!,
+            Array.from(declaredFunctionsMap.values()),
             functions,
+            false
         ),
         blockedBy: funktionDependencies
             .filter((dep) => dep.parameterIndex === index)
