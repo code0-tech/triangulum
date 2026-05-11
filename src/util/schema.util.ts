@@ -9,7 +9,7 @@ import {FunctionDefinition, LiteralValue, NodeFunction, ReferenceValue,} from "@
  * Base interface for all input types.
  * Provides common properties for suggestions and input metadata.
  */
-interface Input {
+export interface Input {
     /** The type of input (string representation) */
     input?: string;
     /** Array of suggested values (functions, references, or literals) */
@@ -20,7 +20,7 @@ interface Input {
  * Represents a generic input type with no specific structure.
  * Used as a fallback when the type cannot be determined.
  */
-interface GenericInput extends Input {
+export interface GenericInput extends Input {
     input?: "generic";
 }
 
@@ -28,7 +28,7 @@ interface GenericInput extends Input {
  * Represents a sub-flow input type (callable/function type).
  * Used for types that have call signatures.
  */
-interface SubFlowInput extends Input {
+export interface SubFlowInput extends Input {
     input?: "sub-flow";
 }
 
@@ -36,7 +36,7 @@ interface SubFlowInput extends Input {
  * Represents primitive input types: boolean, number, text, or select.
  * Extends the base Input interface to include suggestions.
  */
-interface PrimitiveInput extends Input {
+export interface PrimitiveInput extends Input {
     input?: "boolean" | "number" | "text" | "select";
 }
 
@@ -44,7 +44,7 @@ interface PrimitiveInput extends Input {
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
-interface DataInput extends Input {
+export interface DataInput extends Input {
     input?: "data";
     /** Record mapping property names to their schemas */
     properties?: Record<string, Schema | Schema[]>;
@@ -56,17 +56,17 @@ interface DataInput extends Input {
  * Represents a list/array input type with item schemas.
  * Supports homogeneous or heterogeneous arrays.
  */
-interface ListInput extends Input {
+export interface ListInput extends Input {
     input?: "list";
     /** Schema or array of schemas for list items */
-    items?: Schema | Schema[];
+    items?: Schema[];
 }
 
 /**
  * Represents a complex type input with properties and required fields.
  * Similar to DataInput but used for type definitions.
  */
-interface TypeInput extends Input {
+export interface TypeInput extends Input {
     input?: "type";
     /** Record mapping property names to their schemas */
     properties?: Record<string, Schema | Schema[]>;
@@ -178,7 +178,7 @@ export const getSchema = (
 
         return {
             input: "list",
-            items: itemSchemas.length === 1 ? itemSchemas[0] : itemSchemas,
+            items: itemSchemas,
             ...combinedSuggestions,
         };
     }
