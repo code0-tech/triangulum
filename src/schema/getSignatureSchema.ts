@@ -160,9 +160,9 @@ const extractNodeParameterTypes = (
         return undefined
     }
 
-    return node.initializer?.arguments.map((p) => {
-            return checker.getTypeAtLocation(p)
-        }
+    const signature = checker.getResolvedSignature(node.initializer)
+    return signature?.parameters.map((p) =>
+        checker.getTypeOfSymbolAtLocation(p, node.initializer as ts.CallExpression),
     )
 }
 
