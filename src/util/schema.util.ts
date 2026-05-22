@@ -113,31 +113,28 @@ export type Schema =
  */
 export const getSchema = (
     checker: ts.TypeChecker,
-    node: ts.VariableDeclaration,
+    node: ts.VariableDeclaration | undefined,
     parameterType: ts.Type,
     functionDeclarations: FunctionDeclaration[],
     functions: FunctionDefinition[],
     suggestions: boolean = true
 ): Schema => {
     // Collect all available suggestions for this parameter
-    const literalValueSuggestions = getValues(parameterType);
-    const referenceSuggestions = getReferences(
-        checker,
-        node!,
-        parameterType,
-        checker.getSymbolsInScope(node!, ts.SymbolFlags.Variable)
-    );
-    const nodeSuggestions = getNodes(
-        checker,
-        functionDeclarations,
-        functions,
-        parameterType
-    );
     const combinedSuggestions = suggestions ? {
         suggestions: [
-            ...literalValueSuggestions,
-            ...referenceSuggestions,
-            ...nodeSuggestions,
+            ...getValues(parameterType),
+            ...(node ? getReferences(
+                checker,
+                node,
+                parameterType,
+                checker.getSymbolsInScope(node, ts.SymbolFlags.Variable)
+            ) : []),
+            ...getNodes(
+                checker,
+                functionDeclarations,
+                functions,
+                parameterType
+            ),
         ],
     } : {};
 
