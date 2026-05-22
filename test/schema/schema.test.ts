@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {Flow} from "@code0-tech/sagittarius-graphql-types";
-import {getFlowValidation, getSignatureSchema} from "../../src";
+import {getFlowValidation, getSignatureSchema, getTypeSchema} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
 describe("Schema", () => {
@@ -114,6 +114,12 @@ describe("Schema", () => {
 
         //console.dir(result, {depth: null})
 
+    });
+
+    it('3', () => {
+        const result = getTypeSchema("{text: NUMBER, bla?: LIST<TEXT>}", DATA_TYPES);
+
+        //console.dir(result, {depth: null})
     });
 
 })
