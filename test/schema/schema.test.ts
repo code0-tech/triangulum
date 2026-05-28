@@ -1,6 +1,6 @@
-import {describe, expect, it} from "vitest";
+import {describe, it} from "vitest";
 import {Flow} from "@code0-tech/sagittarius-graphql-types";
-import {getFlowValidation, getSignatureSchema, getTypeSchema} from "../../src";
+import {getSignatureSchema, getTypeSchema} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
 describe("Schema", () => {
@@ -36,8 +36,8 @@ describe("Schema", () => {
                                 },
                                 {
                                     value: {
-                                        __typename: "NodeFunctionIdWrapper",
-                                        id: "gid://sagittarius/NodeFunction/3"
+                                        __typename: "SubFlowValue",
+                                        startingNodeId: "gid://sagittarius/NodeFunction/3"
                                     }
                                 }
                             ]
