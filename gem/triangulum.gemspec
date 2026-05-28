@@ -24,7 +24,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'base64', '~> 0.3'
   spec.add_dependency 'json', '~> 2.19'
   spec.add_dependency 'open3', '~> 0.2'
-  spec.add_dependency 'tucana', '~> 0.0', '>= 0.0.67'
+  spec.add_dependency 'tucana', '~> 0.0', '>= 0.0.72'
 
   spec.add_development_dependency 'irb', '~> 1.17'
   spec.add_development_dependency 'rake', '~> 13.0'
