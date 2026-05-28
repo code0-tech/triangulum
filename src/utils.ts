@@ -4,9 +4,9 @@ import {
     Flow,
     FunctionDefinition,
     NodeFunction,
-    NodeFunctionIdWrapper,
+    SubFlowValue,
     NodeParameter,
-    ReferenceValue
+    ReferenceValue, Maybe
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
@@ -109,12 +109,12 @@ export function generateFlowSourceCode(
 ): string {
     const nodes = flow?.nodes?.nodes || [];
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
-    const visited = new Set<string>();
+    const visited = new Set<NodeFunction['id'] | FunctionDefinition['id']>();
 
-    const generateNodeCode = (nodeId: string, indent: string = ""): string => {
-        const node = nodes.find(n => n?.id === nodeId);
+    const generateNodeCode = (id: NodeFunction['id'] | FunctionDefinition['id'], indent: string = ""): string => {
+        const node = nodes.find(n => n?.id === id);
         if (!node || !node.functionDefinition) return "";
-        visited.add(nodeId);
+        visited.add(id);
 
         const funcDef = funcMap.get(node.functionDefinition.identifier);
         if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
@@ -122,7 +122,7 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
+            if (!val) return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
                 const ref = val as ReferenceValue;
                 let refCode = typeof ref.inputIndex === "number"
@@ -131,19 +131,19 @@ export function generateFlowSourceCode(
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
-                return `/* @pos ${nodeId} ${index} */ ${refCode}`;
+                return `/* @pos ${id} ${index} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") {
                 const jsonString = stringify(val?.value)
-                return `/* @pos ${nodeId} ${index} */ ${jsonString}`;
+                return `/* @pos ${id} ${index} */ ${jsonString}`;
             }
-            if (val.__typename === "NodeFunctionIdWrapper") {
-                const wrapper = val as NodeFunctionIdWrapper;
-                const lambdaArgName = `p_${sanitizeId(nodeId)}_${index}`;
-                const subTreeCode = generateNodeCode(wrapper.id!, indent + "    ");
-                return `/* @pos ${nodeId} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
+            if (val.__typename === "SubFlowValue") {
+                const wrapper = val as SubFlowValue;
+                const lambdaArgName = `p_${sanitizeId(id as string)}_${index}`;
+                const subTreeCode = generateNodeCode(wrapper.startingNodeId || wrapper.functionDefinition?.id!, indent + "    ");
+                return `/* @pos ${id} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
             }
-            return isForInference ? `/* @pos ${nodeId} ${index} */ {}` : `/* @pos ${nodeId} ${index} */ undefined`;
+            return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
         });
 
         const varName = `node_${sanitizeId(node.id!)}`;
@@ -155,21 +155,21 @@ export function generateFlowSourceCode(
         let code = `${indent}`;
 
         if (node.functionDefinition.identifier === "std::control::return") {
-            code += `return /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `return /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
         } else if (node.functionDefinition.identifier === "std::control::if") {
-            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
             code += `if(${args[0]}) {
-                ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
             }`
         } else if (node.functionDefinition.identifier === "std::control::if_else") {
-            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
             code += `if(${args[0]}) {
-                ${generateNodeCode((node.parameters?.nodes?.[1]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
             } else {
-                ${generateNodeCode((node.parameters?.nodes?.[2]?.value as NodeFunctionIdWrapper)?.id!, indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[2]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[2]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
             }`
         } else {
-            code += `const ${varName} = /* @pos ${nodeId} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
         }
 
         if (node.nextNodeId) code += generateNodeCode(node.nextNodeId, indent);
@@ -181,9 +181,9 @@ export function generateFlowSourceCode(
     const funcDeclarations = functions?.map(f => `declare function fn_${f.identifier?.replace(/::/g, '_')}${f.signature}`).join('\n');
 
     const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));
-    const subTreeIds = new Set<string>();
-    nodes.forEach(n => n?.parameters?.nodes?.forEach((p: any) => {
-        if (p?.value?.__typename === "NodeFunctionIdWrapper" && p.value.id) subTreeIds.add(p.value.id);
+    const subTreeIds = new Set<NodeFunction['id'] | FunctionDefinition['id']>();
+    nodes.forEach(n => n?.parameters?.nodes?.forEach((p: Maybe<NodeParameter>) => {
+        if (p?.value?.__typename === "SubFlowValue" && (p.value.startingNodeId || p.value.functionDefinition?.id)) subTreeIds.add(p.value.startingNodeId || p.value.functionDefinition?.id);
     }));
 
     const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos null ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
