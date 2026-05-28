@@ -7,6 +7,8 @@ import {
     NodeParameter,
     NodeParameterValue,
     ParameterDefinition,
+    SubFlowValue,
+    SubFlowValueSetting,
 } from "@code0-tech/sagittarius-graphql-types";
 import {
     DefinitionDataType,
@@ -16,6 +18,8 @@ import {
     ParameterDefinition as TucanaParameterDefinition,
     FlowSetting as TucanaFlowSetting,
     ValidationFlow,
+    SubFlow as TucanaSubFlow,
+    SubFlowSetting as TucanaSubFlowSetting,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
 
@@ -55,7 +59,7 @@ function mapFlow(flow: ValidationFlow): Flow {
 function mapFlowSetting(flowSetting: TucanaFlowSetting): FlowSetting {
     return {
         __typename: "FlowSetting",
-        id: gid('FlowSetting', flowSetting.databaseId) as FlowSetting['id'],
+        id: gid('FlowSetting', flowSetting.databaseId!) as FlowSetting['id'],
         flowSettingIdentifier: flowSetting.flowSettingId,
         value: flowSetting.value ? toAllowedValue(flowSetting.value) : null,
     }
@@ -63,7 +67,7 @@ function mapFlowSetting(flowSetting: TucanaFlowSetting): FlowSetting {
 
 function mapNodeFunction(nodeFunction: TucanaNodeFunction): NodeFunction {
     return {
-        id: gid('NodeFunction', nodeFunction.databaseId) as NodeFunction['id'],
+        id: gid('NodeFunction', nodeFunction.databaseId!) as NodeFunction['id'],
         functionDefinition: {
             identifier: nodeFunction.runtimeFunctionId
         },
@@ -102,11 +106,8 @@ function mapNodeParameter(nodeParameter: TucanaNodeParameter): NodeParameter {
             value.parameterIndex = Number(target.inputType.parameterIndex)
             value.inputIndex = Number(target.inputType.inputIndex)
         }
-    } else if (nodeParameterValue?.oneofKind === 'nodeFunctionId') {
-        value = {
-            __typename: 'NodeFunctionIdWrapper',
-            id: gid('NodeFunction', nodeParameterValue.nodeFunctionId) as NodeFunction['id']
-        }
+    } else if (nodeParameterValue?.oneofKind === 'subFlow') {
+        value = mapSubFlow(nodeParameterValue.subFlow);
     }
 
     return {
@@ -129,6 +130,34 @@ function mapParameterDefinition(parameterDefinition: TucanaParameterDefinition):
     return {
         identifier: parameterDefinition.runtimeName,
     }
+}
+
+function mapSubFlow(subFlow: TucanaSubFlow): SubFlowValue {
+    const value: SubFlowValue = {
+        __typename: 'SubFlowValue',
+        signature: subFlow.signature,
+        settings: subFlow.settings.map(mapSubFlowSetting)
+    };
+
+    if (subFlow.executionReference.oneofKind === 'startingNodeId') {
+        value.startingNodeId = gid('NodeFunction', subFlow.executionReference.startingNodeId) as NodeFunction['id'];
+    } else if (subFlow.executionReference.oneofKind === 'functionIdentifier') {
+        value.functionDefinition = {
+            identifier: subFlow.executionReference.functionIdentifier
+        } as FunctionDefinition;
+    }
+
+    return value;
+}
+
+function mapSubFlowSetting(setting: TucanaSubFlowSetting): SubFlowValueSetting {
+    return {
+        __typename: 'SubFlowValueSetting',
+        identifier: setting.identifier,
+        defaultValue: setting.defaultValue ? toAllowedValue(setting.defaultValue) : null,
+        optional: setting.optional,
+        hidden: setting.hidden
+    };
 }
 
 function mapDataType(dataType: DefinitionDataType): DataType {
