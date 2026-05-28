@@ -29,7 +29,11 @@ module ProtobufFactories
   end
 
   def node_function_value(node_id)
-    Tucana::Shared::NodeValue.new(node_function_id: node_id)
+    Tucana::Shared::NodeValue.new(
+      sub_flow: Tucana::Shared::SubFlow.new(
+        starting_node_id: node_id
+      )
+    )
   end
 
   def node(id:, function_id:, parameters: [], next_node_id: nil)
