@@ -2,7 +2,14 @@ import ts, {FunctionDeclaration} from "typescript";
 import {getValues} from "./values.util";
 import {getReferences} from "./references.util";
 import {getNodes} from "./nodes.util";
-import {FunctionDefinition, LiteralValue, NodeFunction, ReferenceValue,} from "@code0-tech/sagittarius-graphql-types";
+import {
+    FunctionDefinition,
+    LiteralValue,
+    NodeFunction,
+    ReferenceValue,
+    SubFlowValue,
+} from "@code0-tech/sagittarius-graphql-types";
+import {getSubFlows} from "./subflows.util";
 
 
 /**
@@ -13,7 +20,7 @@ export interface Input {
     /** The type of input (string representation) */
     input?: string;
     /** Array of suggested values (functions, references, or literals) */
-    suggestions?: (NodeFunction | ReferenceValue | LiteralValue)[];
+    suggestions?: (NodeFunction | ReferenceValue | LiteralValue | SubFlowValue)[];
 }
 
 /**
@@ -130,6 +137,12 @@ export const getSchema = (
                 checker.getSymbolsInScope(node, ts.SymbolFlags.Variable)
             ) : []),
             ...getNodes(
+                checker,
+                functionDeclarations,
+                functions,
+                parameterType
+            ),
+            ...getSubFlows(
                 checker,
                 functionDeclarations,
                 functions,
