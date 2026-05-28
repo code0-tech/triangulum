@@ -35,8 +35,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                 },
                                 {
                                     value: {
-                                        __typename: "NodeFunctionIdWrapper",
-                                        id: "gid://sagittarius/NodeFunction/3"
+                                        __typename: "SubFlowValue",
+                                        startingNodeId: "gid://sagittarius/NodeFunction/3"
                                     }
                                 }
                             ]
@@ -234,8 +234,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                 },
                                 {
                                     value: {
-                                        __typename: "NodeFunctionIdWrapper",
-                                        id: "gid://sagittarius/NodeFunction/1"
+                                        __typename: "SubFlowValue",
+                                        startingNodeId: "gid://sagittarius/NodeFunction/1"
                                     }
                                 }
                             ]
@@ -284,8 +284,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                         "identifier": "value"
                                     },
                                     "value": {
-                                        "id": "gid://sagittarius/NodeFunction/2",
-                                        "__typename": "NodeFunctionIdWrapper"
+                                        "startingNodeId": "gid://sagittarius/NodeFunction/2",
+                                        "__typename": "SubFlowValue"
                                     }
                                 }
                             ]
@@ -434,8 +434,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                         "identifier": "first"
                                     },
                                     "value": {
-                                        "id": "gid://sagittarius/NodeFunction/4",
-                                        "__typename": "NodeFunctionIdWrapper"
+                                        "startingNodeId": "gid://sagittarius/NodeFunction/4",
+                                        "__typename": "SubFlowValue"
                                     }
                                 },
                                 {
@@ -843,8 +843,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                         "identifier": "runnable"
                                     },
                                     "value": {
-                                        "id": "gid://sagittarius/NodeFunction/4",
-                                        "__typename": "NodeFunctionIdWrapper"
+                                        "startingNodeId": "gid://sagittarius/NodeFunction/4",
+                                        "__typename": "SubFlowValue"
                                     }
                                 }
                             ]
@@ -1013,8 +1013,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                         "updatedAt": "2026-04-13T19:45:26Z"
                                     },
                                     "value": {
-                                        "__typename": "NodeFunctionIdWrapper",
-                                        "id": "gid://sagittarius/NodeFunction/19"
+                                        "__typename": "SubFlowValue",
+                                        "startingNodeId": "gid://sagittarius/NodeFunction/19"
                                     }
                                 },
                                 {
@@ -1030,8 +1030,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                         "updatedAt": "2026-04-13T19:45:26Z"
                                     },
                                     "value": {
-                                        "__typename": "NodeFunctionIdWrapper",
-                                        "id": "gid://sagittarius/NodeFunction/17"
+                                        "__typename": "SubFlowValue",
+                                        "startingNodeId": "gid://sagittarius/NodeFunction/17"
                                     }
                                 }
                             ],
@@ -1613,8 +1613,8 @@ describe('getFlowValidation - Integrationstest', () => {
                                 },
                                 {
                                     value: {
-                                        __typename: "NodeFunctionIdWrapper",
-                                        id: "gid://sagittarius/NodeFunction/2"
+                                        __typename: "SubFlowValue",
+                                        startingNodeId: "gid://sagittarius/NodeFunction/2"
                                     }
                                 }
                             ]
