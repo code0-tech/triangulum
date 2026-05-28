@@ -109,12 +109,12 @@ export function generateFlowSourceCode(
 ): string {
     const nodes = flow?.nodes?.nodes || [];
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
-    const visited = new Set<NodeFunction['id'] | FunctionDefinition['id']>();
+    const visited = new Set<NodeFunction['id']>();
 
-    const generateNodeCode = (id: NodeFunction['id'] | FunctionDefinition['id'], indent: string = ""): string => {
+    const generateNodeCode = (id: NodeFunction['id'] | FunctionDefinition['identifier'], indent: string = ""): string => {
         const node = nodes.find(n => n?.id === id);
         if (!node || !node.functionDefinition) return "";
-        visited.add(id);
+        if (id?.includes("NodeFunction")) visited.add(id as NodeFunction['id']);
 
         const funcDef = funcMap.get(node.functionDefinition.identifier);
         if (!funcDef) return `${indent}// Error: Function ${node.functionDefinition.identifier} not found\n`;
@@ -159,14 +159,14 @@ export function generateFlowSourceCode(
         } else if (node.functionDefinition.identifier === "std::control::if") {
             code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
             code += `if(${args[0]}) {
-                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.identifier), indent + "    ")}
             }`
         } else if (node.functionDefinition.identifier === "std::control::if_else") {
             code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
             code += `if(${args[0]}) {
-                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[1]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[1]?.value as SubFlowValue)?.functionDefinition?.identifier), indent + "    ")}
             } else {
-                ${generateNodeCode(((node.parameters?.nodes?.[2]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[2]?.value as SubFlowValue)?.functionDefinition?.id), indent + "    ")}
+                ${generateNodeCode(((node.parameters?.nodes?.[2]?.value as SubFlowValue)?.startingNodeId || (node.parameters?.nodes?.[2]?.value as SubFlowValue)?.functionDefinition?.identifier), indent + "    ")}
             }`
         } else {
             code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
