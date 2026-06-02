@@ -155,7 +155,8 @@ export function generateFlowSourceCode(
         let code = `${indent}`;
 
         if (node.functionDefinition.identifier === "std::control::return") {
-            code += `return /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
+            code += `return ${varName};\n`
         } else if (node.functionDefinition.identifier === "std::control::if") {
             code += `const ${varName} = /* @pos ${id} null */ ${funcName}(${args.join(", ")})${needsAnyCast ? "" : ""} ;\n`
             code += `if(${args[0]}) {
