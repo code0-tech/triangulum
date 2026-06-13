@@ -5,7 +5,7 @@ PATH
       base64 (~> 0.3)
       json (~> 2.19)
       open3 (~> 0.2)
-      tucana (~> 0.0, >= 0.0.67)
+      tucana (~> 0.0, >= 0.0.72)
 
 GEM
   remote: https://rubygems.org/
