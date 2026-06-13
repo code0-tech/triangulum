@@ -45,7 +45,9 @@ module Triangulum
         stdin_data: input
       )
 
-      raise TriangulumFailed, "OUT:\n#{stdout_s}\n\nERR:\n#{stderr_s}" unless status.success?
+      unless status.success?
+        raise TriangulumFailed, "STATUS: #{status.exitstatus}\n\nOUT:\n#{stdout_s}\n\nERR:\n#{stderr_s}"
+      end
 
       stdout_s
     end
