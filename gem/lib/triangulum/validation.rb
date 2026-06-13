@@ -46,7 +46,13 @@ module Triangulum
       )
 
       unless status.success?
-        raise TriangulumFailed, "STATUS: #{status.exitstatus}\n\nOUT:\n#{stdout_s}\n\nERR:\n#{stderr_s}"
+        status_info = if status.signaled?
+                        "SIGNAL: #{status.termsig}"
+                      else
+                        "STATUS: #{status.exitstatus}"
+                      end
+
+        raise TriangulumFailed, "#{status_info}\n\nOUT:\n#{stdout_s}\n\nERR:\n#{stderr_s}"
       end
 
       stdout_s
