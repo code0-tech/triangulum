@@ -85,6 +85,13 @@ export const getSignatureSchema = (
     // Extract parameter types from the function definition
     const funktionParameterTypes = extractFunctionParameterTypes(checker, funktion, node)
 
+    // Fall back to function param type when node param resolved to undefined (e.g. value: null passed as generic type param)
+    const mergedParameterTypes = nodeParameterTypes?.map((type, index) =>
+        (type.flags & ts.TypeFlags.Undefined) !== 0
+            ? (funktionParameterTypes?.[index] ?? type)
+            : type
+    )
+
     // Identify parameter dependencies based on type parameters
     const funktionDependencies = getParameterDependencies(funktion!)
 
@@ -93,7 +100,7 @@ export const getSignatureSchema = (
         nodeId,
         checker,
         node!,
-        nodeParameterTypes,
+        mergedParameterTypes,
         funktionParameterTypes,
         funktionDependencies,
         nodeId ? declaredFunctionsMap : new Map(),
