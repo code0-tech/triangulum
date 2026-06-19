@@ -139,7 +139,7 @@ export const getSchema = (
     // Collect all available suggestions for this parameter
     const combinedSuggestions = suggestions ? {
         suggestions: [
-            ...getValues(parameterType),
+            ...getValues(parameterType, checker),
             ...(node ? getReferences(
                 checker,
                 node,
@@ -160,6 +160,19 @@ export const getSchema = (
             ),
         ],
     } : {};
+
+    // Strip undefined from unions (e.g. string | undefined → string).
+    // Suggestions are collected above from the original type (preserving aliasSymbol literals),
+    // the base schema is determined from the stripped type, then both are merged.
+    if (parameterType.isUnion()) {
+        const nonUndefined = parameterType.types.filter(
+            (t) => (t.flags & ts.TypeFlags.Undefined) === 0
+        )
+        if (nonUndefined.length === 1) {
+            const baseSchema = getSchema(checker, node, nonUndefined[0], functionDeclarations, functions, false)
+            return {...baseSchema, ...combinedSuggestions}
+        }
+    }
 
     // Check individual primitive types
     if (isBoolean(parameterType)) {
