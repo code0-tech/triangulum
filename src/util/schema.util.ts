@@ -126,6 +126,16 @@ export const getSchema = (
     functions: FunctionDefinition[],
     suggestions: boolean = true
 ): Schema => {
+
+    if ((parameterType.flags & ts.TypeFlags.TypeParameter) !== 0) {
+        const decl = parameterType.symbol?.declarations?.[0]
+        if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
+            // getTypeFromTypeNode statt getBaseConstraintOfType → aliasSymbol bleibt erhalten
+            const constraintType = checker.getTypeFromTypeNode(decl.constraint)
+            return getSchema(checker, node, constraintType, functionDeclarations, functions, suggestions)
+        }
+    }
+
     // Collect all available suggestions for this parameter
     const combinedSuggestions = suggestions ? {
         suggestions: [
