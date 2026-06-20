@@ -39,6 +39,25 @@ export const getFlowValidation = (
         }
     }
 
+    const functionIdentifiers = new Set(functions?.map(f => f.identifier));
+    const unreachableFunctionDiagnostics = (flow.nodes?.nodes ?? [])
+        .filter(n => n?.functionDefinition && !functionIdentifiers.has(n.functionDefinition.identifier))
+        .map(n => ({
+            nodeId: n!.id,
+            parameterIndex: null,
+            code: 0,
+            message: `The function definition "${n!.functionDefinition!.identifier}" is not reachable.`,
+            severity: "error" as const,
+        }));
+
+    if (unreachableFunctionDiagnostics.length > 0) {
+        return {
+            isValid: false,
+            returnType: "void",
+            diagnostics: unreachableFunctionDiagnostics,
+        }
+    }
+
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes);
 
     // 3. Virtual TypeScript Compilation
