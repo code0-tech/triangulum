@@ -934,10 +934,19 @@ describe('getFlowValidation - Integrationstest', () => {
 
         const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        expect(result.isValid).toBe(true);
-        result.diagnostics.forEach((error) => {
-            expect(error.parameterIndex).toBeDefined()
-        })
+        expect(result.isValid).toBe(false);
+        expect(result.diagnostics).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                nodeId: "gid://sagittarius/NodeFunction/1",
+                message: 'The function definition "http::response::create" is not reachable.',
+                severity: "error",
+            }),
+            expect.objectContaining({
+                nodeId: "gid://sagittarius/NodeFunction/4",
+                message: 'The function definition "http::response::create" is not reachable.',
+                severity: "error",
+            }),
+        ]));
     });
 
     it('11', () => {
@@ -1276,6 +1285,45 @@ describe('getFlowValidation - Integrationstest', () => {
             expect(error.nodeId).toBeDefined()
             expect(error.parameterIndex).toBeDefined()
         })
+    });
+
+    it('fails when a node references an unreachable function definition', () => {
+
+        const flow: Flow = {
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::number::add"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: 1}},
+                                {value: {__typename: "LiteralValue", value: 2}}
+                            ]
+                        },
+                        nextNodeId: "gid://sagittarius/NodeFunction/2"
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::imaginary::nonexistent"},
+                        parameters: {nodes: []}
+                    }
+                ]
+            }
+        };
+
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result.isValid).toBe(false);
+        expect(result.diagnostics).toEqual([
+            expect.objectContaining({
+                nodeId: "gid://sagittarius/NodeFunction/2",
+                parameterIndex: null,
+                message: 'The function definition "std::imaginary::nonexistent" is not reachable.',
+                severity: "error",
+            })
+        ]);
     });
 
 });
