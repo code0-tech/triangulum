@@ -174,6 +174,13 @@ export const getSchema = (
         }
     }
 
+    // Check primitive literal union first (e.g., "a" | "b" | "c") or a single
+    // string/number literal (e.g., "GET"). A bare literal has only one allowed
+    // value, so it should still surface as a select rather than a free-form text/number input.
+    if (isPrimitiveLiteralUnion(parameterType) || isStringOrNumberLiteral(parameterType)) {
+        return {input: "select", ...combinedSuggestions};
+    }
+
     // Check individual primitive types
     if (isBoolean(parameterType)) {
         return {input: "boolean", ...combinedSuggestions};
@@ -183,11 +190,6 @@ export const getSchema = (
     }
     if (isString(parameterType)) {
         return {input: "text", ...combinedSuggestions};
-    }
-
-    // Check primitive literal union first (e.g., "a" | "b" | "c")
-    if (isPrimitiveLiteralUnion(parameterType)) {
-        return {input: "select", ...combinedSuggestions};
     }
 
     // Check if type has call signatures (is callable/sub-flow)
@@ -332,6 +334,17 @@ function isString(type: ts.Type): boolean {
  */
 function isPrimitive(type: ts.Type): boolean {
     return isString(type) || isNumber(type) || isBoolean(type);
+}
+
+/**
+ * Checks if a type is a single string or number literal (e.g. "GET" or 42).
+ * Boolean literals are excluded so that types like `true` continue to render as a boolean input.
+ */
+function isStringOrNumberLiteral(type: ts.Type): boolean {
+    return (
+        (type.flags & ts.TypeFlags.StringLiteral) !== 0 ||
+        (type.flags & ts.TypeFlags.NumberLiteral) !== 0
+    );
 }
 
 /**
