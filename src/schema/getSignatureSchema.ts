@@ -93,7 +93,7 @@ export const getSignatureSchema = (
     )
 
     // Identify parameter dependencies based on type parameters
-    const funktionDependencies = getParameterDependencies(funktion!)
+    const funktionDependencies = getParameterDependencies(funktion!, nodeParameterTypes)
 
     // Generate schema for each parameter
     return generateNodeSchemas(
@@ -203,30 +203,57 @@ const extractFunctionParameterTypes = (
 /**
  * Identifies parameter dependencies based on shared type parameters.
  * Determines which parameters depend on type parameters declared in other parameters.
+ * If an argument is explicitly provided (not null/undefined), it is not blocked.
  *
- * @param node - The function declaration to analyze
+ * @param funktion - The function declaration to analyze
+ * @param nodeParameterTypes
  * @returns Array of ParameterDependency objects
  */
-const getParameterDependencies = (node: ts.FunctionDeclaration): ParameterDependency[] => {
-    // Extract all type parameter names from the function
-    const typeParamNames = node.typeParameters?.map((tp) => tp.name.getText()) || []
+const getParameterDependencies = (
+    funktion: ts.FunctionDeclaration,
+    nodeParameterTypes: ts.Type[] | undefined
+): ParameterDependency[] => {
+    const typeParamNames = funktion.typeParameters?.map((tp) => tp.name.getText()) || []
     const usage: Record<string, number[]> = {}
 
     // Track which parameters use each type parameter
-    node.parameters.forEach((p, i) => {
-        const typeText = p.type?.getText() || ""
-        typeParamNames.forEach((typeParam) => {
-            if (typeText.includes(typeParam)) {
-                if (!usage[typeParam]) {
-                    usage[typeParam] = []
+    funktion.parameters.forEach((p, i) => {
+        if (!p.type) return
+
+        // Ein Set, um Duplikate pro Parameter zu vermeiden (falls 'A' mehrfach im selben Param-Typ vorkommt)
+        const foundInParameter = new Set<string>()
+
+        // Wir laufen rekursiv durch den Typ-Knoten des Parameters
+        p.type.forEachChild(function visitor(child) {
+            // Sucht nach expliziten Typ-Referenzen (z.B. die Typen in den <...> oder der Typ selbst)
+            if (ts.isTypeReferenceNode(child) && ts.isIdentifier(child.typeName)) {
+                const typeName = child.typeName.text
+                if (typeParamNames.includes(typeName)) {
+                    foundInParameter.add(typeName)
                 }
-                usage[typeParam].push(i)
             }
+            // Falls der Typ selbst nur der Typparameter ist (z.B. p.type ist direkt ein TypeReferenceNode)
+            if (ts.isTypeReferenceNode(p.type!) && ts.isIdentifier(p.type.typeName)) {
+                const directTypeName = p.type.typeName.text
+                if (typeParamNames.includes(directTypeName)) {
+                    foundInParameter.add(directTypeName)
+                }
+            }
+
+            child.forEachChild(visitor)
+        })
+
+        // Gefundene Abhängigkeiten für diesen Parameter registrieren
+        foundInParameter.forEach((typeParam) => {
+            if (!usage[typeParam]) {
+                usage[typeParam] = []
+            }
+            usage[typeParam].push(i)
         })
     })
 
-    // Extract dependencies: type params used by multiple parameters
-    return Object.values(usage)
+    // Extract raw dependencies based on type definition
+    const rawDependencies = Object.values(usage)
         .filter((indices) => indices.length > 1)
         .map(([firstIndex, ...otherIndices]) =>
             otherIndices.map((depIndex) => ({
@@ -235,8 +262,28 @@ const getParameterDependencies = (node: ts.FunctionDeclaration): ParameterDepend
             })),
         )
         .flat()
-}
 
+    // Wenn wir keine Typen vom Checker haben, bleiben wir beim Standard
+    if (!nodeParameterTypes) {
+        return rawDependencies
+    }
+
+    // Filter heraus, was durch echte Werte (nicht null/undefined) bereits aufgelöst ist
+    return rawDependencies.filter((dep) => {
+        const resolvedType = nodeParameterTypes[dep.parameterIndex]
+
+        // Falls aus irgendeinem Grund kein Typ ermittelt werden konnte -> blocked lassen
+        if (!resolvedType) return true
+
+        // Prüfen, ob der Typ null oder undefined ist
+        const isNull = (resolvedType.flags & ts.TypeFlags.Null) !== 0
+        const isUndefined = (resolvedType.flags & ts.TypeFlags.Undefined) !== 0
+
+        // Wenn es null oder undefined IST, bleibt es blocked (true)
+        // Wenn es ein echter Wert ist, fliegt die Dependency raus (false)
+        return isNull || isUndefined
+    })
+}
 /**
  * Generates node schemas for all parameters.
  * Creates schema objects for each parameter with their dependencies.

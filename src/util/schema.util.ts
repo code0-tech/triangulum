@@ -161,15 +161,15 @@ export const getSchema = (
         ],
     } : {};
 
-    // Strip undefined from unions (e.g. string | undefined → string).
+    // Strip undefined and null from unions (e.g. string | undefined | null → string).
     // Suggestions are collected above from the original type (preserving aliasSymbol literals),
     // the base schema is determined from the stripped type, then both are merged.
     if (parameterType.isUnion()) {
-        const nonUndefined = parameterType.types.filter(
-            (t) => (t.flags & ts.TypeFlags.Undefined) === 0
+        const nonNullish = parameterType.types.filter(
+            (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
         )
-        if (nonUndefined.length === 1) {
-            const baseSchema = getSchema(checker, node, nonUndefined[0], functionDeclarations, functions, false)
+        if (nonNullish.length === 1) {
+            const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false)
             return {...baseSchema, ...combinedSuggestions}
         }
     }
@@ -240,13 +240,13 @@ export const getSchema = (
                 (property.flags & ts.SymbolFlags.Optional) !== 0 ||
                 (propertyType.isUnion() &&
                     propertyType.types.some(
-                        (t) => (t.flags & ts.TypeFlags.Undefined) !== 0
+                        (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) !== 0
                     ));
 
-            // Filter out undefined type from union types
+            // Filter out undefined and null types from union types
             const propertyTypes = propertyType.isUnion()
                 ? propertyType.types.filter(
-                    (t) => (t.flags & ts.TypeFlags.Undefined) === 0
+                    (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
                 )
                 : [propertyType];
 
@@ -358,7 +358,10 @@ function isStringOrNumberLiteral(type: ts.Type): boolean {
  */
 function isPrimitiveLiteralUnion(type: ts.Type): boolean {
     if (!type.isUnion()) return false;
-    return type.types.every(isPrimitive);
+    const nonNullish = type.types.filter(
+        (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
+    );
+    return nonNullish.length > 0 && nonNullish.every(isPrimitive);
 }
 
 /**
