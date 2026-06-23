@@ -134,7 +134,7 @@ export function generateFlowSourceCode(
                 return `/* @pos ${id} ${index} */ ${refCode}`;
             }
             if (val.__typename === "LiteralValue") {
-                const jsonString = stringify(val?.value)
+                const jsonString = val?.value ? stringify(val?.value) : undefined
                 return `/* @pos ${id} ${index} */ ${jsonString}`;
             }
             if (val.__typename === "SubFlowValue") {
