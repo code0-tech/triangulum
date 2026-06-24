@@ -187,7 +187,7 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "SubFlowValue" && (p.value.startingNodeId || p.value.functionDefinition?.id)) subTreeIds.add(p.value.startingNodeId || p.value.functionDefinition?.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos null ${index} */ ${stringify(setting?.value)}`).join(", ") ?? ""});` : ""
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos null ${index} */ ${setting?.value !== null && setting?.value !== undefined ? stringify(setting?.value) : undefined}`).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))
