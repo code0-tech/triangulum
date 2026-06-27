@@ -174,16 +174,18 @@ export const getSchema = (
         }
     }
 
+    // Boolean is internally represented by TypeScript as the union `true | false`,
+    // so it must be detected before the primitive-literal-union check below; otherwise
+    // `boolean` (and `true | false`) would incorrectly surface as a select.
+    if (isBoolean(parameterType)) {
+        return {input: "boolean", ...combinedSuggestions};
+    }
+
     // Check primitive literal union first (e.g., "a" | "b" | "c") or a single
     // string/number literal (e.g., "GET"). A bare literal has only one allowed
     // value, so it should still surface as a select rather than a free-form text/number input.
     if (isPrimitiveLiteralUnion(parameterType) || isStringOrNumberLiteral(parameterType)) {
         return {input: "select", ...combinedSuggestions};
-    }
-
-    // Check individual primitive types
-    if (isBoolean(parameterType)) {
-        return {input: "boolean", ...combinedSuggestions};
     }
     if (isNumber(parameterType)) {
         return {input: "number", ...combinedSuggestions};
@@ -288,10 +290,28 @@ export const getSchema = (
  * @returns True if the type is a boolean or boolean literal, false otherwise
  */
 function isBoolean(type: ts.Type): boolean {
-    return (
+    if (
         (type.flags & ts.TypeFlags.Boolean) !== 0 ||
         (type.flags & ts.TypeFlags.BooleanLiteral) !== 0
-    );
+    ) {
+        return true;
+    }
+    // A union whose only non-nullish members are boolean literals (e.g. `true | false`,
+    // or `boolean | undefined` after TS expands boolean to its constituents) is still a boolean.
+    if (type.isUnion()) {
+        const nonNullish = type.types.filter(
+            (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
+        );
+        return (
+            nonNullish.length > 0 &&
+            nonNullish.every(
+                (t) =>
+                    (t.flags & ts.TypeFlags.Boolean) !== 0 ||
+                    (t.flags & ts.TypeFlags.BooleanLiteral) !== 0
+            )
+        );
+    }
+    return false;
 }
 
 /**
