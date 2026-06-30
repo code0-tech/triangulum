@@ -124,7 +124,8 @@ export const getSchema = (
     parameterType: ts.Type,
     functionDeclarations: FunctionDeclaration[],
     functions: FunctionDefinition[],
-    suggestions: boolean = true
+    suggestions: boolean = true,
+    suggestionType?: ts.Type,
 ): Schema => {
 
     if ((parameterType.flags & ts.TypeFlags.TypeParameter) !== 0) {
@@ -132,31 +133,37 @@ export const getSchema = (
         if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
             // getTypeFromTypeNode statt getBaseConstraintOfType → aliasSymbol bleibt erhalten
             const constraintType = checker.getTypeFromTypeNode(decl.constraint)
-            return getSchema(checker, node, constraintType, functionDeclarations, functions, suggestions)
+            return getSchema(checker, node, constraintType, functionDeclarations, functions, suggestions, suggestionType)
         }
     }
+
+    // Suggestions are filtered by what the surrounding function accepts, not by
+    // the narrower type a current value happens to narrow the node-side to.
+    // Example: `<T>(value: T)` with a current boolean literal must still surface
+    // every reference in scope, because the function takes anything.
+    const typeForSuggestions = suggestionType ?? parameterType;
 
     // Collect all available suggestions for this parameter
     const combinedSuggestions = suggestions ? {
         suggestions: [
-            ...getValues(parameterType, checker),
+            ...getValues(typeForSuggestions, checker),
             ...(node ? getReferences(
                 checker,
                 node,
-                parameterType,
+                typeForSuggestions,
                 checker.getSymbolsInScope(node, ts.SymbolFlags.Variable)
             ) : []),
             ...getNodes(
                 checker,
                 functionDeclarations,
                 functions,
-                parameterType
+                typeForSuggestions
             ),
             ...getSubFlows(
                 checker,
                 functionDeclarations,
                 functions,
-                parameterType
+                typeForSuggestions
             ),
         ],
     } : {};
@@ -274,9 +281,161 @@ export const getSchema = (
         };
     }
 
-    // Fallback for unknown or generic types
+    // Fallback for unknown or generic types — still surface any collected
+    // suggestions (e.g. references in scope) so the UI is never silently empty.
     return {
         input: "generic",
+        ...combinedSuggestions,
+    };
+};
+
+/**
+ * Merges a function-declared parameter schema with the schema derived from the
+ * concrete node value. The function schema is treated as the source of truth for
+ * the structural shape (input kind, properties, items); the node schema only
+ * contributes additional suggestions and, when the function schema is generic,
+ * a fallback shape.
+ *
+ * Rules:
+ * - If the function schema is generic, follow the node schema — but never as a
+ *   select. A single literal value (e.g. "Test") narrowing a generic T must not
+ *   collapse the input into a select with one option; it should remain free-form
+ *   text/number/boolean matching the literal kind.
+ * - Otherwise use the function schema's input kind and merge suggestions from both.
+ *   Recurse into `properties` (for data) and `items` (for list) so nested generics
+ *   inside concrete containers are handled the same way.
+ *
+ * Suggestions are concatenated and de-duplicated by structural equality.
+ *
+ * @param functionSchema - The schema derived from the declared function parameter type
+ * @param nodeSchema - The schema derived from the node's concrete (narrowed) parameter type
+ * @returns A single merged schema
+ */
+export const mergeSchemas = (
+    functionSchema: Schema | undefined,
+    nodeSchema: Schema,
+    valueProvided: boolean = false,
+): Schema => {
+    if (!functionSchema) {
+        return liftGenericIfValued(demoteSelect(nodeSchema), valueProvided);
+    }
+
+    if (functionSchema.input === "generic") {
+        return liftGenericIfValued(demoteSelect(nodeSchema), valueProvided);
+    }
+
+    const suggestions = mergeSuggestions(
+        functionSchema.suggestions,
+        nodeSchema.suggestions,
+    );
+
+    if (functionSchema.input === "data") {
+        const fProps = functionSchema.properties ?? {};
+        const nProps =
+            nodeSchema.input === "data" ? (nodeSchema.properties ?? {}) : {};
+        const properties: Record<string, Schema | Schema[]> = {};
+        const keys = new Set([...Object.keys(fProps), ...Object.keys(nProps)]);
+        for (const key of keys) {
+            const f = fProps[key];
+            const n = nProps[key];
+            properties[key] = mergeProperty(f, n);
+        }
+        return {
+            ...functionSchema,
+            properties,
+            ...(suggestions ? {suggestions} : {}),
+        };
+    }
+
+    if (functionSchema.input === "list") {
+        const fItems = functionSchema.items ?? [];
+        const nItems =
+            nodeSchema.input === "list" ? (nodeSchema.items ?? []) : [];
+        const items =
+            fItems.length === nItems.length && fItems.length > 0
+                ? fItems.map((f, i) => mergeSchemas(f, nItems[i]))
+                : fItems;
+        return {
+            ...functionSchema,
+            items,
+            ...(suggestions ? {suggestions} : {}),
+        };
+    }
+
+    return {
+        ...functionSchema,
+        ...(suggestions ? {suggestions} : {}),
+    };
+};
+
+const mergeProperty = (
+    f: Schema | Schema[] | undefined,
+    n: Schema | Schema[] | undefined,
+): Schema | Schema[] => {
+    if (f && !Array.isArray(f) && n && !Array.isArray(n)) {
+        return mergeSchemas(f, n);
+    }
+    return (f ?? n)!;
+};
+
+const mergeSuggestions = (
+    a: Input["suggestions"],
+    b: Input["suggestions"],
+): Input["suggestions"] | undefined => {
+    const all = [...(a ?? []), ...(b ?? [])];
+    if (all.length === 0) return undefined;
+    const seen = new Set<string>();
+    const result: NonNullable<Input["suggestions"]> = [];
+    for (const item of all) {
+        const key = JSON.stringify(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(item);
+    }
+    return result;
+};
+
+// Generic means "we extracted nothing structural from either side". That is the
+// right answer for an empty parameter slot, but if the user has provided a value
+// then the merge already had the node-side schema to draw from — if both sides
+// still came out generic (e.g. the value resolved to `any`/`unknown`), the most
+// useful open shape is `data`. Primitive values never reach this branch: their
+// node schema is text / number / boolean / select-then-demoted, so the merge
+// produces a concrete kind before this lift runs.
+const liftGenericIfValued = (schema: Schema, valueProvided: boolean): Schema => {
+    if (!valueProvided || schema.input !== "generic") return schema;
+    return {
+        input: "data",
+        properties: {},
+        required: [],
+        ...(schema.suggestions ? {suggestions: schema.suggestions} : {}),
+    };
+};
+
+const demoteSelect = (schema: Schema): Schema => {
+    if (schema.input !== "select") return schema;
+    const suggestions = schema.suggestions ?? [];
+    const literalKinds = new Set<string>();
+    for (const s of suggestions) {
+        const value = (s as LiteralValue).value;
+        const kind = typeof value;
+        if (kind === "string" || kind === "number" || kind === "boolean") {
+            literalKinds.add(kind);
+        }
+    }
+    const target: PrimitiveInput["input"] =
+        literalKinds.size === 1
+            ? (
+                  {
+                      string: "text",
+                      number: "number",
+                      boolean: "boolean",
+                  } as const
+              )[[...literalKinds][0] as "string" | "number" | "boolean"]
+            : "text";
+    return {
+        input: target,
+        ...(suggestions.length > 0 ? {suggestions} : {}),
     };
 };
 

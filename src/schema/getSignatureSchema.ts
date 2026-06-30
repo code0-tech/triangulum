@@ -1,7 +1,7 @@
 import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
 import ts, {Type} from "typescript"
-import {getSchema, Schema} from "../util/schema.util"
+import {getSchema, mergeSchemas, Schema} from "../util/schema.util"
 
 /**
  * Represents the schema information for a node parameter.
@@ -9,10 +9,14 @@ import {getSchema, Schema} from "../util/schema.util"
  */
 export interface NodeSchema {
     nodeId: NodeFunction["id"]
-    /** The schema definition for this node parameter */
+    /**
+     * The schema definition for this node parameter. Produced by merging the
+     * function-declared parameter schema with the node's concrete value schema:
+     * the function schema drives the structural shape, the node schema contributes
+     * additional suggestions, and a generic function parameter falls back to the
+     * node's concrete shape (never as a select).
+     */
     schema: Schema
-    /** The schema definition for the function parameter */
-    functionSchema: Schema
     /** Array of parameter indices that must be resolved before this parameter */
     blockedBy?: number[]
 }
@@ -95,6 +99,14 @@ export const getSignatureSchema = (
     // Identify parameter dependencies based on type parameters
     const funktionDependencies = getParameterDependencies(funktion!, nodeParameterTypes)
 
+    // Track which parameter slots actually carry a user-supplied value. The merge
+    // uses this as a last-resort signal: if the function- and node-side schemas
+    // both came out generic but the user did set something, the lift falls back
+    // to `data` so the UI has an open object to render against.
+    const valueProvidedByIndex = (targetNode?.parameters?.nodes ?? []).map(
+        (p) => p?.value != null
+    )
+
     // Generate schema for each parameter
     return generateNodeSchemas(
         nodeId,
@@ -105,6 +117,7 @@ export const getSignatureSchema = (
         funktionDependencies,
         nodeId ? declaredFunctionsMap : new Map(),
         nodeId ? functions : [],
+        valueProvidedByIndex,
     )
 }
 
@@ -292,9 +305,11 @@ const getParameterDependencies = (
  * @param checker - The TypeScript type checker
  * @param node - The node's variable declaration
  * @param nodeParameterTypes - Merged parameter types to use for schema generation
+ * @param functionParameterTypes
  * @param funktionDependencies - Parameter dependencies to link with each parameter
  * @param declaredFunctionsMap - Map of available functions for schema context
  * @param functions - Array of function definitions
+ * @param valueProvidedByIndex
  * @returns Array of NodeSchema objects
  */
 const generateNodeSchemas = (
@@ -306,31 +321,67 @@ const generateNodeSchemas = (
     funktionDependencies: ParameterDependency[],
     declaredFunctionsMap: Map<string, ts.FunctionDeclaration>,
     functions: FunctionDefinition[],
+    valueProvidedByIndex: boolean[],
 ): NodeSchema[] => {
     if (!nodeParameterTypes) {
         return []
     }
 
-    return nodeParameterTypes.map((parameterType, index) => ({
-        nodeId: nodeId,
-        schema: getSchema(
+    return nodeParameterTypes.map((parameterType, index) => {
+        const functionParameterType = functionParameterTypes?.[index]
+        // Suggestions are scoped by what the *function* parameter accepts (e.g.
+        // `T` widens to `any`, so anything in scope is a valid candidate), even
+        // when the node value has narrowed the actual parameter type — otherwise
+        // setting a boolean literal in a generic slot would silently hide all
+        // other suggestions.
+        const suggestionType = functionParameterType
+            ? widenForSuggestions(checker, functionParameterType)
+            : undefined
+
+        const nodeSchema = getSchema(
             checker,
             node,
             parameterType,
             Array.from(declaredFunctionsMap.values()),
-            functions
-        ),
-        functionSchema: getSchema(
-            checker,
-            node,
-            functionParameterTypes?.[index]!,
-            Array.from(declaredFunctionsMap.values()),
             functions,
-            false
-        ),
-        blockedBy: funktionDependencies
-            .filter((dep) => dep.parameterIndex === index)
-            .map((dep) => dep.dependsOnIndex),
-    }))
+            true,
+            suggestionType,
+        )
+        const functionSchema = functionParameterType
+            ? getSchema(
+                checker,
+                node,
+                functionParameterType,
+                Array.from(declaredFunctionsMap.values()),
+                functions,
+                false
+            )
+            : undefined
+
+        return {
+            nodeId: nodeId,
+            schema: mergeSchemas(
+                functionSchema,
+                nodeSchema,
+                valueProvidedByIndex[index] ?? false,
+            ),
+            blockedBy: funktionDependencies
+                .filter((dep) => dep.parameterIndex === index)
+                .map((dep) => dep.dependsOnIndex),
+        }
+    })
+}
+
+// Widen a function parameter type so that suggestion collection asks "what could
+// the function accept here", not "what does the current value narrow this to".
+// An unconstrained type parameter accepts anything → `any`. A constrained type
+// parameter is replaced by its constraint. Everything else is used as-is.
+const widenForSuggestions = (checker: ts.TypeChecker, type: ts.Type): ts.Type => {
+    if ((type.flags & ts.TypeFlags.TypeParameter) === 0) return type
+    const decl = type.symbol?.declarations?.[0]
+    if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
+        return checker.getTypeFromTypeNode(decl.constraint)
+    }
+    return checker.getAnyType()
 }
 
