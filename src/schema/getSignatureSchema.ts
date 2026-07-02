@@ -335,7 +335,7 @@ const generateNodeSchemas = (
         // setting a boolean literal in a generic slot would silently hide all
         // other suggestions.
         const suggestionType = functionParameterType
-            ? widenForSuggestions(checker, functionParameterType)
+            ? widenForSuggestions(checker, functionParameterType, node!)
             : undefined
 
         const nodeSchema = getSchema(
@@ -375,13 +375,51 @@ const generateNodeSchemas = (
 // Widen a function parameter type so that suggestion collection asks "what could
 // the function accept here", not "what does the current value narrow this to".
 // An unconstrained type parameter accepts anything → `any`. A constrained type
-// parameter is replaced by its constraint. Everything else is used as-is.
-const widenForSuggestions = (checker: ts.TypeChecker, type: ts.Type): ts.Type => {
-    if ((type.flags & ts.TypeFlags.TypeParameter) === 0) return type
-    const decl = type.symbol?.declarations?.[0]
-    if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
-        return checker.getTypeFromTypeNode(decl.constraint)
+// parameter is replaced by its constraint. Any generic type with free type parameters
+// (e.g. LIST<T>, OBJECT<T>) is widened by substituting `any` for each free
+// TypeParameter, because TypeScript's isTypeAssignableTo returns false for concrete
+// types against generics with free T even though they are structurally valid candidates.
+//
+// For array types (TypeReference) the public createArrayType API rebuilds the widened
+// type directly. For type-alias types (e.g. mapped types like OBJECT<T>) the source
+// code is pre-seeded with `declare const __widen_<Name>: <Name><any, …>` declarations
+// so the widened type can be looked up in the checker's scope via node.
+const widenForSuggestions = (checker: ts.TypeChecker, type: ts.Type, node: ts.VariableDeclaration): ts.Type => {
+    if ((type.flags & ts.TypeFlags.TypeParameter) !== 0) {
+        const decl = type.symbol?.declarations?.[0]
+        if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
+            return checker.getTypeFromTypeNode(decl.constraint)
+        }
+        return checker.getAnyType()
     }
-    return checker.getAnyType()
+
+    if ((type.flags & ts.TypeFlags.Object) !== 0 && hasFreeTypeParam(type, checker, new Set())) {
+        const aliasName: string | undefined = (type as any).aliasSymbol?.getName()
+        if (aliasName) {
+            const widenedSym = checker
+                .getSymbolsInScope(node, ts.SymbolFlags.Variable)
+                .find(s => s.getName() === `__widen_${aliasName}`)
+            if (widenedSym) {
+                return checker.getTypeOfSymbolAtLocation(widenedSym, node)
+            }
+        }
+        return checker.getAnyType()
+    }
+
+    return type
+}
+
+// Returns true if type itself or any of its type arguments (direct or alias) is a
+// free TypeParameter, recursing into nested generic types.
+const hasFreeTypeParam = (type: ts.Type, checker: ts.TypeChecker, visited: Set<ts.Type>): boolean => {
+    if (visited.has(type)) return false
+    visited.add(type)
+    if ((type.flags & ts.TypeFlags.TypeParameter) !== 0) return true
+    if ((type.flags & ts.TypeFlags.Object) !== 0) {
+        if (checker.getTypeArguments(type as ts.TypeReference).some(arg => hasFreeTypeParam(arg, checker, visited))) return true
+        const aliasArgs = (type as any).aliasTypeArguments as ts.Type[] | undefined
+        if (aliasArgs?.some(arg => hasFreeTypeParam(arg, checker, visited))) return true
+    }
+    return false
 }
 

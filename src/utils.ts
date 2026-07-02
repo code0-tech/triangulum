@@ -90,7 +90,15 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
     ).join("\n");
 
-    return `${useGenericDeclarations ? genericDeclarations : ""}\n${typeAliasDeclarations}`;
+    // Pre-instantiate every generic type with `any` for each type parameter.
+    // These are used by widenForSuggestions to produce the widened type for
+    // suggestion-scope checks when a parameter type has free TypeParameters.
+    const widenedDeclarations = dataTypes
+        ?.filter(dt => (dt.genericKeys?.length ?? 0) > 0)
+        .map(dt => `declare const __widen_${dt.identifier}: ${dt.identifier}<${dt.genericKeys!.map(() => "any").join(", ")}>;`)
+        .join("\n") ?? "";
+
+    return `${useGenericDeclarations ? genericDeclarations : ""}\n${typeAliasDeclarations}\n${widenedDeclarations}`;
 }
 
 /**

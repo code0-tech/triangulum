@@ -525,6 +525,68 @@ describe("Schema", () => {
         expect(new Set(numberSet)).toEqual(new Set(objectSet));
     });
 
+    it('std::control::value with array literal is offered as a LIST reference in std::list::at', () => {
+        // Node 1: std::control::value<T>(value: T): T receives a literal array [1, 2, 3].
+        // TypeScript infers T = number[], so the node's return type is number[] (LIST<NUMBER>).
+        //
+        // Node 2: std::list::at<T>(list: LIST<T>, index: NUMBER): T
+        // The `list` parameter expects LIST<T> (any array). number[] is assignable to
+        // LIST<T> (T unconstrained → upper bound unknown → number[] ⊆ unknown[]), so
+        // node 1 must appear as a ReferenceValue suggestion for the `list` parameter.
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::control::value"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: [1, 2, 3]}},
+                            ],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::list::at"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: 0}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const [listSchema] = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // The `list` parameter is of type LIST<T> → must render as a list input.
+        expect(listSchema.schema.input).toBe("list");
+
+        // Node 1 returns LIST<NUMBER>, which is assignable to LIST<T>.
+        // Its return value is a direct reference (no property path).
+        const suggestions = (listSchema.schema.suggestions ?? []) as any[];
+        expect(suggestions.length).toBeGreaterThan(0);
+        expect(
+            suggestions.some(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
+                    !s.referencePath,
+            ),
+        ).toBe(true);
+    });
+
     it('demotes select to free-form when function parameter is generic', () => {
         // std::control::return<T>(value: T): T — function declares T, node sets a
         // string literal. Result must be text (free-form), NOT select with one option.
