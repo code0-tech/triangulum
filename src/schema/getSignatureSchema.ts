@@ -393,6 +393,17 @@ const widenForSuggestions = (checker: ts.TypeChecker, type: ts.Type, node: ts.Va
         return checker.getAnyType()
     }
 
+    // A conditional type that still depends on a free type parameter cannot be
+    // resolved to a single branch for suggestion scoping (e.g.
+    // HTTP_PAYLOAD<S> = S extends 'application/json' ? OBJECT<{}> : … stays
+    // unresolved while S is free, and isTypeAssignableTo against it is always
+    // false). Its base constraint is the union of every branch
+    // (string | OBJECT<{}> | undefined) — exactly the set of values the function
+    // could accept here — so widen to that.
+    if ((type.flags & ts.TypeFlags.Conditional) !== 0) {
+        return checker.getBaseConstraintOfType(type) ?? checker.getAnyType()
+    }
+
     if ((type.flags & ts.TypeFlags.Object) !== 0 && hasFreeTypeParam(type, checker, new Set())) {
         const aliasName: string | undefined = (type as any).aliasSymbol?.getName()
         if (aliasName) {
