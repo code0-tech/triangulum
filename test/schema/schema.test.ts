@@ -619,4 +619,73 @@ describe("Schema", () => {
         expect(first.schema.input).toBe("text");
     });
 
+    it('offers a saved object as a ReferenceValue suggestion in rest::control::respond payload', () => {
+        // Node 1: std::control::value<T>(value: T): T saves an object literal, so its
+        //   return type is an OBJECT.
+        // Node 2: rest::control::respond
+        //   <S extends HTTP_SCHEMA>(http_status_code, headers: OBJECT<{}>, http_schema: S,
+        //                           payload: HTTP_PAYLOAD<S>): void
+        //   With http_schema = "application/json", HTTP_PAYLOAD<S> resolves to OBJECT<{}>.
+        //
+        // Node 1 returns an object, which is assignable to OBJECT<{}>, so node 1 must be
+        // offered as a ReferenceValue suggestion for the payload parameter.
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::control::value"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: {}}},
+                            ],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "rest::control::respond"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: 200}},
+                                {value: {__typename: "LiteralValue", value: {}}},
+                                {value: {__typename: "LiteralValue", value: "application/json"}},
+                                {value: {__typename: "LiteralValue", value: {}}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const result = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // payload is the 4th parameter of rest::control::respond.
+        const payloadSchema = result[3];
+
+        // application/json → HTTP_PAYLOAD<S> = OBJECT<{}> → open object input.
+        expect(payloadSchema.schema.input).toBe("data");
+
+        // Node 1 (std::control::value) returns an object assignable to OBJECT<{}>.
+        // Its return value is a direct reference (no property path).
+        const suggestions = (payloadSchema.schema.suggestions ?? []) as any[];
+        expect(suggestions.length).toBeGreaterThan(0);
+        expect(
+            suggestions.some(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
+                    !s.referencePath,
+            ),
+        ).toBe(true);
+    });
+
 })
