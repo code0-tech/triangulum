@@ -79,8 +79,16 @@ const createNodeFunctionIfCompatible = (
     // Simplify the return type by resolving type parameters
     const simplifiedReturnType = resolveReturnType(checker, returnType);
 
-    // Only proceed if the return type is assignable to the target parameter type
-    if (!checker.isTypeAssignableTo(simplifiedReturnType, paramType)) {
+    // Only proceed if the return type is assignable to the target parameter type.
+    // The nullish part of the return type is ignored: a function returning
+    // `string | null` is still a valid suggestion for a plain `string` parameter.
+    // A purely nullish return type strips down to `never` (assignable to anything),
+    // so it must be excluded explicitly.
+    const nonNullableReturnType = checker.getNonNullableType(simplifiedReturnType);
+    if (
+        (nonNullableReturnType.flags & ts.TypeFlags.Never) !== 0 ||
+        !checker.isTypeAssignableTo(nonNullableReturnType, paramType)
+    ) {
         return null;
     }
 

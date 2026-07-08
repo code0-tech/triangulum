@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {Flow} from "@code0-tech/sagittarius-graphql-types";
+import {Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
 import {getSignatureSchema, getTypeSchema} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
@@ -684,6 +684,143 @@ describe("Schema", () => {
                     s.__typename === "ReferenceValue" &&
                     s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
                     !s.referencePath,
+            ),
+        ).toBe(true);
+    });
+
+    it('offers a nullable TEXT return as a ReferenceValue suggestion for a plain TEXT parameter', () => {
+        // Node 1: custom::text::nullable(): TEXT | null — no parameters, returns a
+        //   nullable string.
+        // Node 2: std::text::split(value: TEXT, delimiter: TEXT): LIST<TEXT>
+        //
+        // The `value` parameter is declared as plain TEXT (string). Node 1's return
+        // type is string | null. Strict assignability would reject string | null → string,
+        // but the editor must still offer node 1 as a ReferenceValue suggestion here:
+        // the nullish part of a reference's type should be ignored for suggestion scoping.
+        const NULLABLE_TEXT_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9001",
+            identifier: "custom::text::nullable",
+            signature: "(): TEXT | null",
+        };
+
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::text::nullable"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const [valueSchema] = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            [...FUNCTION_SIGNATURES, NULLABLE_TEXT_FN],
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // value: TEXT → free-form text input.
+        expect(valueSchema.schema.input).toBe("text");
+
+        // Node 1 returns TEXT | null; stripping the nullish part leaves TEXT, which is
+        // assignable to the TEXT parameter. Its return value is a direct reference
+        // (no property path).
+        const suggestions = (valueSchema.schema.suggestions ?? []) as any[];
+        expect(
+            suggestions.some(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
+                    !s.referencePath,
+            ),
+        ).toBe(true);
+    });
+
+    it('offers a nullable object property as a ReferenceValue path suggestion for a plain TEXT parameter', () => {
+        // Node 1: custom::text::nullable_object(): {text?: TEXT | null} — no parameters,
+        //   returns an object whose `text` property is optional and nullable.
+        // Node 2: std::text::split(value: TEXT, delimiter: TEXT): LIST<TEXT>
+        //
+        // The `value` parameter is declared as plain TEXT (string). Node 1's `text`
+        // property has type string | null | undefined. Strict assignability would
+        // reject it, but the editor must still offer node 1's `text` property as a
+        // ReferenceValue suggestion with referencePath [{path: "text"}]: the nullish
+        // part of a reference's type should be ignored for suggestion scoping.
+        const NULLABLE_OBJECT_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9002",
+            identifier: "custom::text::nullable_object",
+            signature: "(): {text?: TEXT | null}",
+        };
+
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::text::nullable_object"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const [valueSchema] = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            [...FUNCTION_SIGNATURES, NULLABLE_OBJECT_FN],
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // value: TEXT → free-form text input.
+        expect(valueSchema.schema.input).toBe("text");
+
+        // Node 1's `text` property is TEXT | null | undefined; stripping the nullish
+        // part leaves TEXT, which is assignable to the TEXT parameter → node 1 must
+        // be offered with referencePath [{path: "text"}].
+        const suggestions = (valueSchema.schema.suggestions ?? []) as any[];
+        expect(
+            suggestions.some(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
+                    Array.isArray(s.referencePath) &&
+                    s.referencePath.length === 1 &&
+                    s.referencePath[0].path === "text",
             ),
         ).toBe(true);
     });

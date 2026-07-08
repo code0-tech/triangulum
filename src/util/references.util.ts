@@ -257,8 +257,17 @@ const extractObjectProperties = (
 ): Array<{ path: ReferencePath[]; type: ts.Type }> => {
   const results: Array<{ path: ReferencePath[]; type: ts.Type }> = [];
 
-  // Check if the current type matches the expected type
-  if (checker.isTypeAssignableTo(type, expectedType)) {
+  // Check if the current type matches the expected type. The nullish part of a
+  // candidate is ignored: a reference typed `string | null` (or an optional
+  // property `text?: string | null`) is still a valid suggestion for a plain
+  // `string` parameter — strict assignability would reject it under strictNullChecks.
+  // A purely nullish candidate strips down to `never` (assignable to anything),
+  // so it must be excluded explicitly.
+  const nonNullableType = checker.getNonNullableType(type);
+  if (
+    (nonNullableType.flags & ts.TypeFlags.Never) === 0 &&
+    checker.isTypeAssignableTo(nonNullableType, expectedType)
+  ) {
     results.push({ path: currentPath, type });
   }
 

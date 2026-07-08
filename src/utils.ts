@@ -139,7 +139,11 @@ export function generateFlowSourceCode(
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
-                return `/* @pos ${id} ${index} */ ${refCode}`;
+                // Non-null assertion: a reference typed `string | null` (or an optional
+                // chain like `node_X?.text`) must still satisfy a plain `string` parameter
+                // under strictNullChecks — only the nullish part is waived, base type
+                // mismatches still fail validation.
+                return `/* @pos ${id} ${index} */ (${refCode})!`;
             }
             if (val.__typename === "LiteralValue") {
                 const jsonString = val?.value !== null && val?.value !== undefined ? stringify(val?.value) : undefined
