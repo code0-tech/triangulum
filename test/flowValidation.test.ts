@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {getFlowValidation} from '../src/validation/getFlowValidation';
-import {Flow} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
+import {Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
 // @ts-ignore
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
@@ -1324,6 +1324,120 @@ describe('getFlowValidation - Integrationstest', () => {
                 severity: "error",
             })
         ]);
+    });
+
+    describe('nullable references into non-nullable parameters', () => {
+
+        // custom::text::nullable(): TEXT | null — no parameters, returns a nullable string.
+        const NULLABLE_TEXT_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9001",
+            identifier: "custom::text::nullable",
+            signature: "(): TEXT | null",
+        };
+
+        // custom::text::nullable_object(): {text?: TEXT | null} — returns an object whose
+        // `text` property is optional and nullable.
+        const NULLABLE_OBJECT_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9002",
+            identifier: "custom::text::nullable_object",
+            signature: "(): {text?: TEXT | null}",
+        };
+
+        // custom::number::nullable(): NUMBER | null — nullable, but the base type is
+        // a number, so it must stay incompatible with a TEXT parameter.
+        const NULLABLE_NUMBER_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9003",
+            identifier: "custom::number::nullable",
+            signature: "(): NUMBER | null",
+        };
+
+        const CUSTOM_FUNCTIONS = [
+            ...FUNCTION_SIGNATURES,
+            NULLABLE_TEXT_FN,
+            NULLABLE_OBJECT_FN,
+            NULLABLE_NUMBER_FN,
+        ];
+
+        // Builds a two-node flow: node 1 runs `firstIdentifier` (no parameters),
+        // node 2 runs std::text::split(value: TEXT, delimiter: TEXT) with `valueRef`
+        // as its `value` argument.
+        const buildFlow = (firstIdentifier: string, valueRef: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: firstIdentifier},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: valueRef},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        it('accepts a TEXT | null reference for a plain TEXT parameter', () => {
+            // Node 1 returns TEXT | null; node 2's `value` parameter wants TEXT.
+            // The nullish part of the reference must not fail the validation.
+            const flow = buildFlow("custom::text::nullable", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.diagnostics).toHaveLength(0);
+            expect(result.isValid).toBe(true);
+        });
+
+        it('accepts a nullable object property reference for a plain TEXT parameter', () => {
+            // Node 1 returns {text?: TEXT | null}; the reference path drills into `text`
+            // (TEXT | null | undefined). The nullish part must not fail the validation.
+            const flow = buildFlow("custom::text::nullable_object", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                referencePath: [{path: "text"}],
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.diagnostics).toHaveLength(0);
+            expect(result.isValid).toBe(true);
+        });
+
+        it('still rejects a NUMBER | null reference for a plain TEXT parameter', () => {
+            // Ignoring the nullish part must not make the base types interchangeable:
+            // NUMBER | null stripped to NUMBER is still not a TEXT.
+            const flow = buildFlow("custom::number::nullable", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(false);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "error",
+                }),
+            ]));
+        });
+
     });
 
 });
