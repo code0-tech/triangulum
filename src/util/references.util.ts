@@ -271,9 +271,11 @@ const extractObjectProperties = (
     results.push({ path: currentPath, type });
   }
 
-  // Recursively traverse into object properties
-  if (isRealObjectType(type)) {
-    const properties = type.getProperties();
+  // Recursively traverse into object properties. Traversal also runs on the
+  // non-nullable type: a nullable object in the chain (e.g. `{bla?: TEXT} | null`)
+  // is a union whose getProperties() is empty, which would cut off all nested paths.
+  if (isRealObjectType(nonNullableType)) {
+    const properties = nonNullableType.getProperties();
     if (properties && properties.length > 0) {
       properties.forEach((property) => {
         const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
