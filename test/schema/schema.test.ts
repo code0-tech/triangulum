@@ -899,4 +899,155 @@ describe("Schema", () => {
         ).toBe(true);
     });
 
+    it('offers all paths of a deeply nested non-recursive object as ReferenceValue suggestions', () => {
+        // Node 1: custom::test::deeply_nested(): a 10-level nested object ending in TEXT.
+        // Node 2: std::text::split(value: TEXT, delimiter: TEXT): LIST<TEXT>
+        //
+        // Reference path extraction caps traversal depth only for recursive data
+        // types. A deeply nested but acyclic object must be traversed exhaustively,
+        // so even the leaf 10 levels down is offered as a suggestion.
+        const DEEPLY_NESTED_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9004",
+            identifier: "custom::test::deeply_nested",
+            signature: "(): { l1: { l2: { l3: { l4: { l5: { l6: { l7: { l8: { l9: { l10: TEXT } } } } } } } } } }",
+        };
+
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::test::deeply_nested"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const [valueSchema] = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            [...FUNCTION_SIGNATURES, DEEPLY_NESTED_FN],
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // value: TEXT → free-form text input.
+        expect(valueSchema.schema.input).toBe("text");
+
+        const paths = ((valueSchema.schema.suggestions ?? []) as any[])
+            .filter(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1",
+            )
+            .map((s) => (s.referencePath ?? []).map((p: any) => p.path).join("."));
+
+        expect(paths).toContain("l1.l2.l3.l4.l5.l6.l7.l8.l9.l10");
+    });
+
+    it('cuts cycles and depth-caps traversal of recursive data types', () => {
+        // Two families of recursive data types, both returned by node 1:
+        //
+        // 1. A mutually recursive pair (RECURSIVE_ORDER ↔ RECURSIVE_CUSTOMER), the
+        //    same shape external actions ship for entity graphs (e.g. Shopware's
+        //    order → delivery → order). A branch must stop as soon as a type
+        //    already on it reappears, instead of overflowing the stack.
+        //
+        // 2. A cycle of 8 distinct types (CHAIN_1 → … → CHAIN_8 → CHAIN_1). The
+        //    per-branch cycle cut alone would allow simple paths through all 8
+        //    types, so recursive types are additionally depth-capped at 7 levels.
+        const RECURSIVE_DATA_TYPES = [
+            {identifier: "RECURSIVE_ORDER", genericKeys: [], type: "{ id: TEXT; customer?: RECURSIVE_CUSTOMER | null }"},
+            {identifier: "RECURSIVE_CUSTOMER", genericKeys: [], type: "{ name: TEXT; lastOrder?: RECURSIVE_ORDER | null }"},
+            {identifier: "CHAIN_1", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_2 | null }"},
+            {identifier: "CHAIN_2", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_3 | null }"},
+            {identifier: "CHAIN_3", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_4 | null }"},
+            {identifier: "CHAIN_4", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_5 | null }"},
+            {identifier: "CHAIN_5", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_6 | null }"},
+            {identifier: "CHAIN_6", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_7 | null }"},
+            {identifier: "CHAIN_7", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_8 | null }"},
+            {identifier: "CHAIN_8", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_1 | null }"},
+        ];
+
+        const RECURSIVE_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9005",
+            identifier: "custom::test::recursive",
+            signature: "(): { pair: RECURSIVE_ORDER; chain: CHAIN_1 }",
+        };
+
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::test::recursive"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const [valueSchema] = getSignatureSchema(
+            flow,
+            [...DATA_TYPES, ...RECURSIVE_DATA_TYPES],
+            [...FUNCTION_SIGNATURES, RECURSIVE_FN],
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        // value: TEXT → free-form text input.
+        expect(valueSchema.schema.input).toBe("text");
+
+        const paths = ((valueSchema.schema.suggestions ?? []) as any[])
+            .filter(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1",
+            )
+            .map((s) => (s.referencePath ?? []).map((p: any) => p.path).join("."));
+
+        // Properties inside the cycle are still reachable …
+        expect(paths).toContain("pair.id");
+        expect(paths).toContain("pair.customer.name");
+        // … but the branch stops where RECURSIVE_ORDER would reappear on it.
+        expect(paths).not.toContain("pair.customer.lastOrder.id");
+
+        // The chain is walked through distinct types up to the depth cap of 7
+        // (chain + 5×next + value) …
+        expect(paths).toContain("chain.next.next.next.next.next.value");
+        // … and no further, even though the next type would still be new to the branch.
+        expect(paths).not.toContain("chain.next.next.next.next.next.next.value");
+    });
+
 })
