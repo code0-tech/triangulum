@@ -230,6 +230,50 @@ const decodeParameterName = (name: string): { nodeFunctionId: string; paramIndex
 };
 
 /**
+ * Maximum property depth for reference path extraction through recursive data
+ * types. Only applies to types that participate in a reference cycle: the
+ * visited set keeps each individual branch finite, but a cluster of mutually
+ * recursive types still allows combinatorially many simple paths, so those are
+ * additionally depth-capped. Non-recursive nesting is traversed exhaustively.
+ */
+const MAX_REFERENCE_DEPTH = 7;
+
+/**
+ * Determines whether an object type participates in a reference cycle, i.e. can
+ * reach itself again through its (non-nullable) property types. Results are
+ * memoized in the given cache since the same named types repeat throughout a
+ * traversal. The DFS itself is guarded by its own seen set, so it terminates on
+ * cycles that do not lead back to the start type.
+ */
+const isRecursiveType = (
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  cache: Map<ts.Type, boolean>
+): boolean => {
+  const cached = cache.get(type);
+  if (cached !== undefined) return cached;
+
+  const seen = new Set<ts.Type>();
+  const reachesStart = (current: ts.Type): boolean => {
+    if (seen.has(current) || !isRealObjectType(current)) return false;
+    seen.add(current);
+
+    for (const property of current.getProperties()) {
+      if (!property.valueDeclaration) continue;
+      const propType = checker.getNonNullableType(
+        checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration)
+      );
+      if (propType === type || reachesStart(propType)) return true;
+    }
+    return false;
+  };
+
+  const result = reachesStart(type);
+  cache.set(type, result);
+  return result;
+};
+
+/**
  * Recursively extracts object properties from a type that match an expected type.
  *
  * This function performs a depth-first traversal of an object's property tree. It collects
@@ -243,6 +287,8 @@ const decodeParameterName = (name: string): { nodeFunctionId: string; paramIndex
  * @param checker - TypeScript TypeChecker for type comparison operations
  * @param expectedType - The target type to match when extracting properties
  * @param currentPath - The current property path being built during recursion (default: empty array)
+ * @param visited - Object types already on the current traversal branch, used to break cycles in recursive data types
+ * @param recursionCache - Memoization cache for isRecursiveType, shared across the whole traversal
  * @returns An array of objects containing the property path and the type at that path
  *
  * @example
@@ -253,7 +299,9 @@ const extractObjectProperties = (
   type: ts.Type,
   checker: ts.TypeChecker,
   expectedType: ts.Type,
-  currentPath: ReferencePath[] = []
+  currentPath: ReferencePath[] = [],
+  visited: Set<ts.Type> = new Set(),
+  recursionCache: Map<ts.Type, boolean> = new Map()
 ): Array<{ path: ReferencePath[]; type: ts.Type }> => {
   const results: Array<{ path: ReferencePath[]; type: ts.Type }> = [];
 
@@ -274,17 +322,30 @@ const extractObjectProperties = (
   // Recursively traverse into object properties. Traversal also runs on the
   // non-nullable type: a nullable object in the chain (e.g. `{bla?: TEXT} | null`)
   // is a union whose getProperties() is empty, which would cut off all nested paths.
-  if (isRealObjectType(nonNullableType)) {
+  // Recursive data types (e.g. Order.delivery.order) are cut off via the visited
+  // set — the checker caches type identities, so a cycle revisits the same ts.Type
+  // object. The set only tracks the current branch (backtracked below) so the same
+  // type may still appear on sibling paths. The depth cap only applies to types
+  // that are part of a reference cycle (checked last, it's the expensive test);
+  // purely nested non-recursive objects are traversed to arbitrary depth.
+  if (
+    isRealObjectType(nonNullableType) &&
+    !visited.has(nonNullableType) &&
+    (currentPath.length < MAX_REFERENCE_DEPTH ||
+      !isRecursiveType(nonNullableType, checker, recursionCache))
+  ) {
     const properties = nonNullableType.getProperties();
     if (properties && properties.length > 0) {
+      visited.add(nonNullableType);
       properties.forEach((property) => {
         const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
         const propName = property.getName();
         const newPath = [...currentPath, { path: propName }];
 
         // Recurse into nested properties
-        results.push(...extractObjectProperties(propType, checker, expectedType, newPath));
+        results.push(...extractObjectProperties(propType, checker, expectedType, newPath, visited, recursionCache));
       });
+      visited.delete(nonNullableType);
     }
   }
 
