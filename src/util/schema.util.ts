@@ -1,6 +1,6 @@
 import ts, {FunctionDeclaration} from "typescript";
 import {getValues} from "./values.util";
-import {getReferences} from "./references.util";
+import {getReferences, isRecursiveType} from "./references.util";
 import {getNodes} from "./nodes.util";
 import {
     FunctionDefinition,
@@ -95,6 +95,15 @@ export type Schema =
 
 
 /**
+ * Maximum object nesting depth for schema generation through recursive data
+ * types. Same policy as reference path extraction: the visited set keeps each
+ * individual branch finite, but a cluster of mutually recursive types still
+ * allows combinatorially many simple paths, so those are additionally
+ * depth-capped. Non-recursive nesting is expanded exhaustively.
+ */
+const MAX_SCHEMA_DEPTH = 7;
+
+/**
  * Generates a schema definition for a given TypeScript type.
  *
  * This function analyzes a TypeScript type and produces a structured schema
@@ -126,6 +135,8 @@ export const getSchema = (
     functions: FunctionDefinition[],
     suggestions: boolean = true,
     suggestionType?: ts.Type,
+    visited: Set<ts.Type> = new Set(),
+    recursionCache: Map<ts.Type, boolean> = new Map(),
 ): Schema => {
 
     if ((parameterType.flags & ts.TypeFlags.TypeParameter) !== 0) {
@@ -133,7 +144,7 @@ export const getSchema = (
         if (decl && ts.isTypeParameterDeclaration(decl) && decl.constraint) {
             // getTypeFromTypeNode statt getBaseConstraintOfType → aliasSymbol bleibt erhalten
             const constraintType = checker.getTypeFromTypeNode(decl.constraint)
-            return getSchema(checker, node, constraintType, functionDeclarations, functions, suggestions, suggestionType)
+            return getSchema(checker, node, constraintType, functionDeclarations, functions, suggestions, suggestionType, visited, recursionCache)
         }
     }
 
@@ -176,7 +187,7 @@ export const getSchema = (
             (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
         )
         if (nonNullish.length === 1) {
-            const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false)
+            const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false, undefined, visited, recursionCache)
             return {...baseSchema, ...combinedSuggestions}
         }
     }
@@ -215,7 +226,7 @@ export const getSchema = (
         const itemSchemas = itemTypes.flatMap(itemType => {
             const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
             return itemTypes.map((itemType) =>
-                getSchema(checker, node, itemType, functionDeclarations, functions, suggestions)
+                getSchema(checker, node, itemType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
             )
         })
 
@@ -229,6 +240,22 @@ export const getSchema = (
 
     // Handle complex object types with properties
     if ((parameterType.flags & ts.TypeFlags.Object) !== 0) {
+        // Recursive data types (e.g. Order.deliveries[].order) are cut off via
+        // the visited set — the checker caches type identities, so a cycle
+        // revisits the same ts.Type object. The set only tracks the current
+        // branch (backtracked below) so the same type may still be expanded on
+        // sibling paths. The depth cap only applies to types that are part of a
+        // reference cycle (checked last, it's the expensive test); purely nested
+        // non-recursive objects are expanded to arbitrary depth.
+        if (
+            visited.has(parameterType) ||
+            (visited.size >= MAX_SCHEMA_DEPTH &&
+                isRecursiveType(parameterType, checker, recursionCache))
+        ) {
+            return {input: "data", ...combinedSuggestions};
+        }
+        visited.add(parameterType);
+
         const properties: Record<string, Schema | Schema[]> = {};
         const required: string[] = [];
 
@@ -261,7 +288,7 @@ export const getSchema = (
 
             // Recursively generate schemas for property types
             const propertySchemas = propertyTypes.map((type) =>
-                getSchema(checker, node, type, functionDeclarations, functions, suggestions)
+                getSchema(checker, node, type, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
             );
 
             properties[property.name] =
@@ -272,6 +299,8 @@ export const getSchema = (
                 required.push(property.name);
             }
         }
+
+        visited.delete(parameterType);
 
         return {
             input: "data",

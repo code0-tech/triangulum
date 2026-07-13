@@ -245,7 +245,7 @@ const MAX_REFERENCE_DEPTH = 7;
  * traversal. The DFS itself is guarded by its own seen set, so it terminates on
  * cycles that do not lead back to the start type.
  */
-const isRecursiveType = (
+export const isRecursiveType = (
   type: ts.Type,
   checker: ts.TypeChecker,
   cache: Map<ts.Type, boolean>
