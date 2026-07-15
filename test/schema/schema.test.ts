@@ -305,7 +305,7 @@ describe("Schema", () => {
             },
         };
 
-        const [first] = getSignatureSchema(
+        const {parameters: [first]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             FUNCTION_SIGNATURES,
@@ -371,13 +371,13 @@ describe("Schema", () => {
             value: "hello",
         });
 
-        const [refResult] = getSignatureSchema(
+        const {parameters: [refResult]} = getSignatureSchema(
             refFlow,
             DATA_TYPES,
             FUNCTION_SIGNATURES,
             "gid://sagittarius/NodeFunction/2",
         );
-        const [literalResult] = getSignatureSchema(
+        const {parameters: [literalResult]} = getSignatureSchema(
             literalFlow,
             DATA_TYPES,
             FUNCTION_SIGNATURES,
@@ -486,7 +486,7 @@ describe("Schema", () => {
         });
 
         const probe = (returnValue: any) => {
-            const [r] = getSignatureSchema(
+            const {parameters: [r]} = getSignatureSchema(
                 buildFlow(returnValue),
                 DATA_TYPES,
                 FUNCTION_SIGNATURES,
@@ -563,7 +563,7 @@ describe("Schema", () => {
             },
         };
 
-        const [listSchema] = getSignatureSchema(
+        const {parameters: [listSchema]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             FUNCTION_SIGNATURES,
@@ -609,7 +609,7 @@ describe("Schema", () => {
             },
         };
 
-        const [first] = getSignatureSchema(
+        const {parameters: [first]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             FUNCTION_SIGNATURES,
@@ -669,7 +669,7 @@ describe("Schema", () => {
         );
 
         // payload is the 4th parameter of rest::control::respond.
-        const payloadSchema = result[3];
+        const payloadSchema = result.parameters[3];
 
         // application/json → HTTP_PAYLOAD<S> = OBJECT<{}> → open object input.
         expect(payloadSchema.schema.input).toBe("data");
@@ -731,7 +731,7 @@ describe("Schema", () => {
             },
         };
 
-        const [valueSchema] = getSignatureSchema(
+        const {parameters: [valueSchema]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             [...FUNCTION_SIGNATURES, NULLABLE_TEXT_FN],
@@ -799,7 +799,7 @@ describe("Schema", () => {
             },
         };
 
-        const [valueSchema] = getSignatureSchema(
+        const {parameters: [valueSchema]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             [...FUNCTION_SIGNATURES, NULLABLE_OBJECT_FN],
@@ -871,7 +871,7 @@ describe("Schema", () => {
             },
         };
 
-        const [valueSchema] = getSignatureSchema(
+        const {parameters: [valueSchema]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             [...FUNCTION_SIGNATURES, NESTED_NULLABLE_OBJECT_FN],
@@ -940,7 +940,7 @@ describe("Schema", () => {
             },
         };
 
-        const [valueSchema] = getSignatureSchema(
+        const {parameters: [valueSchema]} = getSignatureSchema(
             flow,
             DATA_TYPES,
             [...FUNCTION_SIGNATURES, DEEPLY_NESTED_FN],
@@ -1019,7 +1019,7 @@ describe("Schema", () => {
             },
         };
 
-        const [valueSchema] = getSignatureSchema(
+        const {parameters: [valueSchema]} = getSignatureSchema(
             flow,
             [...DATA_TYPES, ...RECURSIVE_DATA_TYPES],
             [...FUNCTION_SIGNATURES, RECURSIVE_FN],
@@ -1048,6 +1048,151 @@ describe("Schema", () => {
         expect(paths).toContain("chain.next.next.next.next.next.value");
         // … and no further, even though the next type would still be new to the branch.
         expect(paths).not.toContain("chain.next.next.next.next.next.next.value");
+    });
+
+    describe("return schema", () => {
+        // Single-node flow calling `identifier` with the given parameters, probed at that node.
+        const singleNode = (identifier: string, params: any[]): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier},
+                        parameters: {nodes: params},
+                    },
+                ],
+            },
+        });
+
+        const returnOf = (identifier: string, params: any[]) =>
+            getSignatureSchema(
+                singleNode(identifier, params),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+                "gid://sagittarius/NodeFunction/1",
+            ).return;
+
+        // Asserts every schema node in the tree (root, nested properties, list
+        // items) has no suggestions — a return schema describes an output, so it
+        // never carries input suggestions.
+        const expectNoSuggestionsAnywhere = (schema: any, path = "return"): void => {
+            expect(
+                schema.suggestions === undefined ||
+                    (Array.isArray(schema.suggestions) && schema.suggestions.length === 0),
+                `${path} unexpectedly has suggestions: ${JSON.stringify(schema.suggestions)}`,
+            ).toBe(true);
+            for (const [key, child] of Object.entries(schema.properties ?? {})) {
+                const children = Array.isArray(child) ? child : [child];
+                children.forEach((c, i) =>
+                    expectNoSuggestionsAnywhere(c, `${path}.properties.${key}[${i}]`),
+                );
+            }
+            (schema.items ?? []).forEach((item: any, i: number) =>
+                expectNoSuggestionsAnywhere(item, `${path}.items[${i}]`),
+            );
+        };
+
+        it("resolves a NUMBER return to a number input", () => {
+            // std::boolean::as_number → (value: BOOLEAN): NUMBER
+            const ret = returnOf("std::boolean::as_number", [
+                {value: {__typename: "LiteralValue", value: true}},
+            ]);
+            expect(ret).toEqual({input: "number"});
+        });
+
+        it("resolves a TEXT return to a text input", () => {
+            // std::boolean::as_text → (value: BOOLEAN): TEXT
+            const ret = returnOf("std::boolean::as_text", [
+                {value: {__typename: "LiteralValue", value: true}},
+            ]);
+            expect(ret).toEqual({input: "text"});
+        });
+
+        it("resolves a BOOLEAN return to a boolean input", () => {
+            // std::boolean::from_number → (value: NUMBER): BOOLEAN
+            const ret = returnOf("std::boolean::from_number", [
+                {value: {__typename: "LiteralValue", value: 1}},
+            ]);
+            expect(ret).toEqual({input: "boolean"});
+        });
+
+        it("resolves an object return (HTTP_RESPONSE) to a data input with its properties", () => {
+            // http::request::send → (...): HTTP_RESPONSE<any>
+            const ret = returnOf("http::request::send", [
+                {value: {__typename: "LiteralValue", value: "GET"}},
+                {value: {__typename: "LiteralValue", value: "/x"}},
+                {value: null},
+                {value: null},
+                {value: null},
+                {value: null},
+                {value: null},
+                {value: null},
+            ]);
+            expect(ret.input).toBe("data");
+            const dataRet = ret as {properties: Record<string, unknown>; required: string[]};
+            expect(Object.keys(dataRet.properties)).toEqual(
+                expect.arrayContaining(["payload", "headers", "http_status_code"]),
+            );
+            expect(dataRet.required).toEqual(
+                expect.arrayContaining(["payload", "headers", "http_status_code"]),
+            );
+            // The return type describes an output, so it carries no input
+            // suggestions — at any nesting level.
+            expectNoSuggestionsAnywhere(ret);
+        });
+
+        it("instantiates a generic return type from the supplied arguments", () => {
+            // std::list::at → <T>(list: LIST<T>, index: NUMBER): T
+            // A list of numbers binds T = NUMBER, so the return is a number input.
+            const ret = returnOf("std::list::at", [
+                {value: {__typename: "LiteralValue", value: [10, 20, 30]}},
+                {value: {__typename: "LiteralValue", value: 0}},
+            ]);
+            expect(ret).toEqual({input: "number"});
+        });
+
+        it("returns a generic input for a void signature and no nodeId at the flow level", () => {
+            const result = getSignatureSchema(
+                singleNode("std::boolean::as_number", [
+                    {value: {__typename: "LiteralValue", value: true}},
+                ]),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            );
+            // Flow-level probe: no target node, flow signature is `(): void`.
+            expect(result.nodeId).toBeUndefined();
+            expect(result.return).toEqual({input: "generic"});
+        });
+
+        it("never carries suggestions, whatever the return type", () => {
+            // Primitive, object, list and generic returns all stay suggestion-free.
+            expectNoSuggestionsAnywhere(
+                returnOf("std::boolean::as_number", [
+                    {value: {__typename: "LiteralValue", value: true}},
+                ]),
+            );
+            expectNoSuggestionsAnywhere(
+                returnOf("std::list::at", [
+                    {value: {__typename: "LiteralValue", value: [1, 2, 3]}},
+                    {value: {__typename: "LiteralValue", value: 0}},
+                ]),
+            );
+            expectNoSuggestionsAnywhere(
+                returnOf("http::request::send", [
+                    {value: {__typename: "LiteralValue", value: "GET"}},
+                    {value: {__typename: "LiteralValue", value: "/x"}},
+                    {value: null},
+                    {value: null},
+                    {value: null},
+                    {value: null},
+                    {value: null},
+                    {value: null},
+                ]),
+            );
+        });
     });
 
 })
