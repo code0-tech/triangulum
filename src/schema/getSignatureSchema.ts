@@ -8,7 +8,6 @@ import {getSchema, mergeSchemas, Schema} from "../util/schema.util"
  * Includes the parameter's schema definition and any parameter dependencies that block it.
  */
 export interface NodeSchema {
-    nodeId: NodeFunction["id"]
     /**
      * The schema definition for this node parameter. Produced by merging the
      * function-declared parameter schema with the node's concrete value schema:
@@ -19,6 +18,20 @@ export interface NodeSchema {
     schema: Schema
     /** Array of parameter indices that must be resolved before this parameter */
     blockedBy?: number[]
+}
+
+/**
+ * Represents the full schema information for a function signature.
+ * Wraps the per-parameter schemas together with the schema of the signature's
+ * return type.
+ */
+export interface SignatureSchema {
+    /** The analyzed node's ID, or undefined when the flow signature itself is analyzed */
+    nodeId: NodeFunction["id"]
+    /** Schema for each parameter of the signature */
+    parameters: NodeSchema[]
+    /** Schema describing the signature's return type */
+    return: Schema
 }
 
 /**
@@ -57,7 +70,7 @@ export const getSignatureSchema = (
     dataTypes: DataType[],
     functions: FunctionDefinition[],
     nodeId?: NodeFunction["id"],
-): NodeSchema[] => {
+): SignatureSchema => {
     // Generate TypeScript source code from the flow definition
     const sourceCode = generateFlowSourceCode(flow, functions, dataTypes)
 
@@ -108,8 +121,7 @@ export const getSignatureSchema = (
     )
 
     // Generate schema for each parameter
-    return generateNodeSchemas(
-        nodeId,
+    const parameters = generateNodeSchemas(
         checker,
         node!,
         mergedParameterTypes,
@@ -119,6 +131,58 @@ export const getSignatureSchema = (
         nodeId ? functions : [],
         valueProvidedByIndex,
     )
+
+    // Resolve the signature's return type and build its schema. The return type
+    // describes the value the function produces, so it carries no input
+    // suggestions.
+    const returnType = extractReturnType(checker, node, funktion)
+    const returnSchema: Schema = returnType
+        ? getSchema(
+            checker,
+            node,
+            returnType,
+            Array.from(declaredFunctionsMap.values()),
+            functions,
+            false,
+        )
+        : {input: "generic"}
+
+    return {nodeId, parameters, return: returnSchema}
+}
+
+/**
+ * Extracts the return type of the signature being analyzed.
+ *
+ * The node's call expression is preferred because its resolved signature
+ * substitutes concrete type arguments (e.g. `REST_ADAPTER_INPUT<T>` becomes the
+ * instantiated type based on the supplied arguments). When no call expression is
+ * available, the function declaration's own signature is used as a fallback.
+ *
+ * @param checker - The TypeScript type checker
+ * @param node - The variable declaration containing the call expression
+ * @param funktion - The function declaration for the signature
+ * @returns The resolved return type, or undefined if it cannot be determined
+ */
+const extractReturnType = (
+    checker: ts.TypeChecker,
+    node: ts.VariableDeclaration | undefined,
+    funktion: ts.FunctionDeclaration | undefined,
+): Type | undefined => {
+    if (node?.initializer && ts.isCallExpression(node.initializer)) {
+        const signature = checker.getResolvedSignature(node.initializer)
+        if (signature) {
+            return checker.getReturnTypeOfSignature(signature)
+        }
+    }
+
+    if (funktion) {
+        const signature = checker.getSignatureFromDeclaration(funktion)
+        if (signature) {
+            return checker.getReturnTypeOfSignature(signature)
+        }
+    }
+
+    return undefined
 }
 
 /**
@@ -301,7 +365,6 @@ const getParameterDependencies = (
  * Generates node schemas for all parameters.
  * Creates schema objects for each parameter with their dependencies.
  *
- * @param nodeId -
  * @param checker - The TypeScript type checker
  * @param node - The node's variable declaration
  * @param nodeParameterTypes - Merged parameter types to use for schema generation
@@ -313,7 +376,6 @@ const getParameterDependencies = (
  * @returns Array of NodeSchema objects
  */
 const generateNodeSchemas = (
-    nodeId: NodeFunction["id"],
     checker: ts.TypeChecker,
     node: ts.VariableDeclaration,
     nodeParameterTypes: Type[] | undefined,
@@ -359,7 +421,6 @@ const generateNodeSchemas = (
             : undefined
 
         return {
-            nodeId: nodeId,
             schema: mergeSchemas(
                 functionSchema,
                 nodeSchema,
