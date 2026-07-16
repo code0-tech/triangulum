@@ -1100,7 +1100,7 @@ describe("Schema", () => {
             const ret = returnOf("std::boolean::as_number", [
                 {value: {__typename: "LiteralValue", value: true}},
             ]);
-            expect(ret).toEqual({input: "number"});
+            expect(ret).toEqual({input: "number", type: "number"});
         });
 
         it("resolves a TEXT return to a text input", () => {
@@ -1108,7 +1108,7 @@ describe("Schema", () => {
             const ret = returnOf("std::boolean::as_text", [
                 {value: {__typename: "LiteralValue", value: true}},
             ]);
-            expect(ret).toEqual({input: "text"});
+            expect(ret).toEqual({input: "text", type: "string"});
         });
 
         it("resolves a BOOLEAN return to a boolean input", () => {
@@ -1116,7 +1116,7 @@ describe("Schema", () => {
             const ret = returnOf("std::boolean::from_number", [
                 {value: {__typename: "LiteralValue", value: 1}},
             ]);
-            expect(ret).toEqual({input: "boolean"});
+            expect(ret).toEqual({input: "boolean", type: "boolean"});
         });
 
         it("resolves an object return (HTTP_RESPONSE) to a data input with its properties", () => {
@@ -1151,7 +1151,7 @@ describe("Schema", () => {
                 {value: {__typename: "LiteralValue", value: [10, 20, 30]}},
                 {value: {__typename: "LiteralValue", value: 0}},
             ]);
-            expect(ret).toEqual({input: "number"});
+            expect(ret).toEqual({input: "number", type: "number"});
         });
 
         it("returns a generic input for a void signature and no nodeId at the flow level", () => {
@@ -1164,7 +1164,7 @@ describe("Schema", () => {
             );
             // Flow-level probe: no target node, flow signature is `(): void`.
             expect(result.nodeId).toBeUndefined();
-            expect(result.return).toEqual({input: "generic"});
+            expect(result.return).toEqual({input: "generic", type: "void"});
         });
 
         it("never carries suggestions, whatever the return type", () => {

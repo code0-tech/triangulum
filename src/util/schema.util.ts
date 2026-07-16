@@ -19,6 +19,12 @@ import {getSubFlows} from "./subflows.util";
 export interface Input {
     /** The type of input (string representation) */
     input?: string;
+    /**
+     * The underlying TypeScript type rendered as a string
+     * (e.g. "NUMBER", "LIST<TEXT>", "string | undefined"), as produced by the
+     * type checker for the type this schema node was generated from.
+     */
+    type?: string;
     /** Array of suggested values (functions, references, or literals) */
     suggestions?: (NodeFunction | ReferenceValue | LiteralValue | SubFlowValue)[];
 }
@@ -148,6 +154,10 @@ export const getSchema = (
         }
     }
 
+    // The raw TypeScript type as a string, carried on every schema node so the
+    // consumer knows the concrete type each input was derived from.
+    const type = checker.typeToString(parameterType);
+
     // Suggestions are filtered by what the surrounding function accepts, not by
     // the narrower type a current value happens to narrow the node-side to.
     // Example: `<T>(value: T)` with a current boolean literal must still surface
@@ -188,7 +198,7 @@ export const getSchema = (
         )
         if (nonNullish.length === 1) {
             const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false, undefined, visited, recursionCache)
-            return {...baseSchema, ...combinedSuggestions}
+            return {...baseSchema, type, ...combinedSuggestions}
         }
     }
 
@@ -196,25 +206,25 @@ export const getSchema = (
     // so it must be detected before the primitive-literal-union check below; otherwise
     // `boolean` (and `true | false`) would incorrectly surface as a select.
     if (isBoolean(parameterType)) {
-        return {input: "boolean", ...combinedSuggestions};
+        return {input: "boolean", type, ...combinedSuggestions};
     }
 
     // Check primitive literal union first (e.g., "a" | "b" | "c") or a single
     // string/number literal (e.g., "GET"). A bare literal has only one allowed
     // value, so it should still surface as a select rather than a free-form text/number input.
     if (isPrimitiveLiteralUnion(parameterType) || isStringOrNumberLiteral(parameterType)) {
-        return {input: "select", ...combinedSuggestions};
+        return {input: "select", type, ...combinedSuggestions};
     }
     if (isNumber(parameterType)) {
-        return {input: "number", ...combinedSuggestions};
+        return {input: "number", type, ...combinedSuggestions};
     }
     if (isString(parameterType)) {
-        return {input: "text", ...combinedSuggestions};
+        return {input: "text", type, ...combinedSuggestions};
     }
 
     // Check if type has call signatures (is callable/sub-flow)
     if (isSubFlow(parameterType)) {
-        return {input: "sub-flow", ...combinedSuggestions};
+        return {input: "sub-flow", type, ...combinedSuggestions};
     }
 
     // Handle array and tuple types
@@ -233,6 +243,7 @@ export const getSchema = (
 
         return {
             input: "list",
+            type,
             items: itemSchemas,
             ...combinedSuggestions,
         };
@@ -252,7 +263,7 @@ export const getSchema = (
             (visited.size >= MAX_SCHEMA_DEPTH &&
                 isRecursiveType(parameterType, checker, recursionCache))
         ) {
-            return {input: "data", ...combinedSuggestions};
+            return {input: "data", type, ...combinedSuggestions};
         }
         visited.add(parameterType);
 
@@ -304,6 +315,7 @@ export const getSchema = (
 
         return {
             input: "data",
+            type,
             properties,
             required,
             ...combinedSuggestions,
@@ -314,6 +326,7 @@ export const getSchema = (
     // suggestions (e.g. references in scope) so the UI is never silently empty.
     return {
         input: "generic",
+        type,
         ...combinedSuggestions,
     };
 };
@@ -435,6 +448,7 @@ const liftGenericIfValued = (schema: Schema, valueProvided: boolean): Schema => 
     if (!valueProvided || schema.input !== "generic") return schema;
     return {
         input: "data",
+        ...(schema.type ? {type: schema.type} : {}),
         properties: {},
         required: [],
         ...(schema.suggestions ? {suggestions: schema.suggestions} : {}),
@@ -464,6 +478,7 @@ const demoteSelect = (schema: Schema): Schema => {
             : "text";
     return {
         input: target,
+        ...(schema.type ? {type: schema.type} : {}),
         ...(suggestions.length > 0 ? {suggestions} : {}),
     };
 };
