@@ -109,9 +109,6 @@ export const getSignatureSchema = (
             : type
     )
 
-    // Identify parameter dependencies based on type parameters
-    const funktionDependencies = getParameterDependencies(funktion!, nodeParameterTypes)
-
     // Track which parameter slots actually carry a user-supplied value. The merge
     // uses this as a last-resort signal: if the function- and node-side schemas
     // both came out generic but the user did set something, the lift falls back
@@ -119,6 +116,9 @@ export const getSignatureSchema = (
     const valueProvidedByIndex = (targetNode?.parameters?.nodes ?? []).map(
         (p) => p?.value != null
     )
+
+    // Identify parameter dependencies based on type parameters
+    const funktionDependencies = getParameterDependencies(funktion!, nodeParameterTypes, valueProvidedByIndex)
 
     // Generate schema for each parameter
     const parameters = generateNodeSchemas(
@@ -280,15 +280,19 @@ const extractFunctionParameterTypes = (
 /**
  * Identifies parameter dependencies based on shared type parameters.
  * Determines which parameters depend on type parameters declared in other parameters.
- * If an argument is explicitly provided (not null/undefined), it is not blocked.
+ * A dependency is cleared once either the depended-on parameter carries a value
+ * (so the shared type parameter is pinned by the user's choice) or the dependent
+ * parameter's own argument already resolves to a concrete type.
  *
  * @param funktion - The function declaration to analyze
  * @param nodeParameterTypes
+ * @param valueProvidedByIndex - Whether each parameter slot carries a user-supplied value
  * @returns Array of ParameterDependency objects
  */
 const getParameterDependencies = (
     funktion: ts.FunctionDeclaration,
-    nodeParameterTypes: ts.Type[] | undefined
+    nodeParameterTypes: ts.Type[] | undefined,
+    valueProvidedByIndex: boolean[] = [],
 ): ParameterDependency[] => {
     const typeParamNames = funktion.typeParameters?.map((tp) => tp.name.getText()) || []
     const usage: Record<string, number[]> = {}
@@ -347,6 +351,11 @@ const getParameterDependencies = (
 
     // Filter heraus, was durch echte Werte (nicht null/undefined) bereits aufgelöst ist
     return rawDependencies.filter((dep) => {
+        // Providing the depended-on parameter pins the shared type parameter, so
+        // the dependent is unblocked — even when the value carries no element type
+        // to infer from (e.g. an empty list literal `[]`).
+        if (valueProvidedByIndex[dep.dependsOnIndex]) return false
+
         const resolvedType = nodeParameterTypes[dep.parameterIndex]
 
         // Falls aus irgendeinem Grund kein Typ ermittelt werden konnte -> blocked lassen
