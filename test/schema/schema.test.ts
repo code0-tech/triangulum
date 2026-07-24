@@ -1050,6 +1050,146 @@ describe("Schema", () => {
         expect(paths).not.toContain("chain.next.next.next.next.next.next.value");
     });
 
+    it('unblocks std::list::push item once the list is provided, even as an empty literal', () => {
+        // std::list::push → <T>(list: LIST<T>, item: T): NUMBER
+        // `item` shares the type parameter T with `list`, so it starts out
+        // blockedBy [0]. Providing the `list` argument satisfies that dependency,
+        // so `item` becomes unblocked — an empty list literal `[]` counts as a
+        // provided value just like a concrete list does.
+        const buildPushFlow = (listValue: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::list::push"},
+                        parameters: {
+                            nodes: [
+                                {value: listValue},
+                                {value: null},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        // With no list provided, `item` is blocked by the list parameter (index 0).
+        const blockedResult = getSignatureSchema(
+            buildPushFlow(null),
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        expect(blockedResult.parameters[1].blockedBy).toEqual([0]);
+
+        // Providing an empty list literal `[]` satisfies the dependency, so the
+        // `item` parameter is now unblocked.
+        const emptyResult = getSignatureSchema(
+            buildPushFlow({__typename: "LiteralValue", value: []}),
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        const [emptyList, emptyItem] = emptyResult.parameters;
+
+        expect(emptyList.schema.input).toBe("list");
+        expect(emptyList.blockedBy).toEqual([]);
+        expect(emptyItem.blockedBy).toEqual([]);
+    });
+
+    it('keeps std::list::push item blocked while the list has no value', () => {
+        // std::list::push → <T>(list: LIST<T>, item: T): NUMBER
+        // As long as the `list` parameter (index 0) carries no value, T cannot be
+        // pinned, so `item` (index 1) must stay blockedBy [0] and fall back to a
+        // generic input. This holds whether the list slot is `null` or an explicit
+        // null-typed value.
+        const buildPushFlow = (listValue: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::list::push"},
+                        parameters: {
+                            nodes: [
+                                {value: listValue},
+                                {value: null},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        // No parameter object at all for the list slot.
+        const nullResult = getSignatureSchema(
+            buildPushFlow(null),
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        const [nullList, nullItem] = nullResult.parameters;
+
+        // The list itself is never blocked — nothing feeds it.
+        expect(nullList.blockedBy).toEqual([]);
+        // item stays blocked by the list and has no concrete type yet.
+        expect(nullItem.blockedBy).toEqual([0]);
+        expect(nullItem.schema.input).toBe("generic");
+    });
+
+    it('keeps a later std::list::push item blocked when its list references an earlier node', () => {
+        // Two-node flow. Node 1 (std::list::push) returns NUMBER. Node 2 is another
+        // std::list::push whose `list` parameter is still empty, so its `item`
+        // parameter must stay blockedBy [0] — an unrelated, already-configured
+        // predecessor node does not pin node 2's T.
+        const flow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::list::push"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: [1, 2, 3]}},
+                                {value: {__typename: "LiteralValue", value: 4}},
+                            ],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::list::push"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: null},
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
+        const {parameters: [list, item]} = getSignatureSchema(
+            flow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/2",
+        );
+
+        expect(list.blockedBy).toEqual([]);
+        expect(item.blockedBy).toEqual([0]);
+        expect(item.schema.input).toBe("generic");
+    });
+
     describe("return schema", () => {
         // Single-node flow calling `identifier` with the given parameters, probed at that node.
         const singleNode = (identifier: string, params: any[]): Flow => ({
@@ -1165,6 +1305,90 @@ describe("Schema", () => {
             // Flow-level probe: no target node, flow signature is `(): void`.
             expect(result.nodeId).toBeUndefined();
             expect(result.return).toEqual({input: "generic", type: "void"});
+        });
+
+        // A trigger is analyzed at the flow level (no nodeId). The flow's own
+        // signature carries the return type, and its `settings` supply the
+        // arguments the generic return is instantiated from. This mirrors the
+        // REST trigger: <T>(input_schema: TYPE<T>, ...): REST_ADAPTER_INPUT<T>.
+        const restTrigger = (inputSchema: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature:
+                "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            settings: {
+                nodes: [
+                    {value: inputSchema},
+                    {value: "/users"},
+                    {value: "GET"},
+                ],
+            },
+            nodes: {nodes: []},
+        } as Flow);
+
+        it("resolves a trigger's return schema at the flow level (no nodeId) from its settings", () => {
+            const result = getSignatureSchema(
+                restTrigger({name: "text"}),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            );
+
+            // Flow-level probe → no target node.
+            expect(result.nodeId).toBeUndefined();
+
+            // REST_ADAPTER_INPUT<T> is an object → data input with its four fields.
+            const ret = result.return as {
+                input: string;
+                properties: Record<string, any>;
+                required: string[];
+            };
+            expect(ret.input).toBe("data");
+            expect(Object.keys(ret.properties)).toEqual(
+                expect.arrayContaining([
+                    "payload",
+                    "headers",
+                    "query_params",
+                    "path_params",
+                ]),
+            );
+            expect(ret.required).toEqual(
+                expect.arrayContaining([
+                    "payload",
+                    "headers",
+                    "query_params",
+                    "path_params",
+                ]),
+            );
+
+            // T is bound from the input_schema setting ({name: TEXT}), so the
+            // payload keeps that concrete shape.
+            const payload = ret.properties.payload;
+            expect(payload.input).toBe("data");
+            expect(Object.keys(payload.properties)).toEqual(["name"]);
+            expect(payload.properties.name.input).toBe("text");
+
+            // The remaining REST fields are open objects.
+            expect(ret.properties.headers.input).toBe("data");
+            expect(ret.properties.query_params.input).toBe("data");
+            expect(ret.properties.path_params.input).toBe("data");
+
+            // A return type describes an output → no suggestions anywhere.
+            expectNoSuggestionsAnywhere(ret);
+        });
+
+        it("instantiates the trigger's generic return payload from a primitive input_schema setting", () => {
+            const result = getSignatureSchema(
+                restTrigger(42),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            );
+
+            expect(result.nodeId).toBeUndefined();
+
+            // input_schema = 42 → T = NUMBER → payload is a number input.
+            const ret = result.return as {properties: Record<string, any>};
+            expect(ret.properties.payload).toEqual({input: "number", type: "number"});
+            expectNoSuggestionsAnywhere(ret);
         });
 
         it("never carries suggestions, whatever the return type", () => {
