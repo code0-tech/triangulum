@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
+import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
 import {getSignatureSchema, getTypeSchema} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
@@ -1416,6 +1416,102 @@ describe("Schema", () => {
                     {value: null},
                 ]),
             );
+        });
+    });
+
+    describe("union-typed property (string | nested object) reference suggestions", () => {
+        // A custom datatype that is an object. One of its keys, `flexible`, is a
+        // union of a plain string (TEXT) or a nested object. The nested object in
+        // turn has a `deep` key of type string (TEXT).
+        //
+        //   type UNION_HOLDER = { flexible: TEXT | { deep: TEXT } }
+        //
+        // A custom function returns this datatype, and a downstream node uses
+        // std::text::split whose `value` parameter is a plain TEXT (string).
+        //
+        // Question under test: when offering reference suggestions for that string
+        // parameter, does the engine suggest
+        //   (a) node1.flexible          — because the union branch could be a string
+        //   (b) node1.flexible.deep     — the string key inside the nested-object branch
+        const UNION_HOLDER_DATATYPE: DataType = {
+            __typename: "DataType",
+            id: "gid://sagittarius/DataType/9100",
+            identifier: "UNION_HOLDER",
+            genericKeys: [],
+            type: "{ flexible: TEXT | { deep: TEXT } }",
+        } as unknown as DataType;
+
+        const UNION_HOLDER_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9100",
+            identifier: "custom::union::produce",
+            signature: "(): UNION_HOLDER",
+        } as FunctionDefinition;
+
+        const buildFlow = (): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::union::produce"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {nodes: []},
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: null},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        const getValueSuggestions = (): any[] => {
+            const {parameters: [valueSchema]} = getSignatureSchema(
+                buildFlow(),
+                [...DATA_TYPES, UNION_HOLDER_DATATYPE],
+                [...FUNCTION_SIGNATURES, UNION_HOLDER_FN],
+                "gid://sagittarius/NodeFunction/2",
+            );
+
+            // value: TEXT → free-form text input.
+            expect(valueSchema.schema.input).toBe("text");
+
+            return (valueSchema.schema.suggestions ?? []) as any[];
+        };
+
+        const hasReferencePath = (suggestions: any[], path: string[]): boolean =>
+            suggestions.some(
+                (s) =>
+                    s.__typename === "ReferenceValue" &&
+                    s.nodeFunctionId === "gid://sagittarius/NodeFunction/1" &&
+                    Array.isArray(s.referencePath) &&
+                    s.referencePath.length === path.length &&
+                    s.referencePath.every((p: any, i: number) => p.path === path[i]),
+            );
+
+        it("suggests the union key itself, since one branch is a string", () => {
+            const suggestions = getValueSuggestions();
+
+            // `flexible` is `TEXT | { deep: TEXT }`. Because one branch of the union
+            // is a string, `node1.flexible` should be offered as a candidate for the
+            // string `value` parameter.
+            expect(hasReferencePath(suggestions, ["flexible"])).toBe(true);
+        });
+
+        it("suggests a string key nested inside the union's object branch", () => {
+            const suggestions = getValueSuggestions();
+
+            // The nested-object branch of `flexible` has a string key `deep`. It
+            // should be reachable as `node1.flexible.deep` for the string parameter.
+            expect(hasReferencePath(suggestions, ["flexible", "deep"])).toBe(true);
         });
     });
 
