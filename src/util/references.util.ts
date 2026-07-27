@@ -295,6 +295,59 @@ export const isRecursiveType = (
  * // For type {user: {name: string, age: number}} with expectedType = string
  * // Returns: [{path: [{path: 'user'}, {path: 'name'}], type: stringType}]
  */
+/**
+ * Determines whether a candidate type matches an expected parameter type.
+ *
+ * A plain type matches when it is (non-nullably) assignable to the expected type.
+ * A union matches when ANY of its constituents matches: a union such as
+ * `string | { deep: string }` is not assignable to `string` as a whole, yet its
+ * string branch makes the union key a valid suggestion for a string parameter.
+ *
+ * @param type - The candidate type (already non-nullable)
+ * @param checker - TypeScript TypeChecker for type operations
+ * @param expectedType - The target parameter type to match against
+ * @returns True if the type (or one of its union branches) matches the expected type
+ */
+const matchesExpectedType = (
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  expectedType: ts.Type
+): boolean => {
+  if (type.isUnion()) {
+    return type.types.some((constituent) =>
+      matchesExpectedType(checker.getNonNullableType(constituent), checker, expectedType)
+    );
+  }
+
+  return (
+    (type.flags & ts.TypeFlags.Never) === 0 &&
+    checker.isTypeAssignableTo(type, expectedType)
+  );
+};
+
+/**
+ * Resolves the object types whose properties should be traversed for a candidate.
+ *
+ * For a plain object type this is simply the type itself. For a union it is each
+ * object-typed branch (non-nullable), since getProperties() on the union only
+ * exposes properties shared by every branch — the distinct keys of individual
+ * object branches (e.g. `deep` in `string | { deep: string }`) would otherwise be
+ * unreachable. Primitive branches are dropped.
+ *
+ * @param type - The candidate type (already non-nullable)
+ * @param checker - TypeScript TypeChecker for type operations
+ * @returns The object branches to traverse into
+ */
+const getObjectBranches = (type: ts.Type, checker: ts.TypeChecker): ts.Type[] => {
+  if (type.isUnion()) {
+    return type.types
+      .map((constituent) => checker.getNonNullableType(constituent))
+      .filter(isRealObjectType);
+  }
+
+  return isRealObjectType(type) ? [type] : [];
+};
+
 const extractObjectProperties = (
   type: ts.Type,
   checker: ts.TypeChecker,
@@ -311,32 +364,41 @@ const extractObjectProperties = (
   // `string` parameter — strict assignability would reject it under strictNullChecks.
   // A purely nullish candidate strips down to `never` (assignable to anything),
   // so it must be excluded explicitly.
+  //
+  // A union candidate (e.g. `TEXT | { deep: TEXT }`) matches when ANY of its
+  // constituents is assignable to the expected type: the whole union is not
+  // assignable to `string`, but its string branch is, so the union key is still a
+  // valid string suggestion.
   const nonNullableType = checker.getNonNullableType(type);
-  if (
-    (nonNullableType.flags & ts.TypeFlags.Never) === 0 &&
-    checker.isTypeAssignableTo(nonNullableType, expectedType)
-  ) {
+  if (matchesExpectedType(nonNullableType, checker, expectedType)) {
     results.push({ path: currentPath, type });
   }
 
   // Recursively traverse into object properties. Traversal also runs on the
   // non-nullable type: a nullable object in the chain (e.g. `{bla?: TEXT} | null`)
   // is a union whose getProperties() is empty, which would cut off all nested paths.
+  // Union candidates (e.g. `TEXT | { deep: TEXT }`) are traversed per object branch:
+  // getProperties() on the union itself only exposes properties common to every
+  // branch (none here), so `flexible.deep` would otherwise be unreachable.
   // Recursive data types (e.g. Order.delivery.order) are cut off via the visited
   // set — the checker caches type identities, so a cycle revisits the same ts.Type
   // object. The set only tracks the current branch (backtracked below) so the same
   // type may still appear on sibling paths. The depth cap only applies to types
   // that are part of a reference cycle (checked last, it's the expensive test);
   // purely nested non-recursive objects are traversed to arbitrary depth.
-  if (
-    isRealObjectType(nonNullableType) &&
-    !visited.has(nonNullableType) &&
-    (currentPath.length < MAX_REFERENCE_DEPTH ||
-      !isRecursiveType(nonNullableType, checker, recursionCache))
-  ) {
-    const properties = nonNullableType.getProperties();
+  const objectBranches = getObjectBranches(nonNullableType, checker);
+  objectBranches.forEach((branch) => {
+    if (
+      visited.has(branch) ||
+      (currentPath.length >= MAX_REFERENCE_DEPTH &&
+        isRecursiveType(branch, checker, recursionCache))
+    ) {
+      return;
+    }
+
+    const properties = branch.getProperties();
     if (properties && properties.length > 0) {
-      visited.add(nonNullableType);
+      visited.add(branch);
       properties.forEach((property) => {
         const propType = checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
         const propName = property.getName();
@@ -345,9 +407,9 @@ const extractObjectProperties = (
         // Recurse into nested properties
         results.push(...extractObjectProperties(propType, checker, expectedType, newPath, visited, recursionCache));
       });
-      visited.delete(nonNullableType);
+      visited.delete(branch);
     }
-  }
+  });
 
   return results;
 };

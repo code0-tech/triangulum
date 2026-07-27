@@ -113,7 +113,8 @@ export function generateFlowSourceCode(
     flow?: Flow,
     functions?: FunctionDefinition[],
     dataTypes?: DataType[],
-    isForInference: boolean = false
+    isForInference: boolean = false,
+    assertNonNullReferences: boolean = true
 ): string {
     const nodes = flow?.nodes?.nodes || [];
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
@@ -139,11 +140,15 @@ export function generateFlowSourceCode(
                 ref.referencePath?.forEach(pathObj => {
                     refCode += `?.${pathObj.path}`;
                 });
-                // Non-null assertion: a reference typed `string | null` (or an optional
-                // chain like `node_X?.text`) must still satisfy a plain `string` parameter
-                // under strictNullChecks — only the nullish part is waived, base type
-                // mismatches still fail validation.
-                return `/* @pos ${id} ${index} */ (${refCode})!`;
+                // A reference may be nullable (`string | null`) or reach through optional
+                // properties (an optional chain like `node_X?.text`). When `assertNonNullReferences`
+                // is set (inference/schema), the nullish part is waived with a `!` so the base
+                // type flows cleanly. During validation it is left in place so a possibly-null
+                // reference feeding a non-null parameter surfaces a diagnostic — which is then
+                // downgraded to a warning rather than being silently erased. Base type
+                // mismatches still fail validation in both modes.
+                const nonNull = assertNonNullReferences ? "!" : "";
+                return `/* @pos ${id} ${index} */ (${refCode})${nonNull}`;
             }
             if (val.__typename === "LiteralValue") {
                 const jsonString = val?.value !== null && val?.value !== undefined ? stringify(val?.value) : undefined

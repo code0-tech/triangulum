@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {getFlowValidation} from '../src/validation/getFlowValidation';
-import {Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
+import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
 // @ts-ignore
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
@@ -1389,9 +1389,9 @@ describe('getFlowValidation - Integrationstest', () => {
             },
         });
 
-        it('accepts a TEXT | null reference for a plain TEXT parameter', () => {
-            // Node 1 returns TEXT | null; node 2's `value` parameter wants TEXT.
-            // The nullish part of the reference must not fail the validation.
+        it('warns (but stays valid) for a TEXT | null reference into a plain TEXT parameter', () => {
+            // Node 1 returns TEXT | null; node 2's `value` parameter wants TEXT. The value
+            // might be null at runtime, so it is a warning — the flow itself stays valid.
             const flow = buildFlow("custom::text::nullable", {
                 __typename: "ReferenceValue",
                 nodeFunctionId: "gid://sagittarius/NodeFunction/1",
@@ -1399,13 +1399,21 @@ describe('getFlowValidation - Integrationstest', () => {
 
             const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
 
-            expect(result.diagnostics).toHaveLength(0);
             expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
         });
 
-        it('accepts a nullable object property reference for a plain TEXT parameter', () => {
+        it('warns (but stays valid) for a nullable object property reference into a plain TEXT parameter', () => {
             // Node 1 returns {text?: TEXT | null}; the reference path drills into `text`
-            // (TEXT | null | undefined). The nullish part must not fail the validation.
+            // (TEXT | null | undefined). The value might be null/undefined at runtime, so it
+            // is a warning rather than a hard error — the flow stays valid.
             const flow = buildFlow("custom::text::nullable_object", {
                 __typename: "ReferenceValue",
                 nodeFunctionId: "gid://sagittarius/NodeFunction/1",
@@ -1414,8 +1422,15 @@ describe('getFlowValidation - Integrationstest', () => {
 
             const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
 
-            expect(result.diagnostics).toHaveLength(0);
             expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
         });
 
         it('still rejects a NUMBER | null reference for a plain TEXT parameter', () => {
@@ -1434,6 +1449,115 @@ describe('getFlowValidation - Integrationstest', () => {
                     nodeId: "gid://sagittarius/NodeFunction/2",
                     parameterIndex: 0,
                     severity: "error",
+                }),
+            ]));
+        });
+
+    });
+
+    describe('union-branch references into a plain TEXT parameter', () => {
+
+        // A custom datatype that is an object whose `flexible` key is a union of a
+        // plain string (TEXT) or a nested object with its own string key `deep`:
+        //
+        //   type UNION_HOLDER = { flexible: TEXT | { deep: TEXT } }
+        //
+        // The schema/suggestion engine offers both `node1.flexible` (the string
+        // branch of the union) and `node1.flexible.deep` (the string key inside the
+        // object branch) as reference suggestions for a plain TEXT parameter. These
+        // tests assert that actually *using* such a suggestion validates cleanly.
+        const UNION_HOLDER_DATATYPE: DataType = {
+            __typename: "DataType",
+            id: "gid://sagittarius/DataType/9100",
+            identifier: "UNION_HOLDER",
+            genericKeys: [],
+            type: "{ flexible: TEXT | { deep: TEXT } }",
+        } as unknown as DataType;
+
+        // custom::union::produce(): UNION_HOLDER — no parameters, returns the union holder.
+        const UNION_HOLDER_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9100",
+            identifier: "custom::union::produce",
+            signature: "(): UNION_HOLDER",
+        };
+
+        const CUSTOM_FUNCTIONS = [...FUNCTION_SIGNATURES, UNION_HOLDER_FN];
+        const CUSTOM_DATA_TYPES = [...DATA_TYPES, UNION_HOLDER_DATATYPE];
+
+        // Builds a two-node flow: node 1 runs custom::union::produce (no parameters),
+        // node 2 runs std::text::split(value: TEXT, delimiter: TEXT) with `valueRef`
+        // as its `value` argument.
+        const buildFlow = (valueRef: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "custom::union::produce"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {
+                            nodes: [],
+                        },
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: valueRef},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        it('warns (but stays valid) for a reference to the union key itself', () => {
+            // `flexible` is `TEXT | { deep: TEXT }`. Because one branch of the union is
+            // a string, `node1.flexible` is offered as a suggestion for a TEXT parameter.
+            // Using it might resolve to the object branch at runtime, so it is a warning —
+            // the flow itself stays valid.
+            const flow = buildFlow({
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                referencePath: [{path: "flexible"}],
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, CUSTOM_DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
+        });
+
+        it('warns (but stays valid) for a reference into the union object branch', () => {
+            // The nested-object branch of `flexible` has a string key `deep`, reachable
+            // as `node1.flexible.deep`. `deep` only exists on the object branch, so using
+            // the reference is a warning rather than a hard error — the flow stays valid.
+            const flow = buildFlow({
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                referencePath: [{path: "flexible"}, {path: "deep"}],
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, CUSTOM_DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
                 }),
             ]));
         });

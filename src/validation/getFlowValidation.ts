@@ -1,6 +1,77 @@
-import {flattenDiagnosticMessageText} from "typescript";
+import ts, {flattenDiagnosticMessageText} from "typescript";
 import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, generateFlowSourceCode, ValidationResult} from "../utils";
+
+// TypeScript diagnostic codes we may soften into warnings for union-branch references.
+const TS_ARGUMENT_NOT_ASSIGNABLE = 2345; // "Argument of type X is not assignable to parameter of type Y."
+const TS_PROPERTY_DOES_NOT_EXIST = 2339; // "Property 'p' does not exist on type X."
+
+/**
+ * Finds the innermost AST node that fully contains the [start, end) span.
+ */
+const findInnermostNode = (node: ts.Node, start: number, end: number): ts.Node | undefined => {
+    if (node.getStart() > start || node.getEnd() < end) return undefined;
+    let result: ts.Node = node;
+    node.forEachChild((child) => {
+        const found = findInnermostNode(child, start, end);
+        if (found) result = found;
+    });
+    return result;
+};
+
+/**
+ * Decides whether a type error stems from a reference whose value type is a union
+ * where at least one branch would satisfy the expected type, but not all of them do:
+ *
+ *  - a nullable reference — `TEXT | null` used for a plain TEXT parameter (the value
+ *    might be null/undefined at runtime); or
+ *  - a union-branch reference — `flexible: TEXT | { deep: TEXT }` used for a plain
+ *    TEXT parameter, or drilling into `flexible.deep` which only exists on the object
+ *    branch (the value might be the wrong branch at runtime).
+ *
+ * Both are references the schema engine offers as suggestions, so using them is a
+ * warning rather than a hard error — the flow stays valid. Genuine mismatches where
+ * no branch fits (e.g. `NUMBER | null` → TEXT) stay errors.
+ */
+const isSoftReferenceMismatch = (
+    diagnostic: ts.Diagnostic,
+    sourceFile: ts.SourceFile,
+    checker: ts.TypeChecker
+): boolean => {
+    if (diagnostic.start === undefined || diagnostic.length === undefined) return false;
+
+    const node = findInnermostNode(sourceFile, diagnostic.start, diagnostic.start + diagnostic.length);
+    if (!node) return false;
+
+    // Argument not assignable: the argument's type is a union and at least one of its
+    // non-nullish branches is assignable to the contextually expected parameter type.
+    // Nullish branches are excluded so that `NUMBER | null` (no assignable base branch)
+    // stays a hard error, while `TEXT | null` and `TEXT | { deep: TEXT }` soften.
+    if (diagnostic.code === TS_ARGUMENT_NOT_ASSIGNABLE && ts.isExpression(node)) {
+        const argType = checker.getTypeAtLocation(node);
+        if (!argType.isUnion()) return false;
+
+        const expectedType = checker.getContextualType(node);
+        if (!expectedType) return false;
+
+        return argType.types.some((branch) =>
+            (branch.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0 &&
+            checker.isTypeAssignableTo(branch, expectedType)
+        );
+    }
+
+    // Property access into a union branch: the accessed object is a union and the
+    // property exists on at least one of its branches.
+    if (diagnostic.code === TS_PROPERTY_DOES_NOT_EXIST && ts.isPropertyAccessExpression(node.parent)) {
+        const objectType = checker.getNonNullableType(checker.getTypeAtLocation(node.parent.expression));
+        if (!objectType.isUnion()) return false;
+
+        const propertyName = node.getText();
+        return objectType.types.some((branch) => branch.getProperty(propertyName) !== undefined);
+    }
+
+    return false;
+};
 
 /**
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
@@ -58,7 +129,10 @@ export const getFlowValidation = (
         }
     }
 
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes);
+    // Validation keeps reference nullability (assertNonNullReferences = false) so that a
+    // possibly-null reference into a non-null parameter surfaces as a diagnostic, which is
+    // then downgraded to a warning below instead of being silently suppressed by a `!`.
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, false);
 
     // 3. Virtual TypeScript Compilation
     const fileName = "index.ts";
@@ -66,6 +140,7 @@ export const getFlowValidation = (
     const sourceFile = host.getSourceFile(fileName)!;
 
     const program = host.languageService.getProgram()!;
+    const checker = program.getTypeChecker();
     const diagnostics = program.getSemanticDiagnostics(sourceFile);
 
     const errors = diagnostics.map(d => {
@@ -113,10 +188,15 @@ export const getFlowValidation = (
             }
         }
 
+        // A nullable reference (`TEXT | null`) or a union-branch reference
+        // (`TEXT | { deep: TEXT }`) into a non-null parameter is a valid suggestion, so its
+        // mismatch is a warning rather than a hard error — the flow stays valid.
+        const severity: "error" | "warning" = isSoftReferenceMismatch(d, sourceFile, checker) ? "warning" : "error";
+
         return {
             message,
             code: d.code,
-            severity: "error" as const,
+            severity,
             nodeId,
             parameterIndex: typeof parameterIndex == "number" && Number.isSafeInteger(parameterIndex) ? parameterIndex : null,
         };
