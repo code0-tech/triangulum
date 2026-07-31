@@ -13,6 +13,34 @@ import {getSubFlows} from "./subflows.util";
 
 
 /**
+ * Maps a data type identifier to a dedicated input kind.
+ *
+ * These are semantic data types whose underlying (structural) type does not by
+ * itself convey the custom input they need — e.g. DATE is a number underneath
+ * but should render a date picker. The mapping is keyed on the identifier alone:
+ * the resulting schema carries only the input kind (plus the usual type and
+ * suggestions), nothing derived from the structure.
+ *
+ * Adding a new mapping is a one-line change here. The rest of the pipeline reads
+ * from this registry: the declaration layer brands each identifier so its alias
+ * name survives type resolution (see {@link getSharedTypeDeclarations}), the
+ * schema layer surfaces the mapped input, and the value/inference layers treat
+ * it as its underlying type.
+ */
+export const CUSTOM_INPUT_IDENTIFIERS = {
+    DATE: "date",
+} as const satisfies Record<string, string>;
+
+/** A data type identifier that maps to a custom input. */
+export type CustomInputIdentifier = keyof typeof CUSTOM_INPUT_IDENTIFIERS;
+
+/** Returns true if the given identifier maps to a custom input. */
+export const isCustomInputIdentifier = (
+    identifier: string | null | undefined,
+): identifier is CustomInputIdentifier =>
+    identifier != null && identifier in CUSTOM_INPUT_IDENTIFIERS;
+
+/**
  * Base interface for all input types.
  * Provides common properties for suggestions and input metadata.
  */
@@ -51,6 +79,15 @@ export interface SubFlowInput extends Input {
  */
 export interface PrimitiveInput extends Input {
     input?: "boolean" | "number" | "text" | "select";
+}
+
+/**
+ * Represents a date input type.
+ * Emitted for the DATE data type so the UI can render a dedicated date picker
+ * instead of the plain number input its underlying type would otherwise produce.
+ */
+export interface DateInput extends Input {
+    input?: "date";
 }
 
 /**
@@ -93,6 +130,7 @@ export interface TypeInput extends Input {
  */
 export type Schema =
     | PrimitiveInput
+    | DateInput
     | DataInput
     | ListInput
     | TypeInput
@@ -200,6 +238,16 @@ export const getSchema = (
             const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false, undefined, visited, recursionCache)
             return {...baseSchema, type, ...combinedSuggestions}
         }
+    }
+
+    // Custom-input data types (e.g. DATE) would otherwise resolve to the input
+    // of their underlying type (a number, for DATE). They are branded (see
+    // getSharedTypeDeclarations) so their alias name survives; detect it here and
+    // surface the mapped input instead. Checked before the primitive checks since
+    // the underlying type is often a primitive.
+    const customInput = getCustomInput(parameterType);
+    if (customInput) {
+        return {input: customInput, type, ...combinedSuggestions};
     }
 
     // Boolean is internally represented by TypeScript as the union `true | false`,
@@ -482,6 +530,24 @@ const demoteSelect = (schema: Schema): Schema => {
         ...(suggestions.length > 0 ? {suggestions} : {}),
     };
 };
+
+/**
+ * Returns the custom input kind for a type, or undefined if it maps to none.
+ *
+ * Custom-input data types are branded (e.g. `number & {}`) so their alias name
+ * survives type resolution — TypeScript otherwise discards the name of bare
+ * primitive aliases. The preserved alias name is looked up in
+ * {@link CUSTOM_INPUT_IDENTIFIERS}.
+ *
+ * @param type - The type to check
+ * @returns The mapped input kind (e.g. "date"), or undefined
+ */
+function getCustomInput(
+    type: ts.Type,
+): (typeof CUSTOM_INPUT_IDENTIFIERS)[CustomInputIdentifier] | undefined {
+    const name = type.aliasSymbol?.getName();
+    return isCustomInputIdentifier(name) ? CUSTOM_INPUT_IDENTIFIERS[name] : undefined;
+}
 
 /**
  * Checks if a type is a boolean type (either boolean or boolean literal).

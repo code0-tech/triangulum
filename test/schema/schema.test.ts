@@ -1419,6 +1419,35 @@ describe("Schema", () => {
         });
     });
 
+    describe("DATE data type", () => {
+        // DATE is declared as `type DATE = number`, but the schema layer must
+        // surface a dedicated date input instead of the number input its
+        // underlying type would otherwise produce.
+        it("resolves to a date input", () => {
+            expect(getTypeSchema("DATE", DATA_TYPES)).toEqual({
+                input: "date",
+                type: "DATE",
+            });
+        });
+
+        it("resolves to a date input when nested in a list and object", () => {
+            const list = getTypeSchema("LIST<DATE>", DATA_TYPES) as any;
+            expect(list.input).toBe("list");
+            expect(list.items[0]).toEqual({input: "date", type: "DATE"});
+
+            const object = getTypeSchema("{ created: DATE }", DATA_TYPES) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.created).toEqual({input: "date", type: "DATE"});
+        });
+
+        it("still resolves a plain NUMBER to a number input", () => {
+            expect(getTypeSchema("NUMBER", DATA_TYPES)).toEqual({
+                input: "number",
+                type: "number",
+            });
+        });
+    });
+
     describe("union-typed property (string | nested object) reference suggestions", () => {
         // A custom datatype that is an object. One of its keys, `flexible`, is a
         // union of a plain string (TEXT) or a nested object. The nested object in
