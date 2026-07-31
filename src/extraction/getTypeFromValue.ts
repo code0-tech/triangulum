@@ -34,7 +34,6 @@ export const getTypeFromValue = (
     const visit = (node: ts.Node) => {
         if (ts.isVariableDeclaration(node) && node.name.getText() === "tempValue") {
             const type = checker.getTypeAtLocation(node);
-            const allAliases = checker.getSymbolsInScope(node, ts.SymbolFlags.TypeAlias);
 
             const resolve = (t: ts.Type): string => {
                 if (t.isUnion()) {
@@ -60,29 +59,11 @@ export const getTypeFromValue = (
                     }
                 }
 
-                // 4. Alias-Suche für Blätter (Zahlen, Strings, etc.)
-                const matches = allAliases.filter(s =>
-                    checker.isTypeAssignableTo(t, checker.getDeclaredTypeOfSymbol(s))
-                );
-
-                if (matches.length > 0) {
-                    const bestMatch = matches.sort((a, b) => {
-                        const typeA = checker.getDeclaredTypeOfSymbol(a);
-                        const typeB = checker.getDeclaredTypeOfSymbol(b);
-
-                        const aSubB = checker.isTypeAssignableTo(typeA, typeB);
-                        const bSubA = checker.isTypeAssignableTo(typeB, typeA);
-
-                        if (aSubB && !bSubA) return -1;
-                        if (bSubA && !aSubB) return 1;
-
-                        return a.getName().length - b.getName().length || a.getName().localeCompare(b.getName());
-                    })[0];
-
-                    return bestMatch.getName();
-                }
-
-                return checker.typeToString(t, node);
+                // 4. Leaves (numbers, strings, booleans, ...): widen the literal
+                // type to its base type (200 -> number, "POST" -> string) and emit
+                // the structural TypeScript type rather than a DataType alias.
+                const base = checker.getBaseTypeOfLiteralType(t);
+                return checker.typeToString(base, node);
             };
 
             inferredType = resolve(type);

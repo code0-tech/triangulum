@@ -11,6 +11,7 @@ import {
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
 import {stringify} from "lossless-json";
+import {isCustomInputIdentifier} from "./util/schema.util";
 
 /**
  * Result of a node or flow validation.
@@ -86,9 +87,18 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         .map(g => `type ${g} = ${genericType};`)
         .join("\n");
 
-    const typeAliasDeclarations = dataTypes?.map(dt =>
-        `type ${dt.identifier}${(dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : ""} = ${dt.type};`
-    ).join("\n");
+    const typeAliasDeclarations = dataTypes?.map(dt => {
+        const generics = (dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : "";
+        // Custom-input data types (e.g. DATE) map to a dedicated input based on
+        // their identifier alone. TypeScript discards the alias name of bare
+        // primitive aliases (`type DATE = number` resolves to plain `number`),
+        // which would make them indistinguishable from their underlying type.
+        // Branding with an empty intersection keeps the alias name on the resolved
+        // type — staying mutually assignable with the base type — so the schema
+        // layer can recover the identifier and surface the mapped input.
+        const type = isCustomInputIdentifier(dt.identifier) ? `${dt.type} & {}` : dt.type;
+        return `type ${dt.identifier}${generics} = ${type};`;
+    }).join("\n");
 
     // Pre-instantiate every generic type with `any` for each type parameter.
     // These are used by widenForSuggestions to produce the widened type for

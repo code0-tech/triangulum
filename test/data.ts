@@ -1516,6 +1516,56 @@ export const DATA_TYPES: DataType[] = [
                 "__typename": "PageInfo"
             }
         }
+    },
+    {
+        "__typename": "DataType",
+        "id": "gid://sagittarius/DataType/10",
+        "createdAt": "2026-06-19T15:33:16Z",
+        "updatedAt": "2026-06-19T15:34:59Z",
+        "identifier": "DATE",
+        "genericKeys": [],
+        "type": "number",
+        "definitionSource": "",
+        "version": "0.0.0",
+        "name": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "Date"
+            }
+        ],
+        "aliases": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "date;day;day of month;calendar day"
+            }
+        ],
+        "displayMessages": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "Date"
+            }
+        ],
+        "runtime": {
+            "id": "gid://sagittarius/Runtime/1",
+            "__typename": "Runtime"
+        },
+        "runtimeModule": {
+            "__typename": "RuntimeModule",
+            "id": "gid://sagittarius/RuntimeModule/10"
+        },
+        "rules": {
+            "__typename": "DataTypeRuleConnection",
+            "count": 0,
+            "nodes": [],
+            "pageInfo": {
+                "endCursor": null,
+                "hasNextPage": false,
+                "__typename": "PageInfo"
+            }
+        }
     }
 ];
 
