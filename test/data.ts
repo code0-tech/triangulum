@@ -1,4 +1,7 @@
 import {DataType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
+// The variants are declared as a `const enum` in a types-only package, so there
+// is no runtime value to reference — the string literals are cast instead.
+import type {DataTypeRulesVariant} from "@code0-tech/sagittarius-graphql-types";
 
 /**
  * Available data types and their TypeScript mappings.
@@ -50,7 +53,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/1",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -112,7 +115,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/2",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -174,7 +177,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/3",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -236,7 +239,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/4",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -298,7 +301,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/5",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -977,7 +980,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/6",
-                    "variant": "REGEX",
+                    "variant": "REGEX" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
@@ -1091,7 +1094,7 @@ export const DATA_TYPES: DataType[] = [
                 {
                     "__typename": "DataTypeRule",
                     "id": "gid://sagittarius/DataTypeRule/7",
-                    "variant": "NUMBER_RANGE",
+                    "variant": "NUMBER_RANGE" as DataTypeRulesVariant,
                     "updatedAt": "2026-06-19T15:33:16Z",
                     "createdAt": "2026-06-19T15:33:16Z",
                     "config": {
