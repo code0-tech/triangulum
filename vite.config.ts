@@ -14,6 +14,7 @@ export default defineConfig({
       external: [
         'typescript',
         '@code0-tech/sagittarius-graphql-types',
+        'ts-json-schema-generator',
         'path',
         'fs'
       ],
@@ -27,6 +28,7 @@ export default defineConfig({
   plugins: [
     dts({
       insertTypesEntry: true,
+      tsconfigPath: './tsconfig.build.json',
       include: ['src/**/*.ts'],
       afterDiagnostic: diagnostics => {
         if (diagnostics.length > 0) {
