@@ -12,9 +12,21 @@
   },
   "author": "CodeZero",
   "type": "module",
-  "main": "./dist/triangulum.cjs.js",
-  "module": "./dist/triangulum.es.js",
+  "main": "./dist/index.cjs.js",
+  "module": "./dist/index.es.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.es.js",
+      "require": "./dist/index.cjs.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.es.js",
+      "require": "./dist/server.cjs.js"
+    }
+  },
   "files": [
     "dist"
   ],

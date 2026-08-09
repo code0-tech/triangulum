@@ -5,9 +5,14 @@ import { resolve } from 'path';
 export default defineConfig({
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      // "index" is browser-safe; "schemas" is server-only because it pulls in
+      // ts-json-schema-generator (and transitively `fs`).
+      entry: {
+        index: resolve(__dirname, 'src/index.ts'),
+        server: resolve(__dirname, 'src/server.ts')
+      },
       name: 'triangulum',
-      fileName: (format) => `triangulum.${format}.js`,
+      fileName: (format, entryName) => `${entryName}.${format}.js`,
       formats: ['es', 'cjs']
     },
     rollupOptions: {

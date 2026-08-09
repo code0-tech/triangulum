@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import type {Flow, NodeFunction, NodeParameterValue} from "@code0-tech/sagittarius-graphql-types";
-import {getFlowSchemas} from "../src";
-import type {JsonSchema, SchematizedSubFlowValue} from "../src";
+import {getFlowSchemas} from "../src/server";
+import type {JsonSchema, SchematizedSubFlowValue} from "../src/server";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
 type NodeId = NonNullable<NodeFunction["id"]>;
