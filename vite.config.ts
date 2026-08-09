@@ -12,7 +12,9 @@ export default defineConfig({
         server: resolve(__dirname, 'src/server.ts')
       },
       name: 'triangulum',
-      fileName: (format, entryName) => `${entryName}.${format}.js`,
+      // With "type": "module", .js is ESM and .cjs is CommonJS — the CJS build
+      // must not end in .js or Node parses it as an ES module.
+      fileName: (format, entryName) => format === 'es' ? `${entryName}.js` : `${entryName}.cjs`,
       formats: ['es', 'cjs']
     },
     rollupOptions: {
