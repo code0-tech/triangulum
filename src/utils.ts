@@ -80,10 +80,54 @@ export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 };
 
 /**
+ * Extracts the type parameter names declared by a generic key. A key is a full
+ * type-parameter declaration and may carry constraints, defaults or even
+ * multiple parameters (e.g. "M extends TEXT", "A, B extends A"). Parsed by
+ * hand instead of with the TypeScript parser because this also runs in browser
+ * bundles that do not ship the typescript package. Malformed keys yield no
+ * names rather than being interpolated into generated source.
+ */
+function genericParamNames(key: string): string[] {
+    // Split on top-level commas only: commas nested in <>, {}, (), [] or
+    // string literals belong to a constraint/default type, not the list.
+    const params: string[] = [];
+    let depth = 0;
+    let quote: string | null = null;
+    let current = "";
+    for (const ch of key) {
+        if (quote) {
+            if (ch === quote) quote = null;
+        } else if (ch === "'" || ch === '"' || ch === "`") {
+            quote = ch;
+        } else if (ch === "<" || ch === "{" || ch === "(" || ch === "[") {
+            depth++;
+        } else if (ch === ">" || ch === "}" || ch === ")" || ch === "]") {
+            depth--;
+        } else if (ch === "," && depth === 0) {
+            params.push(current);
+            current = "";
+            continue;
+        }
+        current += ch;
+    }
+    params.push(current);
+
+    return params
+        .map(param => {
+            const tokens = param.trim().split(/\s+/);
+            const name = tokens.find(t => t !== "const" && t !== "in" && t !== "out") ?? "";
+            // The name may be glued to what follows (e.g. "M=TEXT"); keep only
+            // the leading identifier.
+            return name.match(/^[A-Za-z_$][A-Za-z0-9_$]*/)?.[0] ?? "";
+        })
+        .filter(name => name.length > 0);
+}
+
+/**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
 export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: string = "any", useGenericDeclarations: boolean = true): string {
-    const genericDeclarations = Array.from(new Set(dataTypes?.flatMap(dt => dt.genericKeys || [])))
+    const genericDeclarations = Array.from(new Set(dataTypes?.flatMap(dt => dt.genericKeys || []).flatMap(genericParamNames)))
         .map(g => `type ${g} = ${genericType};`)
         .join("\n");
 

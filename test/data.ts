@@ -1522,6 +1522,74 @@ export const DATA_TYPES: DataType[] = [
     },
     {
         "__typename": "DataType",
+        "id": "gid://sagittarius/DataType/29",
+        "createdAt": "2026-06-19T15:33:16Z",
+        "updatedAt": "2026-06-19T15:34:59Z",
+        "identifier": "FILE",
+        "genericKeys": [
+            "M extends TEXT"
+        ],
+        "type": "{ contentType: M; valueType: 'base64'; value: string }",
+        "definitionSource": "",
+        "version": "0.0.34",
+        "name": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "File"
+            }
+        ],
+        "aliases": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "file;document;blob;attachment;binary"
+            }
+        ],
+        "displayMessages": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "File"
+            }
+        ],
+        "linkedDataTypes": {
+            "__typename": "DataTypeConnection",
+            "count": 1,
+            "nodes": [
+                {
+                    "__typename": "DataType",
+                    "id": "gid://sagittarius/DataType/20",
+                    "identifier": "TEXT"
+                }
+            ],
+            "pageInfo": {
+                "endCursor": null,
+                "hasNextPage": false,
+                "__typename": "PageInfo"
+            }
+        },
+        "runtime": {
+            "id": "gid://sagittarius/Runtime/1",
+            "__typename": "Runtime"
+        },
+        "runtimeModule": {
+            "__typename": "RuntimeModule",
+            "id": "gid://sagittarius/RuntimeModule/9"
+        },
+        "rules": {
+            "__typename": "DataTypeRuleConnection",
+            "count": 0,
+            "nodes": [],
+            "pageInfo": {
+                "endCursor": null,
+                "hasNextPage": false,
+                "__typename": "PageInfo"
+            }
+        }
+    },
+    {
+        "__typename": "DataType",
         "id": "gid://sagittarius/DataType/10",
         "createdAt": "2026-06-19T15:33:16Z",
         "updatedAt": "2026-06-19T15:34:59Z",
