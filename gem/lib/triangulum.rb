@@ -10,4 +10,5 @@ end
 
 require_relative 'triangulum/version'
 require_relative 'triangulum/executor'
+require_relative 'triangulum/flow_schema_extraction'
 require_relative 'triangulum/validation'

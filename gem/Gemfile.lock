@@ -5,7 +5,7 @@ PATH
       base64 (~> 0.3)
       json (~> 2.19)
       open3 (~> 0.2)
-      tucana (~> 0.0, >= 0.0.72)
+      tucana (~> 0.0, >= 0.0.78)
 
 GEM
   remote: https://rubygems.org/
@@ -101,7 +101,7 @@ GEM
     rubyzip (2.4.1)
     stringio (3.2.0)
     tsort (0.2.0)
-    tucana (0.0.72)
+    tucana (0.0.80)
       grpc (~> 1.64)
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)

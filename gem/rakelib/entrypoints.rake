@@ -5,7 +5,7 @@ task 'build:entrypoints' do
   rm_rf 'lib/triangulum/js'
   directory 'lib/triangulum/js'
 
-  entrypoints = %w[single-validation]
+  entrypoints = %w[single-validation flow-schema-extraction]
 
   entrypoints.each do |entrypoint|
     entrypoint_src = File.expand_path("../../entrypoint/#{entrypoint}.ts", __dir__)
