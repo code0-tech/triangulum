@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 module Triangulum
-  # == Triangulum::Validation
-  # This class implements the validation using the typescript package
-  class Validation
+  # == Triangulum::FlowSchemaExtraction
+  # This class implements the extraction of flow schemas using the typescript package
+  class FlowSchemaExtraction
     include Executor
 
-    Result = Struct.new(:valid?, :return_type, :diagnostics, keyword_init: true)
-    Diagnostic = Struct.new(:message, :code, :severity, :node_id, :parameter_index, keyword_init: true)
+    Result = Struct.new(:flow, :subflow_parameters, keyword_init: true)
+    SchematizedObject = Struct.new(:id, :input_schema, :output_schema, keyword_init: true)
 
-    ENTRYPOINT = File.expand_path('js/single-validation.js', __dir__)
+    ENTRYPOINT = File.expand_path('js/flow-schema-extraction.js', __dir__)
 
     attr_reader :flow, :function_definitions, :data_types
 
@@ -19,7 +19,7 @@ module Triangulum
       @data_types = data_types
     end
 
-    def validate
+    def extract
       input = serialize_input
 
       output = run_ts_triangulum(ENTRYPOINT, input)
@@ -54,15 +54,15 @@ module Triangulum
       json = JSON.parse(output, symbolize_names: true)
 
       Result.new(
-        valid?: json[:isValid],
-        return_type: json[:returnType],
-        diagnostics: json[:diagnostics].map do |diagnostic|
-          Diagnostic.new(
-            message: diagnostic[:message],
-            code: diagnostic[:code],
-            severity: diagnostic[:severity],
-            node_id: diagnostic[:nodeId],
-            parameter_index: diagnostic[:parameterIndex]
+        flow: SchematizedObject.new(
+          input_schema: json[:flow][:inputSchema],
+          output_schema: json[:flow][:outputSchema]
+        ),
+        subflow_parameters: json[:subflowParameters].map do |param|
+          SchematizedObject.new(
+            id: param[:id],
+            input_schema: param[:inputSchema],
+            output_schema: param[:outputSchema]
           )
         end
       )
