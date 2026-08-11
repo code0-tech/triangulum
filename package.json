@@ -38,7 +38,7 @@
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2744343400-55133b9bb6062772c50f83d945a22a531a6e48e2",
     "@types/node": "^25.6.0",
     "@typescript/vfs": "^1.6.4",
-    "lossless-json": "^4.3.0",
+    "lossless-json": "^4.3.1",
     "ts-json-schema-generator": "^2.9.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
