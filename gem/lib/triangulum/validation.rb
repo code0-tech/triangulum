@@ -4,22 +4,12 @@ module Triangulum
   # == Triangulum::Validation
   # This class implements the validation using the typescript package
   class Validation
-    class TriangulumFailed < Triangulum::Error
-    end
-
-    class BunNotFound < Triangulum::Error
-    end
+    include Executor
 
     Result = Struct.new(:valid?, :return_type, :diagnostics, keyword_init: true)
     Diagnostic = Struct.new(:message, :code, :severity, :node_id, :parameter_index, keyword_init: true)
 
     ENTRYPOINT = File.expand_path('js/single-validation.js', __dir__)
-    BUN_EXE = Dir.glob(File.expand_path('../../exe/*/bun', __dir__)).find do |path|
-      platform = Gem::Platform.new(File.basename(File.dirname(path)))
-      Gem::Platform.match_gem?(platform, Gem::Platform.local.to_s)
-    end
-
-    IS_RUBY_PLATFORM_GEM = Dir.glob(File.expand_path('../../exe/*/bun', __dir__)).empty?
 
     attr_reader :flow, :function_definitions, :data_types
 
@@ -32,31 +22,12 @@ module Triangulum
     def validate
       input = serialize_input
 
-      output = run_ts_triangulum(input)
+      output = run_ts_triangulum(ENTRYPOINT, input)
 
       parse_output(output)
     end
 
     private
-
-    def run_ts_triangulum(input)
-      stdout_s, stderr_s, status = Open3.capture3(
-        bun, 'run', ENTRYPOINT,
-        stdin_data: input
-      )
-
-      unless status.success?
-        status_info = if status.signaled?
-                        "SIGNAL: #{status.termsig}"
-                      else
-                        "STATUS: #{status.exitstatus}"
-                      end
-
-        raise TriangulumFailed, "#{status_info}\n\nOUT:\n#{stdout_s}\n\nERR:\n#{stderr_s}"
-      end
-
-      stdout_s
-    end
 
     def serialize_input
       input = []
@@ -95,16 +66,6 @@ module Triangulum
           )
         end
       )
-    end
-
-    def bun
-      if IS_RUBY_PLATFORM_GEM
-        'bun'
-      else
-        raise BunNotFound, "No bundled bun binary found for #{Gem::Platform.local}" if BUN_EXE.nil?
-
-        BUN_EXE
-      end
     end
   end
 end
