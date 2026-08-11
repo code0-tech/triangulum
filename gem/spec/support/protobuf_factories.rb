@@ -19,12 +19,21 @@ module ProtobufFactories
     )
   end
 
-  def reference_node(node_id:, paths: [])
+  def reference_node(node_id: nil, input_type: nil, paths: [])
     Tucana::Shared::NodeValue.new(
       reference_value: Tucana::Shared::ReferenceValue.new(
         node_id: node_id,
+        input_type: input_type,
         paths: paths
       )
+    )
+  end
+
+  def reference_input_type(node_id:, parameter_index:, input_index:)
+    Tucana::Shared::InputType.new(
+      node_id: node_id,
+      parameter_index: parameter_index,
+      input_index: input_index
     )
   end
 
