@@ -91,6 +91,37 @@ export interface DateInput extends Input {
 }
 
 /**
+ * Represents a file input type.
+ * Emitted for the FILE data type so the UI can render a dedicated file picker
+ * instead of expanding the `{ contentType, valueType, value }` object its
+ * underlying type would otherwise produce.
+ */
+export interface FileInput extends Input {
+    input?: "file";
+    /**
+     * The MIME type the file is constrained to, derived from the FILE data
+     * type's `contentType` generic (e.g. `FILE<"image/png">` → "image/png").
+     * Falls back to the wildcard "*\/*" when the FILE is unconstrained
+     * (`contentType` is a plain string) or the constraint is not a valid MIME
+     * type. Always present.
+     */
+    mimetype?: string;
+}
+
+/**
+ * Represents a list of file inputs.
+ * Emitted for any array/list of the FILE data type (e.g. `LIST<FILE>`,
+ * `FILE[]`) so the UI can render a dedicated multi-file picker instead of the
+ * generic list input its underlying type would otherwise produce. Shares the
+ * {@link FileInput} `mimetype` property.
+ */
+export interface ListFileInput extends Input {
+    input?: "list-file";
+    /** See {@link FileInput.mimetype}. */
+    mimetype?: string;
+}
+
+/**
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
@@ -131,6 +162,8 @@ export interface TypeInput extends Input {
 export type Schema =
     | PrimitiveInput
     | DateInput
+    | FileInput
+    | ListFileInput
     | DataInput
     | ListInput
     | TypeInput
@@ -193,8 +226,20 @@ export const getSchema = (
     }
 
     // The raw TypeScript type as a string, carried on every schema node so the
-    // consumer knows the concrete type each input was derived from.
-    const type = checker.typeToString(parameterType);
+    // consumer knows the concrete type each input was derived from. Custom-input
+    // data types (e.g. DATE) are branded as `<primitive> & {}` so their alias
+    // survives detection (see getSharedTypeDeclarations); for those, stringify the
+    // unbranded base member so the rendered type stays clean ("number", not
+    // "number & {}"). Every other type drops its top-level alias so the concrete
+    // structure is rendered rather than the wrapping alias name.
+    const type = checker.typeToString(
+        isCustomInputIdentifier(parameterType.aliasSymbol?.getName()) &&
+            parameterType.isIntersection()
+            ? parameterType.types.find(
+                  (t) => (t.flags & ts.TypeFlags.Object) === 0
+              ) ?? parameterType
+            : {...parameterType, aliasSymbol: undefined}
+    );
 
     // Suggestions are filtered by what the surrounding function accepts, not by
     // the narrower type a current value happens to narrow the node-side to.
@@ -250,6 +295,16 @@ export const getSchema = (
         return {input: customInput, type, ...combinedSuggestions};
     }
 
+    // The FILE data type is structurally an object ({ contentType, valueType,
+    // value }), but the UI should render a dedicated file picker rather than
+    // expanding those internals. Detected here so it short-circuits the object
+    // handling below. The mimetype is carried through from FILE's contentType
+    // generic (e.g. FILE<"image/png">).
+    if (isFileType(checker, parameterType)) {
+        const mimetype = getFileMimetype(checker, parameterType);
+        return {input: "file", type, mimetype, ...combinedSuggestions};
+    }
+
     // Boolean is internally represented by TypeScript as the union `true | false`,
     // so it must be detected before the primitive-literal-union check below; otherwise
     // `boolean` (and `true | false`) would incorrectly surface as a select.
@@ -280,6 +335,14 @@ export const getSchema = (
         const itemTypes = checker.getTypeArguments(
             parameterType as ts.TypeReference
         );
+
+        // A list of FILEs (LIST<FILE>, FILE[], ...) surfaces a dedicated
+        // multi-file input instead of a generic list of file objects, carrying
+        // the same mimetype as its element FILE would.
+        if (itemTypes.length === 1 && isFileType(checker, itemTypes[0])) {
+            const mimetype = getFileMimetype(checker, itemTypes[0]);
+            return {input: "list-file", type, mimetype, ...combinedSuggestions};
+        }
 
         const itemSchemas = itemTypes.flatMap(itemType => {
             const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
@@ -549,6 +612,70 @@ function getCustomInput(
     return isCustomInputIdentifier(name) ? CUSTOM_INPUT_IDENTIFIERS[name] : undefined;
 }
 
+/**
+ * Checks whether a type is the FILE data type.
+ *
+ * A type only counts as FILE when it is *both* named `FILE` and shaped like FILE
+ * (`{ contentType: M; valueType: 'base64'; value: string }`) — the name alone
+ * could be an unrelated alias, and the shape alone could be a coincidental
+ * object literal. The `valueType: 'base64'` literal is the distinguishing part
+ * of the structure.
+ *
+ * @param checker - The type checker
+ * @param type - The type to check
+ * @returns True if the type is the FILE data type
+ */
+function isFileType(checker: ts.TypeChecker, type: ts.Type): boolean {
+    if (type.aliasSymbol?.getName() !== "FILE") return false;
+
+    if ((type.flags & ts.TypeFlags.Object) === 0) return false;
+
+    const properties = checker.getPropertiesOfType(type);
+    if (properties.length !== 3) return false;
+
+    const byName = new Map(properties.map((p) => [p.name, p]));
+    const valueType = byName.get("valueType");
+    if (!byName.has("contentType") || !byName.has("value") || !valueType) return false;
+
+    const declaration = valueType.valueDeclaration ?? valueType.declarations?.[0];
+    if (!declaration) return false;
+    const valueTypeType = checker.getTypeOfSymbolAtLocation(valueType, declaration);
+    return valueTypeType.isStringLiteral() && valueTypeType.value === "base64";
+}
+
+
+/**
+ * Extracts the MIME type a FILE is constrained to from its `contentType`
+ * generic. Returns the literal value when it is a valid MIME type
+ * (e.g. `FILE<"image/png">` → "image/png"), otherwise falls back to the
+ * wildcard — covering an unconstrained FILE whose
+ * `contentType` is a plain string (`FILE<TEXT>`) as well as a literal that is
+ * not a well-formed MIME type.
+ *
+ * @param checker - The type checker
+ * @param type - The FILE type to read the mimetype from
+ * @returns The MIME type, always a non-empty string
+ */
+function getFileMimetype(checker: ts.TypeChecker, type: ts.Type): string {
+
+    const DEFAULT_MIMETYPE = "*/*";
+    const MIMETYPE_PATTERN =
+        /^(\*|[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*)\/(\*|[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]*)$/;
+
+    const contentType = checker
+        .getPropertiesOfType(type)
+        .find((p) => p.name === "contentType");
+    if (!contentType) return DEFAULT_MIMETYPE;
+
+    const declaration = contentType.valueDeclaration ?? contentType.declarations?.[0];
+    if (!declaration) return DEFAULT_MIMETYPE;
+
+    const contentTypeType = checker.getTypeOfSymbolAtLocation(contentType, declaration);
+    if (contentTypeType.isStringLiteral() && MIMETYPE_PATTERN.test(contentTypeType.value)) {
+        return contentTypeType.value;
+    }
+    return DEFAULT_MIMETYPE;
+}
 /**
  * Checks if a type is a boolean type (either boolean or boolean literal).
  *
