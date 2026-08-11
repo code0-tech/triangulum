@@ -973,8 +973,16 @@ describe("Schema", () => {
         //    per-branch cycle cut alone would allow simple paths through all 8
         //    types, so recursive types are additionally depth-capped at 7 levels.
         const RECURSIVE_DATA_TYPES = [
-            {identifier: "RECURSIVE_ORDER", genericKeys: [], type: "{ id: TEXT; customer?: RECURSIVE_CUSTOMER | null }"},
-            {identifier: "RECURSIVE_CUSTOMER", genericKeys: [], type: "{ name: TEXT; lastOrder?: RECURSIVE_ORDER | null }"},
+            {
+                identifier: "RECURSIVE_ORDER",
+                genericKeys: [],
+                type: "{ id: TEXT; customer?: RECURSIVE_CUSTOMER | null }"
+            },
+            {
+                identifier: "RECURSIVE_CUSTOMER",
+                genericKeys: [],
+                type: "{ name: TEXT; lastOrder?: RECURSIVE_ORDER | null }"
+            },
             {identifier: "CHAIN_1", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_2 | null }"},
             {identifier: "CHAIN_2", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_3 | null }"},
             {identifier: "CHAIN_3", genericKeys: [], type: "{ value: TEXT; next?: CHAIN_4 | null }"},
@@ -1221,7 +1229,7 @@ describe("Schema", () => {
         const expectNoSuggestionsAnywhere = (schema: any, path = "return"): void => {
             expect(
                 schema.suggestions === undefined ||
-                    (Array.isArray(schema.suggestions) && schema.suggestions.length === 0),
+                (Array.isArray(schema.suggestions) && schema.suggestions.length === 0),
                 `${path} unexpectedly has suggestions: ${JSON.stringify(schema.suggestions)}`,
             ).toBe(true);
             for (const [key, child] of Object.entries(schema.properties ?? {})) {
@@ -1272,7 +1280,7 @@ describe("Schema", () => {
                 {value: null},
             ]);
             expect(ret.input).toBe("data");
-            const dataRet = ret as {properties: Record<string, unknown>; required: string[]};
+            const dataRet = ret as { properties: Record<string, unknown>; required: string[] };
             expect(Object.keys(dataRet.properties)).toEqual(
                 expect.arrayContaining(["payload", "headers", "http_status_code"]),
             );
@@ -1386,7 +1394,7 @@ describe("Schema", () => {
             expect(result.nodeId).toBeUndefined();
 
             // input_schema = 42 → T = NUMBER → payload is a number input.
-            const ret = result.return as {properties: Record<string, any>};
+            const ret = result.return as { properties: Record<string, any> };
             expect(ret.properties.payload).toEqual({input: "number", type: "number"});
             expectNoSuggestionsAnywhere(ret);
         });
@@ -1424,26 +1432,144 @@ describe("Schema", () => {
         // surface a dedicated date input instead of the number input its
         // underlying type would otherwise produce.
         it("resolves to a date input", () => {
+            // `type` renders the underlying type; DATE is branded (`number & {}`)
+            // so its alias survives detection, but the brand is stripped from the
+            // rendered `type` (see stringifyType) → a clean "number".
             expect(getTypeSchema("DATE", DATA_TYPES)).toEqual({
                 input: "date",
-                type: "DATE",
+                type: "number",
             });
         });
 
         it("resolves to a date input when nested in a list and object", () => {
             const list = getTypeSchema("LIST<DATE>", DATA_TYPES) as any;
             expect(list.input).toBe("list");
-            expect(list.items[0]).toEqual({input: "date", type: "DATE"});
+            expect(list.items[0]).toEqual({input: "date", type: "number"});
 
             const object = getTypeSchema("{ created: DATE }", DATA_TYPES) as any;
             expect(object.input).toBe("data");
-            expect(object.properties.created).toEqual({input: "date", type: "DATE"});
+            expect(object.properties.created).toEqual({input: "date", type: "number"});
         });
 
         it("still resolves a plain NUMBER to a number input", () => {
             expect(getTypeSchema("NUMBER", DATA_TYPES)).toEqual({
                 input: "number",
                 type: "number",
+            });
+        });
+    });
+
+    describe("FILE data type", () => {
+        // FILE is declared as `{ contentType: M; valueType: 'base64'; value: string }`,
+        // and the schema layer expands those internal properties into a `data`
+        // input. The `contentType` generic is surfaced as a literal-typed
+        // property when it is constrained.
+        it("resolves to a data input carrying the mimetype", () => {
+            expect(getTypeSchema("FILE<'image/png'>", DATA_TYPES)).toEqual({
+                input: "data",
+                type: '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                properties: {
+                    contentType: { input: "select", type: '"image/png"' },
+                    valueType: { input: "select", type: '"base64"' },
+                    value: { input: "text", type: "string" },
+                },
+                required: ["contentType", "valueType", "value"],
+            });
+        });
+
+        it("surfaces a string contentType for an unconstrained FILE", () => {
+            expect(getTypeSchema("FILE<TEXT>", DATA_TYPES)).toEqual({
+                input: "data",
+                type: '{ contentType: string; valueType: "base64"; value: string; }',
+                properties: {
+                    contentType: { input: "text", type: "string" },
+                    valueType: { input: "select", type: '"base64"' },
+                    value: { input: "text", type: "string" },
+                },
+                required: ["contentType", "valueType", "value"],
+            });
+        });
+
+        it("surfaces the raw contentType when the constraint is not a valid MIME type", () => {
+            expect(getTypeSchema("FILE<'not-a-mimetype'>", DATA_TYPES)).toEqual({
+                input: "data",
+                type: '{ contentType: "not-a-mimetype"; valueType: "base64"; value: string; }',
+                properties: {
+                    contentType: { input: "select", type: '"not-a-mimetype"' },
+                    valueType: { input: "select", type: '"base64"' },
+                    value: { input: "text", type: "string" },
+                },
+                required: ["contentType", "valueType", "value"],
+            });
+        });
+
+        it("resolves to a file input when nested in an object", () => {
+            const object = getTypeSchema(
+                "{ avatar: FILE<'image/png'> }",
+                DATA_TYPES
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.avatar).toEqual({
+                input: "file",
+                type: '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                mimetype: "image/png",
+            });
+        });
+
+        // Any array/list of FILE surfaces a dedicated multi-file input rather
+        // than a generic list of file objects, and carries the same mimetype.
+        it("resolves LIST<FILE> to a list-file input", () => {
+            expect(getTypeSchema("LIST<FILE<'application/pdf'>>", DATA_TYPES)).toEqual({
+                input: "list-file",
+                type: 'FILE<"application/pdf">[]',
+                mimetype: "application/pdf",
+            });
+        });
+
+        it("resolves the FILE[] array form to a list-file input", () => {
+            expect(getTypeSchema("FILE<'image/png'>[]", DATA_TYPES)).toEqual({
+                input: "list-file",
+                type: 'FILE<"image/png">[]',
+                mimetype: "image/png",
+            });
+        });
+
+        it("resolves the FILE[] array form to a list-file input", () => {
+            expect(getTypeSchema("(FILE<'image/png'> | number)[]", DATA_TYPES)).toEqual({
+                input: "list",
+                items: [
+                    {
+                        "input": "number",
+                        "type": "number",
+                    },
+                    {
+                        "input": "file",
+                        "mimetype": "image/png",
+                        "type": '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                    },
+                ],
+                type: '(number | FILE<"image/png">)[]'
+            });
+        });
+
+        it("falls back to the wildcard mimetype for a list of unconstrained FILEs", () => {
+            expect(getTypeSchema("LIST<FILE<TEXT>>", DATA_TYPES)).toEqual({
+                input: "list-file",
+                type: 'FILE<string>[]',
+                mimetype: "*/*",
+            });
+        });
+
+        it("resolves a list-file input when nested in an object", () => {
+            const object = getTypeSchema(
+                "{ docs: LIST<FILE<'application/pdf'>> }",
+                DATA_TYPES
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.docs).toEqual({
+                input: "list-file",
+                type: 'FILE<"application/pdf">[]',
+                mimetype: "application/pdf",
             });
         });
     });
