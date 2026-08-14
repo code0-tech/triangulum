@@ -1467,39 +1467,42 @@ describe("Schema", () => {
         it("resolves to a data input carrying the mimetype", () => {
             expect(getTypeSchema("FILE<'image/png'>", DATA_TYPES)).toEqual({
                 input: "data",
-                type: '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                type: '{ contentType: "image/png"; fileName: string; valueType: "base64"; value: string; }',
                 properties: {
                     contentType: { input: "select", type: '"image/png"' },
+                    fileName: { input: "text", type: "string" },
                     valueType: { input: "select", type: '"base64"' },
                     value: { input: "text", type: "string" },
                 },
-                required: ["contentType", "valueType", "value"],
+                required: ["contentType", "fileName", "valueType", "value"],
             });
         });
 
         it("surfaces a string contentType for an unconstrained FILE", () => {
             expect(getTypeSchema("FILE<TEXT>", DATA_TYPES)).toEqual({
                 input: "data",
-                type: '{ contentType: string; valueType: "base64"; value: string; }',
+                type: '{ contentType: string; fileName: string; valueType: "base64"; value: string; }',
                 properties: {
                     contentType: { input: "text", type: "string" },
+                    fileName: { input: "text", type: "string" },
                     valueType: { input: "select", type: '"base64"' },
                     value: { input: "text", type: "string" },
                 },
-                required: ["contentType", "valueType", "value"],
+                required: ["contentType", "fileName", "valueType", "value"],
             });
         });
 
         it("surfaces the raw contentType when the constraint is not a valid MIME type", () => {
             expect(getTypeSchema("FILE<'not-a-mimetype'>", DATA_TYPES)).toEqual({
                 input: "data",
-                type: '{ contentType: "not-a-mimetype"; valueType: "base64"; value: string; }',
+                type: '{ contentType: "not-a-mimetype"; fileName: string; valueType: "base64"; value: string; }',
                 properties: {
                     contentType: { input: "select", type: '"not-a-mimetype"' },
+                    fileName: { input: "text", type: "string" },
                     valueType: { input: "select", type: '"base64"' },
                     value: { input: "text", type: "string" },
                 },
-                required: ["contentType", "valueType", "value"],
+                required: ["contentType", "fileName", "valueType", "value"],
             });
         });
 
@@ -1511,7 +1514,7 @@ describe("Schema", () => {
             expect(object.input).toBe("data");
             expect(object.properties.avatar).toEqual({
                 input: "file",
-                type: '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                type: '{ contentType: "image/png"; fileName: string; valueType: "base64"; value: string; }',
                 mimetype: "image/png",
             });
         });
@@ -1545,7 +1548,7 @@ describe("Schema", () => {
                     {
                         "input": "file",
                         "mimetype": "image/png",
-                        "type": '{ contentType: "image/png"; valueType: "base64"; value: string; }',
+                        "type": '{ contentType: "image/png"; fileName: string; valueType: "base64"; value: string; }',
                     },
                 ],
                 type: '(number | FILE<"image/png">)[]'

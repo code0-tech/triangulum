@@ -616,10 +616,10 @@ function getCustomInput(
  * Checks whether a type is the FILE data type.
  *
  * A type only counts as FILE when it is *both* named `FILE` and shaped like FILE
- * (`{ contentType: M; valueType: 'base64'; value: string }`) — the name alone
- * could be an unrelated alias, and the shape alone could be a coincidental
- * object literal. The `valueType: 'base64'` literal is the distinguishing part
- * of the structure.
+ * (`{ contentType: M; fileName: string; valueType: 'base64'; value: string }`) —
+ * the name alone could be an unrelated alias, and the shape alone could be a
+ * coincidental object literal. The `valueType: 'base64'` literal is the
+ * distinguishing part of the structure.
  *
  * @param checker - The type checker
  * @param type - The type to check
@@ -631,11 +631,17 @@ function isFileType(checker: ts.TypeChecker, type: ts.Type): boolean {
     if ((type.flags & ts.TypeFlags.Object) === 0) return false;
 
     const properties = checker.getPropertiesOfType(type);
-    if (properties.length !== 3) return false;
+    if (properties.length !== 4) return false;
 
     const byName = new Map(properties.map((p) => [p.name, p]));
     const valueType = byName.get("valueType");
-    if (!byName.has("contentType") || !byName.has("value") || !valueType) return false;
+    if (
+        !byName.has("contentType") ||
+        !byName.has("fileName") ||
+        !byName.has("value") ||
+        !valueType
+    )
+        return false;
 
     const declaration = valueType.valueDeclaration ?? valueType.declarations?.[0];
     if (!declaration) return false;
