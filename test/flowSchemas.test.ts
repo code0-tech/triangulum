@@ -203,14 +203,18 @@ describe("getFlowSchemas", () => {
         const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
         const predicate = subFlowValueOf(result, LIST_NODE_ID, 1);
 
-        // PREDICATE<T> = (item: T) => BOOLEAN, with T resolved to NUMBER.
+        // Input is keyed by the callback parameter name `item`, with T resolved
+        // to NUMBER.
         expect(predicate.inputSchema).toEqual({
             type: "object",
             additionalProperties: false,
             properties: {item: {type: "number"}},
             required: ["item"],
         });
-        expect(predicate.outputSchema).toEqual({type: "boolean"});
+        // Output is what the sub-flow value actually returns, not the BOOLEAN the
+        // filter's PREDICATE slot expects: the body only computes a value without
+        // a `std::control::return` node, so the generated lambda returns void.
+        expect(predicate.outputSchema).toEqual({type: "null"});
     });
 
     it("infers the map transform output from the sub-flow's return node", () => {
@@ -282,19 +286,59 @@ describe("getFlowSchemas", () => {
         const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
         const predicate = subFlowValueOf(result, LIST_NODE_ID, 1);
 
-        // The schemas come from the predicate slot type PREDICATE<T> with T
-        // resolved to NUMBER — same as with a starting node.
+        // Input carries the resolved item type (T → NUMBER) the sub-flow value
+        // receives — same as with a starting node.
         expect(predicate.inputSchema).toEqual({
             type: "object",
             additionalProperties: false,
-            properties: {item: {type: "number"}},
-            required: ["item"],
+            properties: {value: {type: "number"}},
+            required: ["value"],
         });
+        // The directly-mapped function is called without a `std::control::return`,
+        // so the generated lambda returns void rather than the expected BOOLEAN.
         expect(predicate.outputSchema).toEqual({type: "boolean"});
 
         // The original SubFlowValue fields are preserved.
         expect(predicate.functionDefinition?.identifier).toBe("std::boolean::from_number");
         expect(predicate.startingNodeId).toBeUndefined();
+    });
+
+    it("accepts any sub-flow value via an accept-all callback parameter", () => {
+        // A function definition whose sub-flow parameter accepts *any* sub-flow
+        // value: (...args: any[]) => R matches every generated lambda. Defined
+        // inline here (not in data.ts). Feed std::math::add as a direct mapping.
+        const acceptAll = {
+            __typename: "FunctionDefinition" as const,
+            identifier: "std::control::execute",
+            signature: "(sub_flow: (...args: any[]) => any): void",
+        };
+
+        const flow = flowWithNodes([
+            node(LIST_NODE_ID, "std::control::execute", [
+                subFlowCalling("std::number::add"),
+            ]),
+        ]);
+
+        const result = getFlowSchemas(
+            flow,
+            [...FUNCTION_SIGNATURES, acceptAll],
+            DATA_TYPES,
+        );
+        const subFlow = subFlowValueOf(result, LIST_NODE_ID, 0);
+
+        // The direct-mapped function *is* the sub-flow value, so its own signature
+        // `(first: NUMBER, second: NUMBER): NUMBER` drives the I/O — regardless of
+        // the `void` the accept-all parameter merely expects.
+        expect(subFlow.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {
+                first: {type: "number"},
+                second: {type: "number"},
+            },
+            required: ["first", "second"],
+        });
+        expect(subFlow.outputSchema).toEqual({type: "number"});
     });
 
     it("leaves nodes without sub-flow parameters untouched", () => {
