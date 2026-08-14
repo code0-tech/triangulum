@@ -210,6 +210,15 @@ export function generateFlowSourceCode(
             }
             if (val.__typename === "SubFlowValue") {
                 const wrapper = val as SubFlowValue;
+                // Direct mapping: the sub-flow *is* an existing function, with no
+                // node tree of its own (no startingNodeId). Emit the function
+                // reference itself as the value so its own signature drives the
+                // sub-flow's I/O — e.g. mapping `std::math::add` yields
+                // `(a, b) => NUMBER` rather than an empty `(...p) => {}` lambda.
+                if (!wrapper.startingNodeId && wrapper.functionDefinition?.identifier) {
+                    const funcName = `fn_${wrapper.functionDefinition.identifier.replace(/::/g, '_')}`;
+                    return `/* @pos ${id} ${index} */ ${funcName}`;
+                }
                 const lambdaArgName = `p_${sanitizeId(id as string)}_${index}`;
                 const subTreeCode = generateNodeCode(wrapper.startingNodeId || wrapper.functionDefinition?.id!, indent + "    ");
                 return `/* @pos ${id} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;

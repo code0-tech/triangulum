@@ -15,8 +15,7 @@ import type {JsonSchema} from "../util/jsonSchema.util"
  * The input/output JSON schemas computed for a callable signature.
  *
  * Both are derived from the *real* signature — the flow's own signature for the
- * flow, or the callback parameter type (e.g. `(item: T) => void`) for a
- * sub-flow.
+ * flow, or the generated lambda value (`(...p) => { …body… }`) for a sub-flow.
  *
  * `inputSchema` is an `object` schema whose `properties` hold one entry per
  * signature parameter, keyed by the parameter name (non-optional parameters are
@@ -51,11 +50,13 @@ export type SchematizedFlow = Flow & SignatureSchemas
  * The schemas are computed from the real signatures, resolved through the same
  * virtual TypeScript program that {@link generateFlowSourceCode} builds:
  * - For the flow, the schemas come from the flow's own `signature`.
- * - For a sub-flow, the schemas come from the callback parameter type of the
- *   surrounding function (e.g. `std::list::for_each`'s `consumer` parameter is
- *   typed `(item: T) => void`). Because the type is resolved from the concrete
- *   call, generic type parameters (the `T` above) are already instantiated with
- *   the real element type at that node.
+ * - For a sub-flow, the schemas come from the *value* generated at that argument
+ *   position — the lambda `(...p) => { …body… }` emitted by
+ *   {@link generateFlowSourceCode} — not from the callback parameter the
+ *   surrounding function declares. The input carries the real (already
+ *   instantiated) argument types the lambda receives, and the output is what the
+ *   sub-flow body actually returns (e.g. via a `std::control::return` node),
+ *   rather than the `void` the surrounding function merely expects.
  *
  * The actual JSON Schema generation is delegated to `ts-json-schema-generator`
  * (see {@link generateJsonSchemas}); this function only resolves the real
@@ -144,8 +145,13 @@ const collectFlowTypeExpressions = (
 
 /**
  * Collects the input/output type expressions of every sub-flow parameter in the
- * flow. Each callback type is read from the node's concrete call expression, so
- * generic type parameters are already substituted with the real argument types.
+ * flow. The schema is read from the *value* generated for the sub-flow — i.e. the
+ * lambda `(...p) => { …body… }` that {@link generateFlowSourceCode} emits at that
+ * argument position — not from the callback *parameter* the surrounding function
+ * declares. This way the output reflects what the sub-flow body actually returns
+ * (e.g. a `std::control::return` node), rather than the `void` the function
+ * merely expects, while the input still carries the real argument types (generics
+ * are already instantiated because the lambda is contextually typed by the call).
  */
 const collectSubFlowTypeExpressions = (
     checker: ts.TypeChecker,
@@ -161,26 +167,23 @@ const collectSubFlowTypeExpressions = (
         if (!params?.some(isSubFlowParameter)) continue
 
         const callExpression = nodeCallExpression(constants, node)
-        const resolvedSignature = callExpression
-            ? checker.getResolvedSignature(callExpression)
-            : undefined
-        if (!resolvedSignature) continue
+        if (!callExpression) continue
 
         params.forEach((param, index) => {
             if (!isSubFlowParameter(param)) return
 
-            const callbackSignature = resolveCallbackSignature(
-                checker,
-                resolvedSignature,
-                callExpression!,
-                index,
-            )
-            if (!callbackSignature) return
+            // The generated arguments are positional, so the parameter index maps
+            // straight onto the call argument holding the sub-flow lambda value.
+            const argument = callExpression.arguments[index]
+            const valueSignature = argument
+                ? checker.getTypeAtLocation(argument).getCallSignatures()[0]
+                : undefined
+            if (!valueSignature) return
 
-            const {input, output} = signatureToTypeExpressions(
+            const {input, output} = subFlowValueToTypeExpressions(
                 checker,
-                callbackSignature,
-                callExpression!,
+                valueSignature,
+                argument!,
             )
             typeExpressions[subFlowAlias(node.id, index, "input")] = input
             typeExpressions[subFlowAlias(node.id, index, "output")] = output
@@ -191,24 +194,95 @@ const collectSubFlowTypeExpressions = (
 }
 
 /**
- * Resolves the call signature of the callback passed at the given parameter
- * position — e.g. the `(item: T) => void` consumer of `std::list::for_each`,
- * with `T` already instantiated by the surrounding call.
+ * Turns the call signature of a generated sub-flow lambda into a pair of type
+ * expressions. The lambda is emitted with a single rest parameter (`(...p) => …`)
+ * whose contextually-inferred type is a labelled tuple of the callback arguments;
+ * that tuple is expanded so the input object is keyed by the argument names (e.g.
+ * `item`) instead of the synthetic rest name. The output is the signature's
+ * return type — the value the sub-flow body actually yields.
  */
-const resolveCallbackSignature = (
+const subFlowValueToTypeExpressions = (
     checker: ts.TypeChecker,
-    resolvedSignature: ts.Signature,
-    callExpression: ts.CallExpression,
-    parameterIndex: number,
-): ts.Signature | undefined => {
-    const parameterSymbol = resolvedSignature.parameters[parameterIndex]
-    if (!parameterSymbol) return undefined
+    signature: ts.Signature,
+    location: ts.Node,
+): {input: string; output: string} => {
+    const printType = (type: ts.Type): string =>
+        checker.typeToString(type, location, ts.TypeFormatFlags.NoTruncation)
 
-    const callbackType = checker.getTypeOfSymbolAtLocation(
-        parameterSymbol,
-        callExpression,
-    )
-    return callbackType.getCallSignatures()[0]
+    const members = subFlowInputMembers(checker, signature, location)
+
+    return {
+        input: `{ ${members.join("; ")} }`,
+        output: printType(checker.getReturnTypeOfSignature(signature)),
+    }
+}
+
+/**
+ * Builds the input members for a sub-flow lambda. Expands the single rest tuple
+ * parameter into one member per labelled element; falls back to the raw signature
+ * parameters when the parameter is not a tuple (e.g. an unresolved `any[]`).
+ */
+const subFlowInputMembers = (
+    checker: ts.TypeChecker,
+    signature: ts.Signature,
+    location: ts.Node,
+): string[] => {
+    const printType = (type: ts.Type): string =>
+        checker.typeToString(type, location, ts.TypeFormatFlags.NoTruncation)
+
+    const parameters = signature.getParameters()
+    if (parameters.length === 1) {
+        const restType = checker.getTypeOfSymbolAtLocation(
+            parameters[0],
+            parameters[0].valueDeclaration ?? location,
+        )
+        const tupleMembers = expandTupleMembers(checker, restType, location)
+        if (tupleMembers) return tupleMembers
+    }
+
+    return parameters.map((parameterSymbol) => {
+        const parameterType = checker.getTypeOfSymbolAtLocation(
+            parameterSymbol,
+            parameterSymbol.valueDeclaration ?? location,
+        )
+        const optional = isOptionalParameter(parameterSymbol) ? "?" : ""
+        return `${parameterSymbol.getName()}${optional}: ${printType(parameterType)}`
+    })
+}
+
+/**
+ * Expands a labelled tuple type into one member expression per element, keyed by
+ * the element label (falling back to `arg<i>` for unlabelled elements). Returns
+ * `undefined` when the type is not a tuple.
+ */
+const expandTupleMembers = (
+    checker: ts.TypeChecker,
+    type: ts.Type,
+    location: ts.Node,
+): string[] | undefined => {
+    const reference = type as ts.TypeReference
+    const target = reference.target as ts.TupleType | undefined
+    if (!target || (target.objectFlags & ts.ObjectFlags.Tuple) === 0) {
+        return undefined
+    }
+
+    const elementTypes = checker.getTypeArguments(reference)
+    return elementTypes.map((elementType, index) => {
+        const declaration = target.labeledElementDeclarations?.[index]
+        const name =
+            declaration?.name && ts.isIdentifier(declaration.name)
+                ? declaration.name.text
+                : `arg${index}`
+        const optional =
+            (target.elementFlags[index] & ts.ElementFlags.Optional) !== 0
+                ? "?"
+                : ""
+        return `${name}${optional}: ${checker.typeToString(
+            elementType,
+            location,
+            ts.TypeFormatFlags.NoTruncation,
+        )}`
+    })
 }
 
 /**

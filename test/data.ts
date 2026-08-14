@@ -1529,7 +1529,7 @@ export const DATA_TYPES: DataType[] = [
         "genericKeys": [
             "M extends TEXT"
         ],
-        "type": "{ contentType: M; valueType: 'base64'; value: string }",
+        "type": "{ contentType: M; fileName: string; valueType: 'base64'; value: string }",
         "definitionSource": "",
         "version": "0.0.34",
         "name": [
