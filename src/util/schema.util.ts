@@ -91,6 +91,17 @@ export interface DateInput extends Input {
 }
 
 /**
+ * Represents a color input type.
+ * Emitted for the COLOR data type so the UI can render a dedicated color picker
+ * instead of expanding the `{ hue, saturation, lightness, alpha? }` object its
+ * underlying type would otherwise produce. Like {@link DateInput}, it carries no
+ * additional properties.
+ */
+export interface ColorInput extends Input {
+    input?: "color";
+}
+
+/**
  * Represents a file input type.
  * Emitted for the FILE data type so the UI can render a dedicated file picker
  * instead of expanding the `{ contentType, valueType, value }` object its
@@ -162,6 +173,7 @@ export interface TypeInput extends Input {
 export type Schema =
     | PrimitiveInput
     | DateInput
+    | ColorInput
     | FileInput
     | ListFileInput
     | DataInput
@@ -303,6 +315,14 @@ export const getSchema = (
     if (isFileType(checker, parameterType)) {
         const mimetype = getFileMimetype(checker, parameterType);
         return {input: "file", type, mimetype, ...combinedSuggestions};
+    }
+
+    // The COLOR data type is structurally an object ({ hue, saturation,
+    // lightness, alpha? }), but the UI should render a dedicated color picker
+    // rather than expanding those internals. Detected here so it short-circuits
+    // the object handling below. Like DATE, it carries no additional properties.
+    if (isColorType(checker, parameterType)) {
+        return {input: "color", type, ...combinedSuggestions};
     }
 
     // Boolean is internally represented by TypeScript as the union `true | false`,
@@ -647,6 +667,38 @@ function isFileType(checker: ts.TypeChecker, type: ts.Type): boolean {
     if (!declaration) return false;
     const valueTypeType = checker.getTypeOfSymbolAtLocation(valueType, declaration);
     return valueTypeType.isStringLiteral() && valueTypeType.value === "base64";
+}
+
+/**
+ * Checks whether a type is the COLOR data type.
+ *
+ * A type only counts as COLOR when it is *both* named `COLOR` and shaped like
+ * COLOR (`{ hue: number; saturation: number; lightness: number; alpha?: number }`) —
+ * the name alone could be an unrelated alias, and the shape alone could be a
+ * coincidental object literal. The three numeric channel properties
+ * (`hue`, `saturation`, `lightness`) are the distinguishing part of the
+ * structure; `alpha` is optional.
+ *
+ * @param checker - The type checker
+ * @param type - The type to check
+ * @returns True if the type is the COLOR data type
+ */
+function isColorType(checker: ts.TypeChecker, type: ts.Type): boolean {
+    if (type.aliasSymbol?.getName() !== "COLOR") return false;
+
+    if ((type.flags & ts.TypeFlags.Object) === 0) return false;
+
+    const byName = new Map(
+        checker.getPropertiesOfType(type).map((p) => [p.name, p])
+    );
+
+    return ["hue", "saturation", "lightness"].every((name) => {
+        const property = byName.get(name);
+        if (!property) return false;
+        const declaration = property.valueDeclaration ?? property.declarations?.[0];
+        if (!declaration) return false;
+        return isNumber(checker.getTypeOfSymbolAtLocation(property, declaration));
+    });
 }
 
 
