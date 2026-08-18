@@ -1590,6 +1590,56 @@ export const DATA_TYPES: DataType[] = [
     },
     {
         "__typename": "DataType",
+        "id": "gid://sagittarius/DataType/30",
+        "createdAt": "2026-06-19T15:33:16Z",
+        "updatedAt": "2026-06-19T15:34:59Z",
+        "identifier": "COLOR",
+        "genericKeys": [],
+        "type": "{ hue: number; saturation: number; lightness: number; alpha?: number }",
+        "definitionSource": "",
+        "version": "0.0.35",
+        "name": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "Color"
+            }
+        ],
+        "aliases": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "color;colour;grb;hsv;hsl;hex"
+            }
+        ],
+        "displayMessages": [
+            {
+                "__typename": "Translation",
+                "code": "en-US",
+                "content": "Color"
+            }
+        ],
+        "runtime": {
+            "id": "gid://sagittarius/Runtime/1",
+            "__typename": "Runtime"
+        },
+        "runtimeModule": {
+            "__typename": "RuntimeModule",
+            "id": "gid://sagittarius/RuntimeModule/11"
+        },
+        "rules": {
+            "__typename": "DataTypeRuleConnection",
+            "count": 0,
+            "nodes": [],
+            "pageInfo": {
+                "endCursor": null,
+                "hasNextPage": false,
+                "__typename": "PageInfo"
+            }
+        }
+    },
+    {
+        "__typename": "DataType",
         "id": "gid://sagittarius/DataType/10",
         "createdAt": "2026-06-19T15:33:16Z",
         "updatedAt": "2026-06-19T15:34:59Z",

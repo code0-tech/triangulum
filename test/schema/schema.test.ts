@@ -1577,6 +1577,45 @@ describe("Schema", () => {
         });
     });
 
+    describe("COLOR data type", () => {
+        // COLOR is declared as
+        // `{ hue: number; saturation: number; lightness: number; alpha?: number }`,
+        // but the schema layer must surface a dedicated color input instead of
+        // expanding those internal channels into a `data` input. Like DATE it
+        // carries no additional properties.
+        const COLOR_TYPE =
+            "{ hue: number; saturation: number; lightness: number; alpha?: number | undefined; }";
+
+        it("resolves to a color input", () => {
+            expect(getTypeSchema("COLOR", DATA_TYPES)).toEqual({
+                input: "color",
+                type: COLOR_TYPE,
+            });
+        });
+
+        it("resolves to a color input when nested in a list and object", () => {
+            const list = getTypeSchema("LIST<COLOR>", DATA_TYPES) as any;
+            expect(list.input).toBe("list");
+            expect(list.items[0]).toEqual({input: "color", type: COLOR_TYPE});
+
+            const object = getTypeSchema("{ background: COLOR }", DATA_TYPES) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.background).toEqual({
+                input: "color",
+                type: COLOR_TYPE,
+            });
+        });
+
+        it("still expands a coincidental color-shaped object without the COLOR alias", () => {
+            const object = getTypeSchema(
+                "{ hue: number; saturation: number; lightness: number }",
+                DATA_TYPES
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.hue).toEqual({input: "number", type: "number"});
+        });
+    });
+
     describe("union-typed property (string | nested object) reference suggestions", () => {
         // A custom datatype that is an object. One of its keys, `flexible`, is a
         // union of a plain string (TEXT) or a nested object. The nested object in
