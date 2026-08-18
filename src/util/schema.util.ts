@@ -178,6 +178,18 @@ export interface ListTextInput extends Omit<ListInput, 'input'> {
 }
 
 /**
+ * Represents a list of sub-flow inputs.
+ * Emitted for any array/list whose element is a callable/sub-flow type (e.g.
+ * `LIST<FLOW>`, `(() => void)[]`) so the UI can render a dedicated multi-sub-flow
+ * input instead of the generic list of individual sub-flow inputs its underlying
+ * type would otherwise produce. Carries the per-item schemas in `items`, like a
+ * generic {@link ListInput}.
+ */
+export interface ListSubFlowInput extends Omit<ListInput, 'input'> {
+    input?: "list-sub-flow";
+}
+
+/**
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
@@ -225,6 +237,7 @@ export type Schema =
     | ListBooleanInput
     | ListNumberInput
     | ListTextInput
+    | ListSubFlowInput
     | DataInput
     | ListInput
     | TypeInput
@@ -448,6 +461,10 @@ export const getSchema = (
             if (isBoolean(element)) return {input: "list-boolean", type, items: itemSchemas, ...combinedSuggestions};
             if (isNumber(element)) return {input: "list-number", type, items: itemSchemas, ...combinedSuggestions};
             if (isString(element)) return {input: "list-text", type, items: itemSchemas, ...combinedSuggestions};
+            // A homogeneous list of a callable/sub-flow element surfaces a
+            // dedicated multi-sub-flow input. Checked after the primitives (none
+            // of which are callable) and before the generic list fallback.
+            if (isSubFlow(element)) return {input: "list-sub-flow", type, items: itemSchemas, ...combinedSuggestions};
         }
 
         return {
@@ -562,6 +579,19 @@ export const getSchema = (
  * @param nodeSchema - The schema derived from the node's concrete (narrowed) parameter type
  * @returns A single merged schema
  */
+// Every list input kind whose schema carries per-element `items` — the generic
+// list and all specialized list-* variants that mirror it. mergeSchemas recurses
+// into these so element-level suggestions are preserved. list-file is excluded:
+// it carries a `mimetype`, not `items`.
+const LIST_INPUTS = new Set<string>([
+    "list",
+    "list-select",
+    "list-boolean",
+    "list-number",
+    "list-text",
+    "list-sub-flow",
+]);
+
 export const mergeSchemas = (
     functionSchema: Schema | undefined,
     nodeSchema: Schema,
@@ -598,10 +628,20 @@ export const mergeSchemas = (
         };
     }
 
-    if (functionSchema.input === "list") {
-        const fItems = functionSchema.items ?? [];
+    // The generic list and every specialized list-* variant (list-select,
+    // list-boolean/number/text, list-sub-flow) carry their element schemas in
+    // `items`. Merge those pairwise so element-level suggestions — e.g. the
+    // per-literal values on a list-select or the sub-flow function suggestions on
+    // a LIST<CONSUMER<T>> element — survive the merge instead of being dropped in
+    // favour of the suggestion-less function schema. Suggestions must never be
+    // lost, whatever the list kind. Only merges when both sides are the same list
+    // kind. (list-file carries a `mimetype`, not `items`, so it is not listed.)
+    if (LIST_INPUTS.has(functionSchema.input as string)) {
+        const fItems = (functionSchema as ListInput).items ?? [];
         const nItems =
-            nodeSchema.input === "list" ? (nodeSchema.items ?? []) : [];
+            nodeSchema.input === functionSchema.input
+                ? ((nodeSchema as ListInput).items ?? [])
+                : [];
         const items =
             fItems.length === nItems.length && fItems.length > 0
                 ? fItems.map((f, i) => mergeSchemas(f, nItems[i]))

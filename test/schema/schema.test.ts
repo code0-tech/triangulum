@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
-import {getSignatureSchema, getTypeSchema} from "../../src";
+import {getSignatureSchema, getTypeSchema, ListSubFlowInput, SubFlowInput} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
 describe("Schema", () => {
@@ -68,7 +68,7 @@ describe("Schema", () => {
             signature: "(test: HTTP_METHOD): void"
         };
 
-        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES);
+        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES, "gid://sagittarius/NodeFunction/2");
 
         //console.dir(result, {depth: null})
     });
@@ -1629,6 +1629,15 @@ describe("Schema", () => {
             {input: "select", type: '"HEAD"'},
         ];
 
+        // The same items as they surface through getSignatureSchema: the merge
+        // preserves each select element's own literal value as a suggestion
+        // (suggestions must never be lost for any list input). The plain
+        // getTypeSchema path (suggestions off) still yields the bare methodItems.
+        const methodItemsWithSuggestions = methodItems.map((item) => ({
+            ...item,
+            suggestions: [{__typename: "LiteralValue", value: JSON.parse(item.type)}],
+        }));
+
         it("leaves a single select as a primitive select input", () => {
             expect(getTypeSchema("HTTP_METHOD", DATA_TYPES)).toEqual({
                 input: "select",
@@ -1752,7 +1761,7 @@ describe("Schema", () => {
             );
 
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual(methodItems);
+            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
 
             // The only suggestion is the in-scope reference to node1, whose
             // return type (LIST<HTTP_METHOD>) matches the parameter. No stray
@@ -1796,7 +1805,7 @@ describe("Schema", () => {
             );
 
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual(methodItems);
+            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
             expect(first.schema.suggestions).toBeUndefined();
         });
     });
@@ -1875,6 +1884,73 @@ describe("Schema", () => {
             const colorList = getTypeSchema("LIST<COLOR>", DATA_TYPES) as any;
             expect(colorList.input).toBe("list");
             expect(colorList.items[0].input).toBe("color");
+        });
+    });
+
+    describe("list-sub-flow input", () => {
+        // A single callable stays a sub-flow input; only wrapping it in an array
+        // promotes it to a dedicated list-sub-flow. Its `items` are the element
+        // schemas, exactly like a generic list — one sub-flow schema per element.
+        it("leaves a single callable as a sub-flow input", () => {
+            const single = getTypeSchema("CONSUMER<NUMBER>", DATA_TYPES) as any;
+            expect(single.input).toBe("sub-flow");
+        });
+
+        it("resolves a list of a callable data type to a list-sub-flow", () => {
+            const list = getTypeSchema("LIST<CONSUMER<NUMBER>>", DATA_TYPES) as any;
+            expect(list.input).toBe("list-sub-flow");
+            expect(list.items).toEqual([{input: "sub-flow", type: "(item: number) => void"}]);
+        });
+
+        it("resolves the array form of a callable to a list-sub-flow", () => {
+            const list = getTypeSchema("PREDICATE<TEXT>[]", DATA_TYPES) as any;
+            expect(list.input).toBe("list-sub-flow");
+            expect(list.items).toEqual([{input: "sub-flow", type: "(item: string) => boolean"}]);
+        });
+
+        // A function under test whose parameter is a LIST<CONSUMER<NUMBER>> — a
+        // list whose element is a `(item: NUMBER) => void` sub-flow.
+        const runAll: FunctionDefinition = {
+            __typename: "FunctionDefinition",
+            id: "gid://sagittarius/FunctionDefinition/950",
+            identifier: "test::flows::run_all",
+            signature: "(handlers: LIST<(...args: any): any>): void",
+        } as FunctionDefinition;
+
+        const numberConsumer: FunctionDefinition = {
+            __typename: "FunctionDefinition",
+            id: "gid://sagittarius/FunctionDefinition/951",
+            identifier: "test::consume::number",
+            signature: "(item: NUMBER): void",
+        } as FunctionDefinition;
+
+        const functions = [...FUNCTION_SIGNATURES, runAll, numberConsumer];
+
+        it("resolves a list-of-sub-flows function parameter to a list-sub-flow schema", () => {
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::flows::run_all"},
+                            parameters: {nodes: [{value: null}]},
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            const result = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            );
+
+            expect((result.parameters[0].schema as ListSubFlowInput)?.items?.[0]?.suggestions?.length).toBe(114)
+
         });
     });
 
