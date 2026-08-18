@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
-import {getSignatureSchema, getTypeSchema} from "../../src";
+import {getSignatureSchema, getTypeSchema, ListSubFlowInput, SubFlowInput} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
 describe("Schema", () => {
@@ -68,7 +68,7 @@ describe("Schema", () => {
             signature: "(test: HTTP_METHOD): void"
         };
 
-        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES);
+        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES, "gid://sagittarius/NodeFunction/2");
 
         //console.dir(result, {depth: null})
     });
@@ -1613,6 +1613,344 @@ describe("Schema", () => {
             ) as any;
             expect(object.input).toBe("data");
             expect(object.properties.hue).toEqual({input: "number", type: "number"});
+        });
+    });
+
+    describe("list-select input", () => {
+        // A plain select stays a primitive input; only wrapping it in an array
+        // promotes it to a dedicated list-select. Its `items` are the element
+        // schemas, exactly like a generic list — one select schema per literal.
+        const methodItems = [
+            {input: "select", type: '"GET"'},
+            {input: "select", type: '"POST"'},
+            {input: "select", type: '"PUT"'},
+            {input: "select", type: '"DELETE"'},
+            {input: "select", type: '"PATCH"'},
+            {input: "select", type: '"HEAD"'},
+        ];
+
+        // The same items as they surface through getSignatureSchema: the merge
+        // preserves each select element's own literal value as a suggestion
+        // (suggestions must never be lost for any list input). The plain
+        // getTypeSchema path (suggestions off) still yields the bare methodItems.
+        const methodItemsWithSuggestions = methodItems.map((item) => ({
+            ...item,
+            suggestions: [{__typename: "LiteralValue", value: JSON.parse(item.type)}],
+        }));
+
+        it("leaves a single select as a primitive select input", () => {
+            expect(getTypeSchema("HTTP_METHOD", DATA_TYPES)).toEqual({
+                input: "select",
+                type: '"GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD"',
+            });
+        });
+
+        it("resolves a list of a select data type to a list-select carrying its item schemas", () => {
+            expect(getTypeSchema("LIST<HTTP_METHOD>", DATA_TYPES)).toEqual({
+                input: "list-select",
+                type: "HTTP_METHOD[]",
+                items: methodItems,
+            });
+        });
+
+        it("resolves a list of an inline literal union to a list-select", () => {
+            expect(getTypeSchema("LIST<'GET' | 'POST'>", DATA_TYPES)).toEqual({
+                input: "list-select",
+                type: '("GET" | "POST")[]',
+                items: [
+                    {input: "select", type: '"GET"'},
+                    {input: "select", type: '"POST"'},
+                ],
+            });
+        });
+
+        it("resolves a list of a number literal union to a list-select", () => {
+            expect(getTypeSchema("LIST<1 | 2 | 3>", DATA_TYPES)).toEqual({
+                input: "list-select",
+                type: "(1 | 2 | 3)[]",
+                items: [
+                    {input: "select", type: "1"},
+                    {input: "select", type: "2"},
+                    {input: "select", type: "3"},
+                ],
+            });
+        });
+
+        it("resolves a list of a single literal to a list-select", () => {
+            expect(getTypeSchema("LIST<'GET'>", DATA_TYPES)).toEqual({
+                input: "list-select",
+                type: '"GET"[]',
+                items: [{input: "select", type: '"GET"'}],
+            });
+        });
+
+        it("resolves a list-select when nested in an object", () => {
+            const object = getTypeSchema(
+                "{ methods: LIST<HTTP_METHOD> }",
+                DATA_TYPES
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.methods).toEqual({
+                input: "list-select",
+                type: "HTTP_METHOD[]",
+                items: methodItems,
+            });
+        });
+
+        it("promotes a list of booleans to list-boolean, not list-select", () => {
+            expect(getTypeSchema("LIST<boolean>", DATA_TYPES)).toEqual({
+                input: "list-boolean",
+                type: "boolean[]",
+                items: [
+                    {input: "boolean", type: "false"},
+                    {input: "boolean", type: "true"},
+                ],
+            });
+        });
+
+        // A synthetic function whose parameters/return are a concrete
+        // LIST<HTTP_METHOD> — the stock signatures only expose generic LIST<T>,
+        // which would never resolve to a concrete list-select.
+        const pickMethods: FunctionDefinition = {
+            __typename: "FunctionDefinition",
+            id: "gid://sagittarius/FunctionDefinition/900",
+            identifier: "test::methods::pick",
+            signature:
+                "(primary: LIST<HTTP_METHOD>, fallback: LIST<HTTP_METHOD>): LIST<HTTP_METHOD>",
+        } as FunctionDefinition;
+        const functions = [...FUNCTION_SIGNATURES, pickMethods];
+
+        it("surfaces list-select in a signature schema with only valid reference suggestions", () => {
+            // node1 returns LIST<HTTP_METHOD>; node2's first parameter references it.
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::methods::pick"},
+                            nextNodeId: "gid://sagittarius/NodeFunction/2",
+                            parameters: {nodes: [{value: null}, {value: null}]},
+                        },
+                        {
+                            id: "gid://sagittarius/NodeFunction/2",
+                            functionDefinition: {identifier: "test::methods::pick"},
+                            parameters: {
+                                nodes: [
+                                    {
+                                        value: {
+                                            __typename: "ReferenceValue",
+                                            nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                                        },
+                                    },
+                                    {value: null},
+                                ],
+                            },
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            const {parameters: [first]} = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/2",
+            );
+
+            expect(first.schema.input).toBe("list-select");
+            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
+
+            // The only suggestion is the in-scope reference to node1, whose
+            // return type (LIST<HTTP_METHOD>) matches the parameter. No stray
+            // single-method / cross-type suggestions leak in.
+            expect(first.schema.suggestions).toEqual([
+                {
+                    __typename: "ReferenceValue",
+                    nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                },
+            ]);
+        });
+
+        it("keeps the full items and stays a list-select when a value is provided", () => {
+            // A provided literal array must not collapse the options to just the
+            // supplied values — the function-declared type stays the source of truth.
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::methods::pick"},
+                            parameters: {
+                                nodes: [
+                                    {value: {__typename: "LiteralValue", value: ["GET", "POST"]}},
+                                    {value: null},
+                                ],
+                            },
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            const {parameters: [first]} = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            );
+
+            expect(first.schema.input).toBe("list-select");
+            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
+            expect(first.schema.suggestions).toBeUndefined();
+        });
+    });
+
+    describe("list-boolean / list-number / list-text inputs", () => {
+        // A homogeneous list of a plain primitive surfaces a dedicated
+        // multi-<primitive> input. Like list-select (and a generic list) these
+        // carry the element schemas in `items` — one primitive schema per element.
+        // A boolean element normalizes to the `false | true` union, which — like
+        // any union element — splits into one schema per member.
+        const booleanItems = [
+            {input: "boolean", type: "false"},
+            {input: "boolean", type: "true"},
+        ];
+        const numberItems = [{input: "number", type: "number"}];
+        const textItems = [{input: "text", type: "string"}];
+
+        it("resolves LIST<BOOLEAN> to list-boolean", () => {
+            expect(getTypeSchema("LIST<BOOLEAN>", DATA_TYPES)).toEqual({
+                input: "list-boolean",
+                type: "boolean[]",
+                items: booleanItems,
+            });
+        });
+
+        it("resolves LIST<NUMBER> to list-number", () => {
+            expect(getTypeSchema("LIST<NUMBER>", DATA_TYPES)).toEqual({
+                input: "list-number",
+                type: "number[]",
+                items: numberItems,
+            });
+        });
+
+        it("resolves the number[] array form to list-number", () => {
+            expect(getTypeSchema("number[]", DATA_TYPES)).toEqual({
+                input: "list-number",
+                type: "number[]",
+                items: numberItems,
+            });
+        });
+
+        it("resolves LIST<TEXT> to list-text", () => {
+            expect(getTypeSchema("LIST<TEXT>", DATA_TYPES)).toEqual({
+                input: "list-text",
+                type: "string[]",
+                items: textItems,
+            });
+        });
+
+        it("resolves the primitive list inputs when nested in an object", () => {
+            const object = getTypeSchema(
+                "{ tags: LIST<TEXT>, counts: LIST<NUMBER>, flags: LIST<BOOLEAN> }",
+                DATA_TYPES,
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties).toEqual({
+                tags: {input: "list-text", type: "string[]", items: textItems},
+                counts: {input: "list-number", type: "number[]", items: numberItems},
+                flags: {input: "list-boolean", type: "boolean[]", items: booleanItems},
+            });
+        });
+
+        it("only promotes the inner list of LIST<LIST<TEXT>>, outer stays a generic list", () => {
+            const outer = getTypeSchema("LIST<LIST<TEXT>>", DATA_TYPES) as any;
+            expect(outer.input).toBe("list");
+            expect(outer.items).toEqual([{input: "list-text", type: "string[]", items: textItems}]);
+        });
+
+        // Custom-input elements must not be swallowed by the primitive promotion:
+        // DATE (number underneath) and COLOR (object) keep their per-item schema.
+        it("does not promote LIST<DATE> or LIST<COLOR> to a primitive list input", () => {
+            const dateList = getTypeSchema("LIST<DATE>", DATA_TYPES) as any;
+            expect(dateList.input).toBe("list");
+            expect(dateList.items[0].input).toBe("date");
+
+            const colorList = getTypeSchema("LIST<COLOR>", DATA_TYPES) as any;
+            expect(colorList.input).toBe("list");
+            expect(colorList.items[0].input).toBe("color");
+        });
+    });
+
+    describe("list-sub-flow input", () => {
+        // A single callable stays a sub-flow input; only wrapping it in an array
+        // promotes it to a dedicated list-sub-flow. Its `items` are the element
+        // schemas, exactly like a generic list — one sub-flow schema per element.
+        it("leaves a single callable as a sub-flow input", () => {
+            const single = getTypeSchema("CONSUMER<NUMBER>", DATA_TYPES) as any;
+            expect(single.input).toBe("sub-flow");
+        });
+
+        it("resolves a list of a callable data type to a list-sub-flow", () => {
+            const list = getTypeSchema("LIST<CONSUMER<NUMBER>>", DATA_TYPES) as any;
+            expect(list.input).toBe("list-sub-flow");
+            expect(list.items).toEqual([{input: "sub-flow", type: "(item: number) => void"}]);
+        });
+
+        it("resolves the array form of a callable to a list-sub-flow", () => {
+            const list = getTypeSchema("PREDICATE<TEXT>[]", DATA_TYPES) as any;
+            expect(list.input).toBe("list-sub-flow");
+            expect(list.items).toEqual([{input: "sub-flow", type: "(item: string) => boolean"}]);
+        });
+
+        // A function under test whose parameter is a LIST<CONSUMER<NUMBER>> — a
+        // list whose element is a `(item: NUMBER) => void` sub-flow.
+        const runAll: FunctionDefinition = {
+            __typename: "FunctionDefinition",
+            id: "gid://sagittarius/FunctionDefinition/950",
+            identifier: "test::flows::run_all",
+            signature: "(handlers: LIST<(...args: any): any>): void",
+        } as FunctionDefinition;
+
+        const numberConsumer: FunctionDefinition = {
+            __typename: "FunctionDefinition",
+            id: "gid://sagittarius/FunctionDefinition/951",
+            identifier: "test::consume::number",
+            signature: "(item: NUMBER): void",
+        } as FunctionDefinition;
+
+        const functions = [...FUNCTION_SIGNATURES, runAll, numberConsumer];
+
+        it("resolves a list-of-sub-flows function parameter to a list-sub-flow schema", () => {
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::flows::run_all"},
+                            parameters: {nodes: [{value: null}]},
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            const result = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            );
+
+            expect((result.parameters[0].schema as ListSubFlowInput)?.items?.[0]?.suggestions?.length).toBe(114)
+
         });
     });
 

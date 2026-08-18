@@ -133,6 +133,63 @@ export interface ListFileInput extends Input {
 }
 
 /**
+ * Represents a list of select inputs.
+ * Emitted for any array/list whose element is a select type (a primitive
+ * literal union or a single string/number literal — e.g. `LIST<HTTP_METHOD>`,
+ * `('GET' | 'POST')[]`) so the UI can render a dedicated multi-select instead
+ * of the generic list input its underlying type would otherwise produce.
+ */
+export interface ListSelectInput extends Omit<ListInput, 'input'> {
+    input?: "list-select";
+}
+
+/**
+ * Represents a list of boolean inputs.
+ * Emitted for any array/list of plain booleans (e.g. `LIST<BOOLEAN>`,
+ * `boolean[]`) so the UI can render a dedicated multi-boolean input instead of
+ * the generic list of individual boolean inputs its underlying type would
+ * otherwise produce. Carries the per-item schemas in `items`, like a generic
+ * {@link ListInput}.
+ */
+export interface ListBooleanInput extends Omit<ListInput, 'input'> {
+    input?: "list-boolean";
+}
+
+/**
+ * Represents a list of number inputs.
+ * Emitted for any array/list of plain numbers (e.g. `LIST<NUMBER>`, `number[]`)
+ * so the UI can render a dedicated multi-number input instead of the generic
+ * list of individual number inputs its underlying type would otherwise produce.
+ * Carries the per-item schemas in `items`, like a generic {@link ListInput}.
+ */
+export interface ListNumberInput extends Omit<ListInput, 'input'> {
+    input?: "list-number";
+}
+
+/**
+ * Represents a list of text inputs.
+ * Emitted for any array/list of plain strings (e.g. `LIST<TEXT>`, `string[]`)
+ * so the UI can render a dedicated multi-text input instead of the generic list
+ * of individual text inputs its underlying type would otherwise produce. Carries
+ * the per-item schemas in `items`, like a generic {@link ListInput}.
+ */
+export interface ListTextInput extends Omit<ListInput, 'input'> {
+    input?: "list-text";
+}
+
+/**
+ * Represents a list of sub-flow inputs.
+ * Emitted for any array/list whose element is a callable/sub-flow type (e.g.
+ * `LIST<FLOW>`, `(() => void)[]`) so the UI can render a dedicated multi-sub-flow
+ * input instead of the generic list of individual sub-flow inputs its underlying
+ * type would otherwise produce. Carries the per-item schemas in `items`, like a
+ * generic {@link ListInput}.
+ */
+export interface ListSubFlowInput extends Omit<ListInput, 'input'> {
+    input?: "list-sub-flow";
+}
+
+/**
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
@@ -176,6 +233,11 @@ export type Schema =
     | ColorInput
     | FileInput
     | ListFileInput
+    | ListSelectInput
+    | ListBooleanInput
+    | ListNumberInput
+    | ListTextInput
+    | ListSubFlowInput
     | DataInput
     | ListInput
     | TypeInput
@@ -335,7 +397,8 @@ export const getSchema = (
     // Check primitive literal union first (e.g., "a" | "b" | "c") or a single
     // string/number literal (e.g., "GET"). A bare literal has only one allowed
     // value, so it should still surface as a select rather than a free-form text/number input.
-    if (isPrimitiveLiteralUnion(parameterType) || isStringOrNumberLiteral(parameterType)) {
+    // (Boolean has already been handled above; see isSelectType.)
+    if (isSelectType(parameterType)) {
         return {input: "select", type, ...combinedSuggestions};
     }
     if (isNumber(parameterType)) {
@@ -364,13 +427,45 @@ export const getSchema = (
             return {input: "list-file", type, mimetype, ...combinedSuggestions};
         }
 
+        // Per-item schemas, computed the same way for a generic list and a
+        // list-select (whose `items` mirror a normal list's). A union element is
+        // split into one schema per member; a single element yields one schema.
         const itemSchemas = itemTypes.flatMap(itemType => {
-            const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
-            return itemTypes.map((itemType) =>
-                getSchema(checker, node, itemType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
+            const memberTypes = itemType.isUnion() ? itemType.types : [itemType];
+            return memberTypes.map((memberType) =>
+                getSchema(checker, node, memberType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
             )
         })
 
+        // A list of a select type (LIST<HTTP_METHOD>, ('GET' | 'POST')[], ...)
+        // surfaces a dedicated multi-select. Its `items` are the element schemas,
+        // exactly like a generic list — only the input kind differs so the UI can
+        // render a combined multi-select. Checked before the plain-primitive
+        // cases below because a single literal (e.g. LIST<1>) is a select, not a
+        // plain number.
+        if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
+            return {input: "list-select", type, items: itemSchemas, ...combinedSuggestions};
+        }
+
+        // A homogeneous list of a plain primitive surfaces a dedicated
+        // multi-<primitive> input. Its `items` are the element schemas, exactly
+        // like a generic list — only the input kind differs so the UI can render
+        // a combined multi-<primitive> input. Ordering mirrors the top-level
+        // primitive checks: boolean first, then number, then string — select
+        // literals have already been handled above. Custom-input elements
+        // (DATE → date, COLOR → color, FILE → file) are structurally
+        // intersection/object types that fail these checks, so they keep the
+        // per-item schema of the generic list below.
+        if (itemTypes.length === 1) {
+            const element = itemTypes[0];
+            if (isBoolean(element)) return {input: "list-boolean", type, items: itemSchemas, ...combinedSuggestions};
+            if (isNumber(element)) return {input: "list-number", type, items: itemSchemas, ...combinedSuggestions};
+            if (isString(element)) return {input: "list-text", type, items: itemSchemas, ...combinedSuggestions};
+            // A homogeneous list of a callable/sub-flow element surfaces a
+            // dedicated multi-sub-flow input. Checked after the primitives (none
+            // of which are callable) and before the generic list fallback.
+            if (isSubFlow(element)) return {input: "list-sub-flow", type, items: itemSchemas, ...combinedSuggestions};
+        }
 
         return {
             input: "list",
@@ -484,6 +579,19 @@ export const getSchema = (
  * @param nodeSchema - The schema derived from the node's concrete (narrowed) parameter type
  * @returns A single merged schema
  */
+// Every list input kind whose schema carries per-element `items` — the generic
+// list and all specialized list-* variants that mirror it. mergeSchemas recurses
+// into these so element-level suggestions are preserved. list-file is excluded:
+// it carries a `mimetype`, not `items`.
+const LIST_INPUTS = new Set<string>([
+    "list",
+    "list-select",
+    "list-boolean",
+    "list-number",
+    "list-text",
+    "list-sub-flow",
+]);
+
 export const mergeSchemas = (
     functionSchema: Schema | undefined,
     nodeSchema: Schema,
@@ -520,10 +628,20 @@ export const mergeSchemas = (
         };
     }
 
-    if (functionSchema.input === "list") {
-        const fItems = functionSchema.items ?? [];
+    // The generic list and every specialized list-* variant (list-select,
+    // list-boolean/number/text, list-sub-flow) carry their element schemas in
+    // `items`. Merge those pairwise so element-level suggestions — e.g. the
+    // per-literal values on a list-select or the sub-flow function suggestions on
+    // a LIST<CONSUMER<T>> element — survive the merge instead of being dropped in
+    // favour of the suggestion-less function schema. Suggestions must never be
+    // lost, whatever the list kind. Only merges when both sides are the same list
+    // kind. (list-file carries a `mimetype`, not `items`, so it is not listed.)
+    if (LIST_INPUTS.has(functionSchema.input as string)) {
+        const fItems = (functionSchema as ListInput).items ?? [];
         const nItems =
-            nodeSchema.input === "list" ? (nodeSchema.items ?? []) : [];
+            nodeSchema.input === functionSchema.input
+                ? ((nodeSchema as ListInput).items ?? [])
+                : [];
         const items =
             fItems.length === nItems.length && fItems.length > 0
                 ? fItems.map((f, i) => mergeSchemas(f, nItems[i]))
@@ -819,6 +937,23 @@ function isStringOrNumberLiteral(type: ts.Type): boolean {
         (type.flags & ts.TypeFlags.StringLiteral) !== 0 ||
         (type.flags & ts.TypeFlags.NumberLiteral) !== 0
     );
+}
+
+/**
+ * Checks whether a type surfaces as a select input.
+ *
+ * A select is a primitive literal union (e.g. `"a" | "b" | "c"`) or a single
+ * string/number literal (e.g. `"GET"`). Boolean is excluded so that `true` /
+ * `boolean` continue to render as a boolean input — mirroring the ordering in
+ * {@link getSchema}, where the boolean check runs first. Used both for the
+ * plain select input and to detect a {@link ListSelectInput} element.
+ *
+ * @param type - The type to check
+ * @returns True if the type surfaces as a select
+ */
+function isSelectType(type: ts.Type): boolean {
+    if (isBoolean(type)) return false;
+    return isPrimitiveLiteralUnion(type) || isStringOrNumberLiteral(type);
 }
 
 /**
