@@ -1618,8 +1618,17 @@ describe("Schema", () => {
 
     describe("list-select input", () => {
         // A plain select stays a primitive input; only wrapping it in an array
-        // promotes it to a dedicated list-select carrying the element's allowed
-        // literal values in `items`.
+        // promotes it to a dedicated list-select. Its `items` are the element
+        // schemas, exactly like a generic list — one select schema per literal.
+        const methodItems = [
+            {input: "select", type: '"GET"'},
+            {input: "select", type: '"POST"'},
+            {input: "select", type: '"PUT"'},
+            {input: "select", type: '"DELETE"'},
+            {input: "select", type: '"PATCH"'},
+            {input: "select", type: '"HEAD"'},
+        ];
+
         it("leaves a single select as a primitive select input", () => {
             expect(getTypeSchema("HTTP_METHOD", DATA_TYPES)).toEqual({
                 input: "select",
@@ -1627,11 +1636,11 @@ describe("Schema", () => {
             });
         });
 
-        it("resolves a list of a select data type to a list-select carrying its items", () => {
+        it("resolves a list of a select data type to a list-select carrying its item schemas", () => {
             expect(getTypeSchema("LIST<HTTP_METHOD>", DATA_TYPES)).toEqual({
                 input: "list-select",
                 type: "HTTP_METHOD[]",
-                items: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+                items: methodItems,
             });
         });
 
@@ -1639,15 +1648,22 @@ describe("Schema", () => {
             expect(getTypeSchema("LIST<'GET' | 'POST'>", DATA_TYPES)).toEqual({
                 input: "list-select",
                 type: '("GET" | "POST")[]',
-                items: ["GET", "POST"],
+                items: [
+                    {input: "select", type: '"GET"'},
+                    {input: "select", type: '"POST"'},
+                ],
             });
         });
 
-        it("keeps number literals as numbers in items", () => {
+        it("resolves a list of a number literal union to a list-select", () => {
             expect(getTypeSchema("LIST<1 | 2 | 3>", DATA_TYPES)).toEqual({
                 input: "list-select",
                 type: "(1 | 2 | 3)[]",
-                items: [1, 2, 3],
+                items: [
+                    {input: "select", type: "1"},
+                    {input: "select", type: "2"},
+                    {input: "select", type: "3"},
+                ],
             });
         });
 
@@ -1655,7 +1671,7 @@ describe("Schema", () => {
             expect(getTypeSchema("LIST<'GET'>", DATA_TYPES)).toEqual({
                 input: "list-select",
                 type: '"GET"[]',
-                items: ["GET"],
+                items: [{input: "select", type: '"GET"'}],
             });
         });
 
@@ -1668,7 +1684,7 @@ describe("Schema", () => {
             expect(object.properties.methods).toEqual({
                 input: "list-select",
                 type: "HTTP_METHOD[]",
-                items: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+                items: methodItems,
             });
         });
 
@@ -1676,6 +1692,10 @@ describe("Schema", () => {
             expect(getTypeSchema("LIST<boolean>", DATA_TYPES)).toEqual({
                 input: "list-boolean",
                 type: "boolean[]",
+                items: [
+                    {input: "boolean", type: "false"},
+                    {input: "boolean", type: "true"},
+                ],
             });
         });
 
@@ -1732,14 +1752,11 @@ describe("Schema", () => {
             );
 
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual([
-                "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD",
-            ]);
+            expect((first.schema as any).items).toEqual(methodItems);
 
             // The only suggestion is the in-scope reference to node1, whose
             // return type (LIST<HTTP_METHOD>) matches the parameter. No stray
-            // literal / single-method / cross-type suggestions leak in — the
-            // allowed literals live in `items`, not in `suggestions`.
+            // single-method / cross-type suggestions leak in.
             expect(first.schema.suggestions).toEqual([
                 {
                     __typename: "ReferenceValue",
@@ -1779,21 +1796,29 @@ describe("Schema", () => {
             );
 
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual([
-                "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD",
-            ]);
+            expect((first.schema as any).items).toEqual(methodItems);
             expect(first.schema.suggestions).toBeUndefined();
         });
     });
 
     describe("list-boolean / list-number / list-text inputs", () => {
         // A homogeneous list of a plain primitive surfaces a dedicated
-        // multi-<primitive> input. Unlike list-select these carry no `items` and
-        // no extra properties — just input + type (+ suggestions when any).
+        // multi-<primitive> input. Like list-select (and a generic list) these
+        // carry the element schemas in `items` — one primitive schema per element.
+        // A boolean element normalizes to the `false | true` union, which — like
+        // any union element — splits into one schema per member.
+        const booleanItems = [
+            {input: "boolean", type: "false"},
+            {input: "boolean", type: "true"},
+        ];
+        const numberItems = [{input: "number", type: "number"}];
+        const textItems = [{input: "text", type: "string"}];
+
         it("resolves LIST<BOOLEAN> to list-boolean", () => {
             expect(getTypeSchema("LIST<BOOLEAN>", DATA_TYPES)).toEqual({
                 input: "list-boolean",
                 type: "boolean[]",
+                items: booleanItems,
             });
         });
 
@@ -1801,6 +1826,7 @@ describe("Schema", () => {
             expect(getTypeSchema("LIST<NUMBER>", DATA_TYPES)).toEqual({
                 input: "list-number",
                 type: "number[]",
+                items: numberItems,
             });
         });
 
@@ -1808,6 +1834,7 @@ describe("Schema", () => {
             expect(getTypeSchema("number[]", DATA_TYPES)).toEqual({
                 input: "list-number",
                 type: "number[]",
+                items: numberItems,
             });
         });
 
@@ -1815,6 +1842,7 @@ describe("Schema", () => {
             expect(getTypeSchema("LIST<TEXT>", DATA_TYPES)).toEqual({
                 input: "list-text",
                 type: "string[]",
+                items: textItems,
             });
         });
 
@@ -1825,16 +1853,16 @@ describe("Schema", () => {
             ) as any;
             expect(object.input).toBe("data");
             expect(object.properties).toEqual({
-                tags: {input: "list-text", type: "string[]"},
-                counts: {input: "list-number", type: "number[]"},
-                flags: {input: "list-boolean", type: "boolean[]"},
+                tags: {input: "list-text", type: "string[]", items: textItems},
+                counts: {input: "list-number", type: "number[]", items: numberItems},
+                flags: {input: "list-boolean", type: "boolean[]", items: booleanItems},
             });
         });
 
         it("only promotes the inner list of LIST<LIST<TEXT>>, outer stays a generic list", () => {
             const outer = getTypeSchema("LIST<LIST<TEXT>>", DATA_TYPES) as any;
             expect(outer.input).toBe("list");
-            expect(outer.items).toEqual([{input: "list-text", type: "string[]"}]);
+            expect(outer.items).toEqual([{input: "list-text", type: "string[]", items: textItems}]);
         });
 
         // Custom-input elements must not be swallowed by the primitive promotion:

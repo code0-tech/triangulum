@@ -137,17 +137,10 @@ export interface ListFileInput extends Input {
  * Emitted for any array/list whose element is a select type (a primitive
  * literal union or a single string/number literal — e.g. `LIST<HTTP_METHOD>`,
  * `('GET' | 'POST')[]`) so the UI can render a dedicated multi-select instead
- * of the generic list of individual select inputs its underlying type would
- * otherwise produce.
+ * of the generic list input its underlying type would otherwise produce.
  */
-export interface ListSelectInput extends Input {
+export interface ListSelectInput extends Omit<ListInput, 'input'> {
     input?: "list-select";
-    /**
-     * The literal values the array's elements may take, in declaration order
-     * (e.g. `LIST<HTTP_METHOD>` → `["GET", "POST", "PUT", ...]`). Mirrors the
-     * options a single {@link PrimitiveInput} select would offer for the element.
-     */
-    items?: (string | number | boolean)[];
 }
 
 /**
@@ -155,9 +148,10 @@ export interface ListSelectInput extends Input {
  * Emitted for any array/list of plain booleans (e.g. `LIST<BOOLEAN>`,
  * `boolean[]`) so the UI can render a dedicated multi-boolean input instead of
  * the generic list of individual boolean inputs its underlying type would
- * otherwise produce. Carries no additional properties.
+ * otherwise produce. Carries the per-item schemas in `items`, like a generic
+ * {@link ListInput}.
  */
-export interface ListBooleanInput extends Input {
+export interface ListBooleanInput extends Omit<ListInput, 'input'> {
     input?: "list-boolean";
 }
 
@@ -166,9 +160,9 @@ export interface ListBooleanInput extends Input {
  * Emitted for any array/list of plain numbers (e.g. `LIST<NUMBER>`, `number[]`)
  * so the UI can render a dedicated multi-number input instead of the generic
  * list of individual number inputs its underlying type would otherwise produce.
- * Carries no additional properties.
+ * Carries the per-item schemas in `items`, like a generic {@link ListInput}.
  */
-export interface ListNumberInput extends Input {
+export interface ListNumberInput extends Omit<ListInput, 'input'> {
     input?: "list-number";
 }
 
@@ -177,9 +171,9 @@ export interface ListNumberInput extends Input {
  * Emitted for any array/list of plain strings (e.g. `LIST<TEXT>`, `string[]`)
  * so the UI can render a dedicated multi-text input instead of the generic list
  * of individual text inputs its underlying type would otherwise produce. Carries
- * no additional properties.
+ * the per-item schemas in `items`, like a generic {@link ListInput}.
  */
-export interface ListTextInput extends Input {
+export interface ListTextInput extends Omit<ListInput, 'input'> {
     input?: "list-text";
 }
 
@@ -420,36 +414,41 @@ export const getSchema = (
             return {input: "list-file", type, mimetype, ...combinedSuggestions};
         }
 
-        // A list of a select type (LIST<HTTP_METHOD>, ('GET' | 'POST')[], ...)
-        // surfaces a dedicated multi-select carrying the element's allowed
-        // literal values in `items`, instead of a generic list of individual
-        // select inputs. The suggestions stay the ones computed for the array.
-        if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
-            const items = getSelectItems(itemTypes[0]);
-            return {input: "list-select", type, items, ...combinedSuggestions};
-        }
-
-        // A homogeneous list of a plain primitive surfaces a dedicated
-        // multi-<primitive> input instead of a generic list of individual
-        // primitive inputs. Ordering mirrors the top-level primitive checks:
-        // boolean first, then number, then string — and select literals have
-        // already been handled above. Custom-input elements (DATE → date,
-        // COLOR → color, FILE → file) are structurally intersection/object types
-        // that fail these checks, so they keep their per-item schema below.
-        if (itemTypes.length === 1) {
-            const element = itemTypes[0];
-            if (isBoolean(element)) return {input: "list-boolean", type, ...combinedSuggestions};
-            if (isNumber(element)) return {input: "list-number", type, ...combinedSuggestions};
-            if (isString(element)) return {input: "list-text", type, ...combinedSuggestions};
-        }
-
+        // Per-item schemas, computed the same way for a generic list and a
+        // list-select (whose `items` mirror a normal list's). A union element is
+        // split into one schema per member; a single element yields one schema.
         const itemSchemas = itemTypes.flatMap(itemType => {
-            const itemTypes = itemType.isUnion() ? itemType.types : [itemType];
-            return itemTypes.map((itemType) =>
-                getSchema(checker, node, itemType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
+            const memberTypes = itemType.isUnion() ? itemType.types : [itemType];
+            return memberTypes.map((memberType) =>
+                getSchema(checker, node, memberType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
             )
         })
 
+        // A list of a select type (LIST<HTTP_METHOD>, ('GET' | 'POST')[], ...)
+        // surfaces a dedicated multi-select. Its `items` are the element schemas,
+        // exactly like a generic list — only the input kind differs so the UI can
+        // render a combined multi-select. Checked before the plain-primitive
+        // cases below because a single literal (e.g. LIST<1>) is a select, not a
+        // plain number.
+        if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
+            return {input: "list-select", type, items: itemSchemas, ...combinedSuggestions};
+        }
+
+        // A homogeneous list of a plain primitive surfaces a dedicated
+        // multi-<primitive> input. Its `items` are the element schemas, exactly
+        // like a generic list — only the input kind differs so the UI can render
+        // a combined multi-<primitive> input. Ordering mirrors the top-level
+        // primitive checks: boolean first, then number, then string — select
+        // literals have already been handled above. Custom-input elements
+        // (DATE → date, COLOR → color, FILE → file) are structurally
+        // intersection/object types that fail these checks, so they keep the
+        // per-item schema of the generic list below.
+        if (itemTypes.length === 1) {
+            const element = itemTypes[0];
+            if (isBoolean(element)) return {input: "list-boolean", type, items: itemSchemas, ...combinedSuggestions};
+            if (isNumber(element)) return {input: "list-number", type, items: itemSchemas, ...combinedSuggestions};
+            if (isString(element)) return {input: "list-text", type, items: itemSchemas, ...combinedSuggestions};
+        }
 
         return {
             input: "list",
@@ -915,32 +914,6 @@ function isStringOrNumberLiteral(type: ts.Type): boolean {
 function isSelectType(type: ts.Type): boolean {
     if (isBoolean(type)) return false;
     return isPrimitiveLiteralUnion(type) || isStringOrNumberLiteral(type);
-}
-
-/**
- * Extracts the literal values a select type may take, in declaration order.
- *
- * Reads the constituent literals directly off the type (a union yields each of
- * its members; a bare literal yields itself). Only reached for types that
- * {@link isSelectType} already accepted, so every relevant member is a
- * string/number/boolean literal.
- *
- * @param type - The select type to read the values from
- * @returns The literal values (e.g. `["GET", "POST", ...]`)
- */
-function getSelectItems(type: ts.Type): (string | number | boolean)[] {
-    const members = type.isUnion() ? type.types : [type];
-    const items: (string | number | boolean)[] = [];
-    for (const member of members) {
-        if (member.isStringLiteral() || member.isNumberLiteral()) {
-            items.push(member.value);
-        } else if ((member as { intrinsicName?: string }).intrinsicName === "true") {
-            items.push(true);
-        } else if ((member as { intrinsicName?: string }).intrinsicName === "false") {
-            items.push(false);
-        }
-    }
-    return items;
 }
 
 /**
