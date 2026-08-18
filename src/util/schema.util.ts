@@ -133,6 +133,24 @@ export interface ListFileInput extends Input {
 }
 
 /**
+ * Represents a list of select inputs.
+ * Emitted for any array/list whose element is a select type (a primitive
+ * literal union or a single string/number literal — e.g. `LIST<HTTP_METHOD>`,
+ * `('GET' | 'POST')[]`) so the UI can render a dedicated multi-select instead
+ * of the generic list of individual select inputs its underlying type would
+ * otherwise produce.
+ */
+export interface ListSelectInput extends Input {
+    input?: "list-select";
+    /**
+     * The literal values the array's elements may take, in declaration order
+     * (e.g. `LIST<HTTP_METHOD>` → `["GET", "POST", "PUT", ...]`). Mirrors the
+     * options a single {@link PrimitiveInput} select would offer for the element.
+     */
+    items?: (string | number | boolean)[];
+}
+
+/**
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
@@ -176,6 +194,7 @@ export type Schema =
     | ColorInput
     | FileInput
     | ListFileInput
+    | ListSelectInput
     | DataInput
     | ListInput
     | TypeInput
@@ -335,7 +354,8 @@ export const getSchema = (
     // Check primitive literal union first (e.g., "a" | "b" | "c") or a single
     // string/number literal (e.g., "GET"). A bare literal has only one allowed
     // value, so it should still surface as a select rather than a free-form text/number input.
-    if (isPrimitiveLiteralUnion(parameterType) || isStringOrNumberLiteral(parameterType)) {
+    // (Boolean has already been handled above; see isSelectType.)
+    if (isSelectType(parameterType)) {
         return {input: "select", type, ...combinedSuggestions};
     }
     if (isNumber(parameterType)) {
@@ -362,6 +382,15 @@ export const getSchema = (
         if (itemTypes.length === 1 && isFileType(checker, itemTypes[0])) {
             const mimetype = getFileMimetype(checker, itemTypes[0]);
             return {input: "list-file", type, mimetype, ...combinedSuggestions};
+        }
+
+        // A list of a select type (LIST<HTTP_METHOD>, ('GET' | 'POST')[], ...)
+        // surfaces a dedicated multi-select carrying the element's allowed
+        // literal values in `items`, instead of a generic list of individual
+        // select inputs. The suggestions stay the ones computed for the array.
+        if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
+            const items = getSelectItems(itemTypes[0]);
+            return {input: "list-select", type, items, ...combinedSuggestions};
         }
 
         const itemSchemas = itemTypes.flatMap(itemType => {
@@ -819,6 +848,49 @@ function isStringOrNumberLiteral(type: ts.Type): boolean {
         (type.flags & ts.TypeFlags.StringLiteral) !== 0 ||
         (type.flags & ts.TypeFlags.NumberLiteral) !== 0
     );
+}
+
+/**
+ * Checks whether a type surfaces as a select input.
+ *
+ * A select is a primitive literal union (e.g. `"a" | "b" | "c"`) or a single
+ * string/number literal (e.g. `"GET"`). Boolean is excluded so that `true` /
+ * `boolean` continue to render as a boolean input — mirroring the ordering in
+ * {@link getSchema}, where the boolean check runs first. Used both for the
+ * plain select input and to detect a {@link ListSelectInput} element.
+ *
+ * @param type - The type to check
+ * @returns True if the type surfaces as a select
+ */
+function isSelectType(type: ts.Type): boolean {
+    if (isBoolean(type)) return false;
+    return isPrimitiveLiteralUnion(type) || isStringOrNumberLiteral(type);
+}
+
+/**
+ * Extracts the literal values a select type may take, in declaration order.
+ *
+ * Reads the constituent literals directly off the type (a union yields each of
+ * its members; a bare literal yields itself). Only reached for types that
+ * {@link isSelectType} already accepted, so every relevant member is a
+ * string/number/boolean literal.
+ *
+ * @param type - The select type to read the values from
+ * @returns The literal values (e.g. `["GET", "POST", ...]`)
+ */
+function getSelectItems(type: ts.Type): (string | number | boolean)[] {
+    const members = type.isUnion() ? type.types : [type];
+    const items: (string | number | boolean)[] = [];
+    for (const member of members) {
+        if (member.isStringLiteral() || member.isNumberLiteral()) {
+            items.push(member.value);
+        } else if ((member as { intrinsicName?: string }).intrinsicName === "true") {
+            items.push(true);
+        } else if ((member as { intrinsicName?: string }).intrinsicName === "false") {
+            items.push(false);
+        }
+    }
+    return items;
 }
 
 /**
