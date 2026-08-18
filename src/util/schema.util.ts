@@ -151,6 +151,39 @@ export interface ListSelectInput extends Input {
 }
 
 /**
+ * Represents a list of boolean inputs.
+ * Emitted for any array/list of plain booleans (e.g. `LIST<BOOLEAN>`,
+ * `boolean[]`) so the UI can render a dedicated multi-boolean input instead of
+ * the generic list of individual boolean inputs its underlying type would
+ * otherwise produce. Carries no additional properties.
+ */
+export interface ListBooleanInput extends Input {
+    input?: "list-boolean";
+}
+
+/**
+ * Represents a list of number inputs.
+ * Emitted for any array/list of plain numbers (e.g. `LIST<NUMBER>`, `number[]`)
+ * so the UI can render a dedicated multi-number input instead of the generic
+ * list of individual number inputs its underlying type would otherwise produce.
+ * Carries no additional properties.
+ */
+export interface ListNumberInput extends Input {
+    input?: "list-number";
+}
+
+/**
+ * Represents a list of text inputs.
+ * Emitted for any array/list of plain strings (e.g. `LIST<TEXT>`, `string[]`)
+ * so the UI can render a dedicated multi-text input instead of the generic list
+ * of individual text inputs its underlying type would otherwise produce. Carries
+ * no additional properties.
+ */
+export interface ListTextInput extends Input {
+    input?: "list-text";
+}
+
+/**
  * Represents a data object input type with structured properties.
  * Includes property definitions and required field tracking.
  */
@@ -195,6 +228,9 @@ export type Schema =
     | FileInput
     | ListFileInput
     | ListSelectInput
+    | ListBooleanInput
+    | ListNumberInput
+    | ListTextInput
     | DataInput
     | ListInput
     | TypeInput
@@ -391,6 +427,20 @@ export const getSchema = (
         if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
             const items = getSelectItems(itemTypes[0]);
             return {input: "list-select", type, items, ...combinedSuggestions};
+        }
+
+        // A homogeneous list of a plain primitive surfaces a dedicated
+        // multi-<primitive> input instead of a generic list of individual
+        // primitive inputs. Ordering mirrors the top-level primitive checks:
+        // boolean first, then number, then string — and select literals have
+        // already been handled above. Custom-input elements (DATE → date,
+        // COLOR → color, FILE → file) are structurally intersection/object types
+        // that fail these checks, so they keep their per-item schema below.
+        if (itemTypes.length === 1) {
+            const element = itemTypes[0];
+            if (isBoolean(element)) return {input: "list-boolean", type, ...combinedSuggestions};
+            if (isNumber(element)) return {input: "list-number", type, ...combinedSuggestions};
+            if (isString(element)) return {input: "list-text", type, ...combinedSuggestions};
         }
 
         const itemSchemas = itemTypes.flatMap(itemType => {

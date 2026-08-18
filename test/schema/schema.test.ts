@@ -1672,13 +1672,11 @@ describe("Schema", () => {
             });
         });
 
-        it("does not promote a list of booleans to a list-select", () => {
-            const list = getTypeSchema("LIST<boolean>", DATA_TYPES) as any;
-            expect(list.input).toBe("list");
-            expect(list.items).toEqual([
-                {input: "boolean", type: "false"},
-                {input: "boolean", type: "true"},
-            ]);
+        it("promotes a list of booleans to list-boolean, not list-select", () => {
+            expect(getTypeSchema("LIST<boolean>", DATA_TYPES)).toEqual({
+                input: "list-boolean",
+                type: "boolean[]",
+            });
         });
 
         // A synthetic function whose parameters/return are a concrete
@@ -1785,6 +1783,70 @@ describe("Schema", () => {
                 "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD",
             ]);
             expect(first.schema.suggestions).toBeUndefined();
+        });
+    });
+
+    describe("list-boolean / list-number / list-text inputs", () => {
+        // A homogeneous list of a plain primitive surfaces a dedicated
+        // multi-<primitive> input. Unlike list-select these carry no `items` and
+        // no extra properties — just input + type (+ suggestions when any).
+        it("resolves LIST<BOOLEAN> to list-boolean", () => {
+            expect(getTypeSchema("LIST<BOOLEAN>", DATA_TYPES)).toEqual({
+                input: "list-boolean",
+                type: "boolean[]",
+            });
+        });
+
+        it("resolves LIST<NUMBER> to list-number", () => {
+            expect(getTypeSchema("LIST<NUMBER>", DATA_TYPES)).toEqual({
+                input: "list-number",
+                type: "number[]",
+            });
+        });
+
+        it("resolves the number[] array form to list-number", () => {
+            expect(getTypeSchema("number[]", DATA_TYPES)).toEqual({
+                input: "list-number",
+                type: "number[]",
+            });
+        });
+
+        it("resolves LIST<TEXT> to list-text", () => {
+            expect(getTypeSchema("LIST<TEXT>", DATA_TYPES)).toEqual({
+                input: "list-text",
+                type: "string[]",
+            });
+        });
+
+        it("resolves the primitive list inputs when nested in an object", () => {
+            const object = getTypeSchema(
+                "{ tags: LIST<TEXT>, counts: LIST<NUMBER>, flags: LIST<BOOLEAN> }",
+                DATA_TYPES,
+            ) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties).toEqual({
+                tags: {input: "list-text", type: "string[]"},
+                counts: {input: "list-number", type: "number[]"},
+                flags: {input: "list-boolean", type: "boolean[]"},
+            });
+        });
+
+        it("only promotes the inner list of LIST<LIST<TEXT>>, outer stays a generic list", () => {
+            const outer = getTypeSchema("LIST<LIST<TEXT>>", DATA_TYPES) as any;
+            expect(outer.input).toBe("list");
+            expect(outer.items).toEqual([{input: "list-text", type: "string[]"}]);
+        });
+
+        // Custom-input elements must not be swallowed by the primitive promotion:
+        // DATE (number underneath) and COLOR (object) keep their per-item schema.
+        it("does not promote LIST<DATE> or LIST<COLOR> to a primitive list input", () => {
+            const dateList = getTypeSchema("LIST<DATE>", DATA_TYPES) as any;
+            expect(dateList.input).toBe("list");
+            expect(dateList.items[0].input).toBe("date");
+
+            const colorList = getTypeSchema("LIST<COLOR>", DATA_TYPES) as any;
+            expect(colorList.input).toBe("list");
+            expect(colorList.items[0].input).toBe("color");
         });
     });
 
