@@ -6,7 +6,8 @@ import {
     NodeFunction,
     SubFlowValue,
     NodeParameter,
-    ReferenceValue, Maybe
+    ReferenceValue, Maybe,
+    InlineReferenceValue
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
@@ -161,6 +162,75 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
 export const sanitizeId = (id: string) => id?.replace(/[^a-zA-Z0-9]/g, '_');
 
 /**
+ * Escapes text for safe inclusion inside a template literal, neutralising
+ * backslashes, backticks and any literal `${` that is not a resolved reference.
+ */
+const escapeTemplateText = (text: string): string =>
+    text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+
+/**
+ * Emits a string leaf of a literal value. If the string contains `${signature}`
+ * tokens that match known inline references, it is emitted as a template literal
+ * with those tokens spliced as the referenced expressions; unknown tokens are
+ * preserved literally. Strings without any known reference are emitted as plain
+ * JSON string literals, identical to the prior behaviour.
+ */
+const emitStringLeaf = (value: string, refExpr: Map<string, string>): string => {
+    // Whole-string standalone reference: the leaf is exactly `${signature}` with
+    // no surrounding text. Emit the raw referenced expression so its actual type
+    // is preserved (a NUMBER reference stays a NUMBER rather than being coerced
+    // to string). This matters for references sitting directly on an array
+    // element or object value, e.g. `[1, "${x}", 3]` or `{count: "${x}"}`.
+    const standalone = value.match(/^\$\{([^}]+)\}$/);
+    if (standalone && refExpr.has(standalone[1])) {
+        return refExpr.get(standalone[1])!;
+    }
+
+    const tokenRe = /\$\{([^}]+)\}/g;
+
+    let hasKnown = false;
+    for (const match of value.matchAll(tokenRe)) {
+        if (refExpr.has(match[1])) {
+            hasKnown = true;
+            break;
+        }
+    }
+    if (!hasKnown) return stringify(value) ?? '""';
+
+    let result = "";
+    let last = 0;
+    for (const match of value.matchAll(tokenRe)) {
+        const [full, signature] = match;
+        const start = match.index!;
+        result += escapeTemplateText(value.slice(last, start));
+        result += refExpr.has(signature)
+            ? "${" + refExpr.get(signature) + "}"
+            : escapeTemplateText(full);
+        last = start + full.length;
+    }
+    result += escapeTemplateText(value.slice(last));
+    return "`" + result + "`";
+};
+
+/**
+ * Recursively emits a literal JSON value as a TypeScript expression, splicing
+ * inline references into string leaves. Non-string primitives keep their
+ * lossless-JSON representation so number precision is preserved.
+ */
+const emitLiteralNode = (value: unknown, refExpr: Map<string, string>): string => {
+    if (typeof value === "string") return emitStringLeaf(value, refExpr);
+    if (Array.isArray(value)) {
+        return `[${value.map(item => emitLiteralNode(item, refExpr)).join(", ")}]`;
+    }
+    if (value !== null && typeof value === "object") {
+        const entries = Object.entries(value as Record<string, unknown>)
+            .map(([key, val]) => `${stringify(key)}: ${emitLiteralNode(val, refExpr)}`);
+        return `{${entries.join(", ")}}`;
+    }
+    return stringify(value) ?? "undefined";
+};
+
+/**
  * Generates TypeScript source code for a flow, suitable for validation and type inference.
  */
 export function generateFlowSourceCode(
@@ -173,6 +243,87 @@ export function generateFlowSourceCode(
     const nodes = flow?.nodes?.nodes || [];
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
     const visited = new Set<NodeFunction['id']>();
+
+    // Emits the TypeScript expression for a reference value (without the leading
+    // `@pos` marker). A reference may be nullable (`string | null`) or reach
+    // through optional properties (an optional chain like `node_X?.text`). When
+    // `assertNonNullReferences` is set (inference/schema), the nullish part is
+    // waived with a `!` so the base type flows cleanly. During validation it is
+    // left in place so a possibly-null reference feeding a non-null parameter
+    // surfaces a diagnostic — which is then downgraded to a warning rather than
+    // being silently erased. Base type mismatches still fail validation in both
+    // modes. Reused both for top-level parameters and for inline references
+    // spliced into literal values.
+    const renderReference = (ref: ReferenceValue): string => {
+        let refCode = typeof ref.inputIndex === "number"
+            ? `p_${sanitizeId(ref.nodeFunctionId ?? "undefined")}_${ref.parameterIndex}[${ref.inputIndex}]`
+            : ref.nodeFunctionId ? `node_${sanitizeId(ref.nodeFunctionId)}` : `flow_${sanitizeId(flow?.id ?? "undefined")}`;
+        ref.referencePath?.forEach(pathObj => {
+            refCode += `?.${pathObj.path}`;
+        });
+        const nonNull = assertNonNullReferences ? "!" : "";
+        return `(${refCode})${nonNull}`;
+    };
+
+    // Emits the TypeScript expression for a sub-flow value (without the leading
+    // `@pos` marker). A sub-flow that directly maps an existing function emits
+    // that function reference so its signature drives the sub-flow's I/O;
+    // otherwise a lambda wrapping the sub-tree is generated. The lambda parameter
+    // name deliberately stays `p_${id}_${index}` (the parent node/param slot):
+    // references to the sub-flow's own inputs resolve through that exact name
+    // (see `renderReference`). Multiple sub-flows spliced into the same literal
+    // (e.g. an array) are sibling expressions in separate function scopes, so an
+    // identical parameter name across them does not collide.
+    const renderSubFlow = (
+        wrapper: SubFlowValue,
+        id: NodeFunction['id'] | FunctionDefinition['identifier'],
+        index: number,
+        indent: string
+    ): string => {
+        if (!wrapper.startingNodeId && wrapper.functionDefinition?.identifier) {
+            return `fn_${wrapper.functionDefinition.identifier.replace(/::/g, '_')}`;
+        }
+        const lambdaArgName = `p_${sanitizeId(id as string)}_${index}`;
+        const subTreeCode = generateNodeCode(wrapper.startingNodeId || wrapper.functionDefinition?.id!, indent + "    ");
+        return `(...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
+    };
+
+    // Emits the TypeScript expression for a literal value. When the literal
+    // carries inline references (addressable via `${signature}` inside its
+    // string leaves), each occurrence is spliced with the generated expression
+    // of the referenced value so the value is type-checked. A string leaf that
+    // consists solely of a single `${signature}` preserves the referenced type
+    // verbatim (a NUMBER reference stays a NUMBER); a leaf with surrounding text
+    // or multiple tokens becomes a template literal (a string). References are
+    // resolved recursively through nested literals, arrays and objects. Without
+    // references, the original lossless-JSON stringification is preserved.
+    const renderLiteral = (
+        value: unknown,
+        references: Maybe<InlineReferenceValue[]> | undefined,
+        ctx: { id: NodeFunction['id'] | FunctionDefinition['identifier']; index: number; indent: string }
+    ): string | undefined => {
+        if (value === null || value === undefined) return undefined;
+
+        const refExpr = new Map<string, string>();
+        for (const r of references ?? []) {
+            if (!r?.signature) continue;
+            const inner = r.value;
+            if (inner?.__typename === "ReferenceValue") {
+                refExpr.set(r.signature, renderReference(inner as ReferenceValue));
+            } else if (inner?.__typename === "LiteralValue") {
+                const nested = renderLiteral(inner.value, inner.references, ctx);
+                if (nested !== undefined) refExpr.set(r.signature, nested);
+            } else if (inner?.__typename === "SubFlowValue") {
+                refExpr.set(r.signature, renderSubFlow(inner as SubFlowValue, ctx.id, ctx.index, ctx.indent));
+            }
+        }
+
+        // No resolvable inline references: keep the exact prior behaviour so
+        // existing generated code (and number precision) is unchanged.
+        if (refExpr.size === 0) return stringify(value);
+
+        return emitLiteralNode(value, refExpr);
+    };
 
     const generateNodeCode = (id: NodeFunction['id'] | FunctionDefinition['identifier'], indent: string = ""): string => {
         const node = nodes.find(n => n?.id === id);
@@ -187,41 +338,19 @@ export function generateFlowSourceCode(
             const val = p.value;
             if (!val) return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
             if (val.__typename === "ReferenceValue") {
-                const ref = val as ReferenceValue;
-                let refCode = typeof ref.inputIndex === "number"
-                    ? `p_${sanitizeId(ref.nodeFunctionId ?? "undefined")}_${ref.parameterIndex}[${ref.inputIndex}]`
-                    : ref.nodeFunctionId ? `node_${sanitizeId(ref.nodeFunctionId)}` : `flow_${sanitizeId(flow?.id ?? "undefined")}`;
-                ref.referencePath?.forEach(pathObj => {
-                    refCode += `?.${pathObj.path}`;
-                });
-                // A reference may be nullable (`string | null`) or reach through optional
-                // properties (an optional chain like `node_X?.text`). When `assertNonNullReferences`
-                // is set (inference/schema), the nullish part is waived with a `!` so the base
-                // type flows cleanly. During validation it is left in place so a possibly-null
-                // reference feeding a non-null parameter surfaces a diagnostic — which is then
-                // downgraded to a warning rather than being silently erased. Base type
-                // mismatches still fail validation in both modes.
-                const nonNull = assertNonNullReferences ? "!" : "";
-                return `/* @pos ${id} ${index} */ (${refCode})${nonNull}`;
+                return `/* @pos ${id} ${index} */ ${renderReference(val as ReferenceValue)}`;
             }
             if (val.__typename === "LiteralValue") {
-                const jsonString = val?.value !== null && val?.value !== undefined ? stringify(val?.value) : undefined
+                const jsonString = renderLiteral(val.value, val.references, {id, index, indent});
                 return `/* @pos ${id} ${index} */ ${jsonString}`;
             }
             if (val.__typename === "SubFlowValue") {
-                const wrapper = val as SubFlowValue;
                 // Direct mapping: the sub-flow *is* an existing function, with no
                 // node tree of its own (no startingNodeId). Emit the function
                 // reference itself as the value so its own signature drives the
                 // sub-flow's I/O — e.g. mapping `std::math::add` yields
                 // `(a, b) => NUMBER` rather than an empty `(...p) => {}` lambda.
-                if (!wrapper.startingNodeId && wrapper.functionDefinition?.identifier) {
-                    const funcName = `fn_${wrapper.functionDefinition.identifier.replace(/::/g, '_')}`;
-                    return `/* @pos ${id} ${index} */ ${funcName}`;
-                }
-                const lambdaArgName = `p_${sanitizeId(id as string)}_${index}`;
-                const subTreeCode = generateNodeCode(wrapper.startingNodeId || wrapper.functionDefinition?.id!, indent + "    ");
-                return `/* @pos ${id} ${index} */ (...${lambdaArgName}) => {\n${subTreeCode}${indent}}`;
+                return `/* @pos ${id} ${index} */ ${renderSubFlow(val as SubFlowValue, id, index, indent)}`;
             }
             return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
         });
