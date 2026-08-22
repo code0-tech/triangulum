@@ -20,6 +20,7 @@ import {
     ValidationFlow,
     SubFlow as TucanaSubFlow,
     SubFlowSetting as TucanaSubFlowSetting,
+    NodeValue as TucanaNodeValue,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
 
@@ -79,20 +80,34 @@ function mapNodeFunction(nodeFunction: TucanaNodeFunction): NodeFunction {
 }
 
 function mapNodeParameter(nodeParameter: TucanaNodeParameter): NodeParameter {
-    let value: NodeParameterValue = {}
-    const nodeParameterValue = nodeParameter.value?.value
+    const value = mapNodeValue(nodeParameter.value!);
 
-    if (nodeParameterValue?.oneofKind === 'literalValue') {
+    return {
+        id: gid('NodeParameter', nodeParameter.databaseId) as NodeParameter['id'],
+        value
+    }
+}
+
+function mapNodeValue(tucanaNodeValue: TucanaNodeValue): NodeParameterValue {
+    let value: NodeParameterValue = {}
+    const nodeValue = tucanaNodeValue.value
+
+    if (nodeValue?.oneofKind === 'literalValue') {
         value = {
             __typename: 'LiteralValue',
-            value: toAllowedValue(nodeParameterValue.literalValue)
+            value: toAllowedValue(nodeValue.literalValue.value!),
+            references: nodeValue.literalValue.references.map(r => ({
+                signature: r.signature,
+                value: mapNodeValue(r.value!)
+            }))
+
         };
-    } else if (nodeParameterValue?.oneofKind === 'referenceValue') {
-        const target = nodeParameterValue.referenceValue.target;
+    } else if (nodeValue?.oneofKind === 'referenceValue') {
+        const target = nodeValue.referenceValue.target;
 
         value = {
             __typename: 'ReferenceValue',
-            referencePath: nodeParameterValue.referenceValue.paths.map(p => ({
+            referencePath: nodeValue.referenceValue.paths.map(p => ({
                 __typename: 'ReferencePath',
                 path: p.path,
                 arrayIndex: Number(p.arrayIndex)
@@ -106,14 +121,11 @@ function mapNodeParameter(nodeParameter: TucanaNodeParameter): NodeParameter {
             value.parameterIndex = Number(target.inputType.parameterIndex)
             value.inputIndex = Number(target.inputType.inputIndex)
         }
-    } else if (nodeParameterValue?.oneofKind === 'subFlow') {
-        value = mapSubFlow(nodeParameterValue.subFlow);
+    } else if (nodeValue?.oneofKind === 'subFlow') {
+        value = mapSubFlow(nodeValue.subFlow);
     }
 
-    return {
-        id: gid('NodeParameter', nodeParameter.databaseId) as NodeParameter['id'],
-        value
-    }
+    return value;
 }
 
 function mapFunctionDefinition(functionDefinition: TucanaFunctionDefinition): FunctionDefinition {
@@ -141,9 +153,9 @@ function mapSubFlow(subFlow: TucanaSubFlow): SubFlowValue {
 
     if (subFlow.executionReference.oneofKind === 'startingNodeId') {
         value.startingNodeId = gid('NodeFunction', subFlow.executionReference.startingNodeId) as NodeFunction['id'];
-    } else if (subFlow.executionReference.oneofKind === 'functionIdentifier') {
+    } else if (subFlow.executionReference.oneofKind === 'function') {
         value.functionDefinition = {
-            identifier: subFlow.executionReference.functionIdentifier
+            identifier: subFlow.executionReference.function.functionIdentifier,
         } as FunctionDefinition;
     }
 

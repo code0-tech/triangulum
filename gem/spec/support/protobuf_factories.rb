@@ -13,9 +13,12 @@ module ProtobufFactories
     )
   end
 
-  def literal_value(value)
+  def literal_value(value, references = [])
     Tucana::Shared::NodeValue.new(
-      literal_value: Tucana::Shared::Value.from_ruby(value)
+      literal_value: Tucana::Shared::LiteralValue.new(
+        value: Tucana::Shared::Value.from_ruby(value),
+        references: references
+      )
     )
   end
 
