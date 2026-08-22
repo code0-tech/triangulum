@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {getFlowValidation} from '../src/validation/getFlowValidation';
-import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
+import {DataType, Flow, FunctionDefinition, InlineReferenceValue} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
 // @ts-ignore
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
 
@@ -1562,6 +1562,327 @@ describe('getFlowValidation - Integrationstest', () => {
             ]));
         });
 
+    });
+
+    describe('inline references inside literal values', () => {
+        // custom::src(): {n: NUMBER, t: TEXT} — a single source node exposing both a
+        // NUMBER (`n`) and a TEXT (`t`) via reference paths, so inline references can
+        // target either type.
+        const SRC: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9201",
+            identifier: "custom::src",
+            signature: "(): {n: NUMBER, t: TEXT}",
+        };
+        // Sinks with concrete parameter types, each returning void.
+        const SINK_TEXT: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9202",
+            identifier: "custom::sink::text",
+            signature: "(value: TEXT): void",
+        };
+        const SINK_NUMBER: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9203",
+            identifier: "custom::sink::number",
+            signature: "(value: NUMBER): void",
+        };
+        const SINK_NUMBER_LIST: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9204",
+            identifier: "custom::sink::numberList",
+            signature: "(value: LIST<NUMBER>): void",
+        };
+        const SINK_OBJ: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9205",
+            identifier: "custom::sink::obj",
+            signature: "(value: {count: NUMBER, label: TEXT}): void",
+        };
+        const SINK_COMBO: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9206",
+            identifier: "custom::sink::combo",
+            signature: "(value: {label: TEXT, counts: LIST<NUMBER>}): void",
+        };
+        const SINK_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9207",
+            identifier: "custom::sink::fn",
+            signature: "(value: (value: TEXT) => TEXT): void",
+        };
+        const SINK_FN_LIST: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9208",
+            identifier: "custom::sink::fnList",
+            signature: "(value: LIST<(value: TEXT) => TEXT>): void",
+        };
+        const SINK_LAMBDA_LIST: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9209",
+            identifier: "custom::sink::lambdaList",
+            signature: "(value: LIST<() => NUMBER>): void",
+        };
+
+        const CUSTOM_FUNCTIONS = [
+            ...FUNCTION_SIGNATURES,
+            SRC, SINK_TEXT, SINK_NUMBER, SINK_NUMBER_LIST, SINK_OBJ, SINK_COMBO, SINK_FN, SINK_FN_LIST, SINK_LAMBDA_LIST,
+        ];
+
+        const NODE1 = "gid://sagittarius/NodeFunction/1";
+
+        // A reference to `custom::src`'s NUMBER (`n`) or TEXT (`t`) property.
+        const refTo = (path: "n" | "t"): any => ({
+            __typename: "ReferenceValue",
+            nodeFunctionId: NODE1,
+            referencePath: [{path}],
+        });
+        const inlineRef = (signature: string, value: any): InlineReferenceValue => ({
+            __typename: "InlineReferenceValue",
+            signature,
+            value,
+        });
+
+        // node1 = custom::src, node2 = `sink` consuming a single literal argument
+        // that carries the given inline references.
+        const buildFlow = (sink: string, literal: unknown, references: InlineReferenceValue[]): Flow => ({
+            startingNodeId: NODE1,
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: NODE1,
+                        functionDefinition: {identifier: "custom::src"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {nodes: []},
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: sink},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: literal, references}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        const validate = (sink: string, literal: unknown, references: InlineReferenceValue[]) =>
+            getFlowValidation(buildFlow(sink, literal, references), CUSTOM_FUNCTIONS, DATA_TYPES);
+
+        const expectValid = (result: ReturnType<typeof validate>) => {
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+        };
+        const expectError = (result: ReturnType<typeof validate>) => {
+            expect(result.isValid).toBe(false);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "error",
+                }),
+            ]));
+        };
+
+        // --- LiteralValue with a ReferenceValue ---
+
+        it('standalone `${n}` preserves the NUMBER type into a NUMBER parameter', () => {
+            expectValid(validate("custom::sink::number", "${n}", [inlineRef("n", refTo("n"))]));
+        });
+
+        it('standalone `${n}` stays a NUMBER and is rejected by a TEXT parameter', () => {
+            // Regression guard: a standalone reference must NOT be coerced to string.
+            expectError(validate("custom::sink::text", "${n}", [inlineRef("n", refTo("n"))]));
+        });
+
+        it('interpolated `"Hi ${t}"` becomes a string and satisfies TEXT', () => {
+            expectValid(validate("custom::sink::text", "Hi ${t}", [inlineRef("t", refTo("t"))]));
+        });
+
+        it('interpolating a NUMBER into surrounding text yields a (valid) TEXT string', () => {
+            expectValid(validate("custom::sink::text", "Count: ${n}", [inlineRef("n", refTo("n"))]));
+        });
+
+        it('interpolated string is rejected by a NUMBER parameter', () => {
+            expectError(validate("custom::sink::number", "Count: ${n}", [inlineRef("n", refTo("n"))]));
+        });
+
+        // --- LiteralValue arrays containing references ---
+
+        it('array with a standalone NUMBER reference is a valid LIST<NUMBER>', () => {
+            expectValid(validate("custom::sink::numberList", [1, "${n}", 3], [inlineRef("n", refTo("n"))]));
+        });
+
+        it('array element referencing TEXT breaks LIST<NUMBER>', () => {
+            expectError(validate("custom::sink::numberList", [1, "${t}"], [inlineRef("t", refTo("t"))]));
+        });
+
+        // --- LiteralValue objects with a reference on a key ---
+
+        it('object with references on keys matches the expected object type', () => {
+            expectValid(validate(
+                "custom::sink::obj",
+                {count: "${n}", label: "${t}"},
+                [inlineRef("n", refTo("n")), inlineRef("t", refTo("t"))],
+            ));
+        });
+
+        it('object with swapped reference types is rejected', () => {
+            expectError(validate(
+                "custom::sink::obj",
+                {count: "${t}", label: "${n}"},
+                [inlineRef("t", refTo("t")), inlineRef("n", refTo("n"))],
+            ));
+        });
+
+        // --- LiteralValue nested in LiteralValue ---
+
+        it('splices a nested literal (with its own reference) into surrounding text', () => {
+            // outer `"greeting: ${mid}"` where mid resolves to the literal
+            // `"hi ${deep}"` which itself references TEXT — a string throughout.
+            expectValid(validate(
+                "custom::sink::text",
+                "greeting: ${mid}",
+                [inlineRef("mid", {
+                    __typename: "LiteralValue",
+                    value: "hi ${deep}",
+                    references: [inlineRef("deep", refTo("t"))],
+                })],
+            ));
+        });
+
+        it('standalone nested numeric literal preserves NUMBER', () => {
+            // `"${mid}"` resolves to the plain numeric literal 42 — kept as a number.
+            expectValid(validate(
+                "custom::sink::number",
+                "${mid}",
+                [inlineRef("mid", {__typename: "LiteralValue", value: 42})],
+            ));
+        });
+
+        // --- LiteralValue with a SubFlowValue ---
+
+        it('splices a direct-mapping sub-flow reference as a function value', () => {
+            // The inline reference is a sub-flow directly mapping std::text::capitalize
+            // `(value: TEXT): TEXT`; standalone `${fn}` yields that function reference,
+            // which satisfies the `(value: TEXT) => TEXT` parameter.
+            expectValid(validate(
+                "custom::sink::fn",
+                "${fn}",
+                [inlineRef("fn", {
+                    __typename: "SubFlowValue",
+                    functionDefinition: {identifier: "std::text::capitalize"},
+                })],
+            ));
+        });
+
+        it('splices an array of sub-flow references as a LIST of functions', () => {
+            // Two distinct sub-flows (capitalize, lowercase), each `(value: TEXT): TEXT`,
+            // sit in an array — the standalone `${fnN}` elements become function
+            // references, forming a valid LIST<(value: TEXT) => TEXT>.
+            expectValid(validate(
+                "custom::sink::fnList",
+                ["${fn1}", "${fn2}"],
+                [
+                    inlineRef("fn1", {
+                        __typename: "SubFlowValue",
+                        functionDefinition: {identifier: "std::text::capitalize"},
+                    }),
+                    inlineRef("fn2", {
+                        __typename: "SubFlowValue",
+                        functionDefinition: {identifier: "std::text::lowercase"},
+                    }),
+                ],
+            ));
+        });
+
+        it('generates distinct lambdas for an array of sub-tree sub-flows', () => {
+            // Two sub-flows with their own node trees (each returns a NUMBER literal)
+            // are spliced into an array. Both lambdas share the `p_..._0` parameter
+            // name but live in separate scopes, so the LIST<() => NUMBER> is valid.
+            const flow: Flow = {
+                startingNodeId: NODE1,
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: NODE1,
+                            functionDefinition: {identifier: "custom::src"},
+                            nextNodeId: "gid://sagittarius/NodeFunction/2",
+                            parameters: {nodes: []},
+                        },
+                        {
+                            id: "gid://sagittarius/NodeFunction/2",
+                            functionDefinition: {identifier: "custom::sink::lambdaList"},
+                            parameters: {
+                                nodes: [
+                                    {
+                                        value: {
+                                            __typename: "LiteralValue",
+                                            value: ["${s1}", "${s2}"],
+                                            references: [
+                                                inlineRef("s1", {
+                                                    __typename: "SubFlowValue",
+                                                    startingNodeId: "gid://sagittarius/NodeFunction/3",
+                                                }),
+                                                inlineRef("s2", {
+                                                    __typename: "SubFlowValue",
+                                                    startingNodeId: "gid://sagittarius/NodeFunction/4",
+                                                }),
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                        {
+                            id: "gid://sagittarius/NodeFunction/3",
+                            functionDefinition: {identifier: "std::control::return"},
+                            parameters: {nodes: [{value: {__typename: "LiteralValue", value: 1}}]},
+                        },
+                        {
+                            id: "gid://sagittarius/NodeFunction/4",
+                            functionDefinition: {identifier: "std::control::return"},
+                            parameters: {nodes: [{value: {__typename: "LiteralValue", value: 2}}]},
+                        },
+                    ],
+                },
+            };
+
+            expectValid(getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES));
+        });
+
+        it('rejects an array of sub-flows against a LIST<NUMBER> parameter', () => {
+            // Functions are not numbers: the array cannot satisfy LIST<NUMBER>.
+            expectError(validate(
+                "custom::sink::numberList",
+                ["${fn1}"],
+                [inlineRef("fn1", {
+                    __typename: "SubFlowValue",
+                    functionDefinition: {identifier: "std::text::capitalize"},
+                })],
+            ));
+        });
+
+        // --- Combination of everything ---
+
+        it('validates an object mixing interpolated text and an array of references', () => {
+            expectValid(validate(
+                "custom::sink::combo",
+                {label: "Hi ${t}", counts: [1, "${n}", 3]},
+                [inlineRef("t", refTo("t")), inlineRef("n", refTo("n"))],
+            ));
+        });
+
+        it('flags a type error deep inside a combined object/array literal', () => {
+            // The array element references TEXT where LIST<NUMBER> is required.
+            expectError(validate(
+                "custom::sink::combo",
+                {label: "Hi ${t}", counts: [1, "${t}"]},
+                [inlineRef("t", refTo("t"))],
+            ));
+        });
+
+        // --- Unknown / no references (regression) ---
+
+        it('leaves an unknown `${token}` as a literal string', () => {
+            // No matching inline reference: the value stays a plain string literal.
+            expectValid(validate("custom::sink::text", "${unknown}", []));
+        });
     });
 
 });
