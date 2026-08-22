@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import type {Flow, NodeFunction, NodeParameterValue} from "@code0-tech/sagittarius-graphql-types";
+import type {Flow, FunctionDefinition, NodeFunction, NodeParameterValue} from "@code0-tech/sagittarius-graphql-types";
 import {getFlowSchemas} from "../src/server";
 import type {JsonSchema, SchematizedSubFlowValue} from "../src/server";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
@@ -186,6 +186,59 @@ describe("getFlowSchemas", () => {
         // The original SubFlowValue fields are preserved.
         expect(consumer.__typename).toBe("SubFlowValue");
         expect(consumer.startingNodeId).toBe(BODY_NODE_ID);
+    });
+
+    it("resolves an inline reference inside a for_each list literal into the item schema", () => {
+        // A source node returns a NUMBER; the for_each list literal is `["${n}"]`
+        // where the standalone `${n}` reference preserves that NUMBER type. Schema
+        // generation must therefore infer the sub-flow item as a number — proving
+        // inline references flow through getFlowSchemas, not just validation.
+        const SRC_ID = "gid://sagittarius/NodeFunction/9" as NodeId;
+        const SRC_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9301",
+            identifier: "custom::src::num",
+            signature: "(): NUMBER",
+        };
+
+        const flow: Flow = {
+            id: FLOW_ID,
+            startingNodeId: SRC_ID,
+            nodes: {
+                nodes: [
+                    {
+                        id: SRC_ID,
+                        functionDefinition: {identifier: "custom::src::num"},
+                        nextNodeId: LIST_NODE_ID,
+                        parameters: {nodes: []},
+                    },
+                    node(LIST_NODE_ID, "std::list::for_each", [
+                        {
+                            __typename: "LiteralValue",
+                            value: ["${n}"],
+                            references: [
+                                {
+                                    __typename: "InlineReferenceValue",
+                                    signature: "n",
+                                    value: {__typename: "ReferenceValue", nodeFunctionId: SRC_ID},
+                                },
+                            ],
+                        } as NodeParameterValue,
+                        subFlowStartingAt(BODY_NODE_ID),
+                    ]),
+                    node(BODY_NODE_ID, "std::number::add", [
+                        subFlowInputReference(LIST_NODE_ID, 1),
+                        literal(10),
+                    ]),
+                ],
+            },
+        };
+
+        const result = getFlowSchemas(flow, [...FUNCTION_SIGNATURES, SRC_FN], DATA_TYPES);
+        const consumer = subFlowValueOf(result, LIST_NODE_ID, 1);
+
+        // T resolves to NUMBER, so the callback item is a number schema.
+        expect((consumer.inputSchema?.properties?.item as JsonSchema)).toEqual({type: "number"});
+        expect(consumer.__typename).toBe("SubFlowValue");
     });
 
     it("enriches a filter predicate sub-flow with a boolean output", () => {

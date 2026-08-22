@@ -8,8 +8,8 @@ export default defineConfig({
       // "index" is browser-safe; "schemas" is server-only because it pulls in
       // ts-json-schema-generator (and transitively `fs`).
       entry: {
-        index: resolve(__dirname, 'src/index.ts'),
-        server: resolve(__dirname, 'src/server.ts')
+        index: resolve(import.meta.dirname, 'src/index.ts'),
+        server: resolve(import.meta.dirname, 'src/server.ts')
       },
       name: 'triangulum',
       // With "type": "module", .js is ESM and .cjs is CommonJS — the CJS build
