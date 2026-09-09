@@ -69,9 +69,6 @@ const createNodeFunctionIfCompatible = (
     paramType: ts.Type
 ): NodeFunction | null => {
 
-    if (func.parameters.length > 0)
-        return null;
-
     // Extract the function signature and its return type
     const signature = checker.getSignatureFromDeclaration(func);
     const returnType = checker.getReturnTypeOfSignature(signature!);
