@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
-import {getSignatureSchema, getTypeSchema, ListSubFlowInput, SubFlowInput} from "../../src";
+import {getSignatureSchema, getTypeSchema, ListSubFlowInput} from "../../src";
 import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
 
 describe("Schema", () => {
@@ -1720,7 +1720,7 @@ describe("Schema", () => {
         } as FunctionDefinition;
         const functions = [...FUNCTION_SIGNATURES, pickMethods];
 
-        it("surfaces list-select in a signature schema with only valid reference suggestions", () => {
+        it("surfaces list-select in a signature schema offering the in-scope list reference", () => {
             // node1 returns LIST<HTTP_METHOD>; node2's first parameter references it.
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
@@ -1761,22 +1761,29 @@ describe("Schema", () => {
             );
 
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
+            const items = (first.schema as any).items;
+            expect(items).toHaveLength(methodItems.length);
+            items.forEach((item: any) => expect(item.input).toBe("select"));
 
-            // The only suggestion is the in-scope reference to node1, whose
-            // return type (LIST<HTTP_METHOD>) matches the parameter. No stray
-            // single-method / cross-type suggestions leak in.
-            expect(first.schema.suggestions).toEqual([
-                {
-                    __typename: "ReferenceValue",
-                    nodeFunctionId: "gid://sagittarius/NodeFunction/1",
-                },
-            ]);
+            // The in-scope reference to node1 (return type LIST<HTTP_METHOD>) is
+            // offered for the whole list. Compatible function nodes may also be
+            // suggested alongside it.
+            expect(first.schema.suggestions).toEqual(
+                expect.arrayContaining([
+                    {
+                        __typename: "ReferenceValue",
+                        nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+                    },
+                ]),
+            );
         });
 
-        it("keeps the full items and stays a list-select when a value is provided", () => {
-            // A provided literal array must not collapse the options to just the
-            // supplied values — the function-declared type stays the source of truth.
+        it("renders one item per provided value, each a select carrying the full options", () => {
+            // A provided literal array is value-driven: `items` has exactly one
+            // entry per entered value (like an object's properties). Each item
+            // keeps the declared element kind (select) and carries the full set
+            // of options as suggestions; its `type` is the concrete value's base
+            // type (string). The list kind still comes from the declared type.
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
@@ -1804,9 +1811,21 @@ describe("Schema", () => {
                 "gid://sagittarius/NodeFunction/1",
             );
 
+            const methodOptions = methodItems.map((item) => ({
+                __typename: "LiteralValue",
+                value: JSON.parse(item.type),
+            }));
+
             expect(first.schema.input).toBe("list-select");
-            expect((first.schema as any).items).toEqual(methodItemsWithSuggestions);
-            expect(first.schema.suggestions).toBeUndefined();
+            const items = (first.schema as any).items;
+            expect(items).toHaveLength(2);
+            items.forEach((item: any) => {
+                expect(item.input).toBe("select");
+                expect(item.type).toBe("string");
+                // Each item carries the full method options; compatible function
+                // nodes may be suggested alongside them.
+                expect(item.suggestions).toEqual(expect.arrayContaining(methodOptions));
+            });
         });
     });
 
@@ -2047,6 +2066,241 @@ describe("Schema", () => {
             // The nested-object branch of `flexible` has a string key `deep`. It
             // should be reachable as `node1.flexible.deep` for the string parameter.
             expect(hasReferencePath(suggestions, ["flexible", "deep"])).toBe(true);
+        });
+    });
+
+    describe("generic slot suggestion stability", () => {
+        // A position the declared type leaves unconstrained (an element of
+        // `LIST<T>`, a property of `OBJECT<T>`, and everything nested under them)
+        // accepts anything. So the concrete value entered there drives the *shape*
+        // (number/text/boolean, how many items/keys) but must never change the
+        // *suggestions*: every such position offers the same constant "accepts
+        // anything" set, no matter whether — or what kind of — value is present.
+
+        // Navigate a schema by a path of property names and numeric item indices.
+        const at = (schema: any, path: (string | number)[]): any =>
+            path.reduce((s, step) => {
+                if (typeof step === "number") return s.items[step];
+                const prop = s.properties[step];
+                return Array.isArray(prop) ? prop[0] : prop;
+            }, schema);
+
+        const sortedSuggestions = (schema: any): string[] =>
+            ((schema.suggestions ?? []) as any[]).map((s) => JSON.stringify(s)).sort();
+
+        // std::object::get<T, K extends keyof T>(object: OBJECT<T>, key: K): T[K]
+        // → parameter 0 is the fully generic OBJECT<T>.
+        const objectGetFlow = (objectValue: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::object::get"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: objectValue}},
+                                {value: null},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        // std::list::filter<T>(list: LIST<T>, predicate: PREDICATE<T>): LIST<T>
+        // → parameter 0 is the fully generic LIST<T>.
+        const listFilterFlow = (listValue: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::list::filter"},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: listValue}},
+                                {value: null},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        const firstParam = (flow: Flow): any =>
+            getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[0].schema;
+
+        it("gives an OBJECT<T> property leaf the same suggestions for any value kind", () => {
+            const forValue = (v: any) =>
+                sortedSuggestions(at(firstParam(objectGetFlow({k: v})), ["k"]));
+
+            const numberSet = forValue(1);
+            const stringSet = forValue("x");
+            const booleanSet = forValue(true);
+
+            expect(numberSet.length).toBeGreaterThan(0);
+            expect(stringSet).toEqual(numberSet);
+            expect(booleanSet).toEqual(numberSet);
+        });
+
+        it("drives an OBJECT<T> property leaf's shape by the value while keeping suggestions constant", () => {
+            const numberLeaf = at(firstParam(objectGetFlow({k: 1})), ["k"]);
+            const stringLeaf = at(firstParam(objectGetFlow({k: "x"})), ["k"]);
+
+            // Shape follows the value...
+            expect(numberLeaf.input).toBe("number");
+            expect(stringLeaf.input).toBe("text");
+
+            // ...but the suggestions do not.
+            expect(sortedSuggestions(stringLeaf)).toEqual(sortedSuggestions(numberLeaf));
+        });
+
+        it("gives a LIST<T> item the same suggestions for any value kind", () => {
+            const forValue = (v: any) =>
+                sortedSuggestions(at(firstParam(listFilterFlow([v])), [0]));
+
+            const numberSet = forValue(1);
+            const stringSet = forValue("x");
+            const booleanSet = forValue(true);
+
+            expect(numberSet.length).toBeGreaterThan(0);
+            expect(stringSet).toEqual(numberSet);
+            expect(booleanSet).toEqual(numberSet);
+        });
+
+        it("keeps a deeply nested leaf (object → list → object → primitive) value-independent", () => {
+            // Everything below the generic OBJECT<T> is unconstrained, so the leaf
+            // `a[0].b` offers the same set whether it holds a number or a string.
+            const numberLeaf = at(firstParam(objectGetFlow({a: [{b: 1}]})), ["a", 0, "b"]);
+            const stringLeaf = at(firstParam(objectGetFlow({a: [{b: "s"}]})), ["a", 0, "b"]);
+
+            expect(numberLeaf.input).toBe("number");
+            expect(stringLeaf.input).toBe("text");
+
+            const numberSet = sortedSuggestions(numberLeaf);
+            expect(numberSet.length).toBeGreaterThan(0);
+            expect(sortedSuggestions(stringLeaf)).toEqual(numberSet);
+        });
+
+        it("offers the full generic set at a leaf — broader than the enclosing container's own suggestions", () => {
+            // The OBJECT<T> slot itself only accepts object-producing candidates,
+            // but a leaf under it accepts anything, so the leaf's set is a strict
+            // superset of the container's — and both stay stable across values.
+            const container = firstParam(objectGetFlow({k: 1}));
+            const leaf = at(container, ["k"]);
+
+            const containerSet = new Set(sortedSuggestions(container));
+            const leafSet = new Set(sortedSuggestions(leaf));
+
+            expect(containerSet.size).toBeGreaterThan(0);
+            expect(leafSet.size).toBeGreaterThan(containerSet.size);
+            for (const s of containerSet) expect(leafSet.has(s)).toBe(true);
+        });
+
+        it("keeps a constrained generic parameter (key: K extends keyof T) scoped, not widened to `any`", () => {
+            // Regression guard. object::get's second parameter is `K extends
+            // keyof T`. Its function schema resolves to `generic` (keyof T with a
+            // free T), but — unlike a nested leaf — its suggestions were already
+            // scoped to the constraint at the parameter root. It must NOT be
+            // widened to the unconstrained `any` set: a BOOLEAN-returning function
+            // is not a valid key.
+            const identifiers = (schema: any) =>
+                new Set(
+                    ((schema.suggestions ?? []) as any[]).map(
+                        (s) => s.functionDefinition?.identifier ?? s.__typename,
+                    ),
+                );
+
+            const keyParam = getSignatureSchema(
+                objectGetFlow({test2: null, test3: 1}),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[1].schema;
+            const keySet = identifiers(keyParam);
+
+            // std::boolean::negate returns BOOLEAN → not assignable to keyof T →
+            // must be absent from the key slot...
+            expect(keySet.has("std::boolean::negate")).toBe(false);
+
+            // ...but present in the unconstrained set a nested generic leaf gets.
+            const leafSet = identifiers(at(firstParam(objectGetFlow({k: 1})), ["k"]));
+            expect(leafSet.has("std::boolean::negate")).toBe(true);
+
+            // The constrained key slot stays strictly narrower than the leaf.
+            expect(keySet.size).toBeLessThan(leafSet.size);
+        });
+
+        it("keeps a concrete deeply-nested typed OBJECT scoped per field, not flattened to `any`", () => {
+            // The complement of the generic case: when the declared type IS a
+            // concrete nested object, every field is present on both the function
+            // and node side, so the pairwise merge keeps each level scoped to its
+            // declared type. `genericNodeSchema`/`any` must never reach in here.
+            const applyConfig = {
+                __typename: "FunctionDefinition",
+                id: "gid://sagittarius/FunctionDefinition/901",
+                identifier: "test::config::apply",
+                signature:
+                    "(config: OBJECT<{ meta: OBJECT<{ name: TEXT }>, method: HTTP_METHOD }>): void",
+            } as FunctionDefinition;
+            const functions = [...FUNCTION_SIGNATURES, applyConfig];
+
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::config::apply"},
+                            parameters: {
+                                nodes: [
+                                    {
+                                        value: {
+                                            __typename: "LiteralValue",
+                                            value: {meta: {name: "x"}, method: "GET"},
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            };
+
+            const config = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[0].schema;
+
+            // Nested TEXT field → stays a text input scoped to TEXT candidates.
+            const name = at(config, ["meta", "name"]);
+            expect(name.input).toBe("text");
+            const nameIds = new Set(
+                ((name.suggestions ?? []) as any[]).map(
+                    (s) => s.functionDefinition?.identifier ?? s.__typename,
+                ),
+            );
+            // A BOOLEAN-returning function is not assignable to TEXT → excluded,
+            // proving the field is NOT the unconstrained `any` set.
+            expect(nameIds.has("std::boolean::negate")).toBe(false);
+
+            // Nested HTTP_METHOD field → keeps its select shape.
+            const method = at(config, ["method"]);
+            expect(method.input).toBe("select");
         });
     });
 

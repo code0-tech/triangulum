@@ -1885,4 +1885,280 @@ describe('getFlowValidation - Integrationstest', () => {
         });
     });
 
+    describe('multi-type (non-nullable) union references into a plain parameter', () => {
+
+        // custom::text_or_bool(): TEXT | BOOLEAN — a reference whose value can be two
+        // (or more) genuinely different types at the same time. Neither branch is
+        // nullish; one branch (TEXT) satisfies a plain TEXT parameter, the other
+        // (BOOLEAN) does not.
+        const TEXT_OR_BOOL_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9300",
+            identifier: "custom::text_or_bool",
+            signature: "(): TEXT | BOOLEAN",
+        };
+
+        // custom::text_or_number_or_bool(): TEXT | NUMBER | BOOLEAN — three simultaneous
+        // types, only one of which (TEXT) fits a plain TEXT parameter.
+        const TEXT_NUMBER_OR_BOOL_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9301",
+            identifier: "custom::text_or_number_or_bool",
+            signature: "(): TEXT | NUMBER | BOOLEAN",
+        };
+
+        // custom::number_or_bool(): NUMBER | BOOLEAN — no branch fits a TEXT parameter,
+        // so this must stay a hard error.
+        const NUMBER_OR_BOOL_FN: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9302",
+            identifier: "custom::number_or_bool",
+            signature: "(): NUMBER | BOOLEAN",
+        };
+
+        const CUSTOM_FUNCTIONS = [
+            ...FUNCTION_SIGNATURES,
+            TEXT_OR_BOOL_FN,
+            TEXT_NUMBER_OR_BOOL_FN,
+            NUMBER_OR_BOOL_FN,
+        ];
+
+        // Builds a two-node flow: node 1 runs `firstIdentifier` (no parameters),
+        // node 2 runs std::text::split(value: TEXT, delimiter: TEXT) with `valueRef`
+        // as its `value` argument.
+        const buildFlow = (firstIdentifier: string, valueRef: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: firstIdentifier},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {nodes: []},
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: "std::text::split"},
+                        parameters: {
+                            nodes: [
+                                {value: valueRef},
+                                {value: {__typename: "LiteralValue", value: ","}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        });
+
+        it('warns (but stays valid) for a TEXT | BOOLEAN reference into a plain TEXT parameter', () => {
+            // The reference is `string | boolean`; the parameter wants `string`. TypeScript
+            // reports "Argument of type 'string | boolean' is not assignable to parameter of
+            // type 'string'." Because the TEXT branch fits, using it is a warning — the value
+            // might be a boolean at runtime, but the flow itself stays valid.
+            const flow = buildFlow("custom::text_or_bool", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
+        });
+
+        it('warns (but stays valid) for a TEXT | NUMBER | BOOLEAN reference into a plain TEXT parameter', () => {
+            // Three simultaneous types, only TEXT fits — still a warning, not an error.
+            const flow = buildFlow("custom::text_or_number_or_bool", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
+        });
+
+        it('still rejects a NUMBER | BOOLEAN reference for a plain TEXT parameter', () => {
+            // No branch of the union satisfies TEXT, so this stays a hard error.
+            const flow = buildFlow("custom::number_or_bool", {
+                __typename: "ReferenceValue",
+                nodeFunctionId: "gid://sagittarius/NodeFunction/1",
+            });
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(false);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "error",
+                }),
+            ]));
+        });
+
+    });
+
+    describe('multi-type union references in nested positions (object fields / array elements)', () => {
+
+        // custom::src_union(): {u: TEXT | BOOLEAN} — a source whose `u` property is a
+        // reference that can be two genuinely different types at the same time. Reached
+        // as `node1.u` via an inline reference.
+        const SRC_UNION: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9400",
+            identifier: "custom::src_union",
+            signature: "(): {u: TEXT | BOOLEAN}",
+        };
+        // Sinks that place the reference in a nested position: inside an object literal
+        // field and inside an array literal element. In these positions TypeScript
+        // reports the assignment as code 2322 ("Type 'string | boolean' is not
+        // assignable to type 'string'.") rather than the argument-level code 2345.
+        const SINK_OBJ: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9401",
+            identifier: "custom::sink::obj_nested",
+            signature: "(value: {count: NUMBER, label: TEXT}): void",
+        };
+        const SINK_TEXT_LIST: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9402",
+            identifier: "custom::sink::textList",
+            signature: "(value: LIST<TEXT>): void",
+        };
+        // Sinks whose nested slot is a NUMBER, which no branch of TEXT | BOOLEAN fits —
+        // these must stay hard errors.
+        const SINK_OBJ_NUMBER: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9403",
+            identifier: "custom::sink::obj_nested_number",
+            signature: "(value: {count: NUMBER}): void",
+        };
+        const SINK_NUMBER_LIST: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9404",
+            identifier: "custom::sink::numberList2",
+            signature: "(value: LIST<NUMBER>): void",
+        };
+
+        const CUSTOM_FUNCTIONS = [
+            ...FUNCTION_SIGNATURES,
+            SRC_UNION, SINK_OBJ, SINK_TEXT_LIST, SINK_OBJ_NUMBER, SINK_NUMBER_LIST,
+        ];
+
+        const NODE1 = "gid://sagittarius/NodeFunction/1";
+
+        // An inline reference to `custom::src_union`'s `u` property (TEXT | BOOLEAN).
+        // A LiteralValue field equal to exactly `${u}` becomes the bare reference
+        // expression (not a coerced template string), placing the union in the slot.
+        const inlineU: any = {
+            __typename: "InlineReferenceValue",
+            signature: "u",
+            value: {
+                __typename: "ReferenceValue",
+                nodeFunctionId: NODE1,
+                referencePath: [{path: "u"}],
+            },
+        };
+
+        // node1 = custom::src_union, node2 = `sink` consuming a single literal argument
+        // that carries the inline reference.
+        const buildFlow = (sink: string, literal: unknown): Flow => ({
+            startingNodeId: NODE1,
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: NODE1,
+                        functionDefinition: {identifier: "custom::src_union"},
+                        nextNodeId: "gid://sagittarius/NodeFunction/2",
+                        parameters: {nodes: []},
+                    },
+                    {
+                        id: "gid://sagittarius/NodeFunction/2",
+                        functionDefinition: {identifier: sink},
+                        parameters: {
+                            nodes: [
+                                {value: {__typename: "LiteralValue", value: literal, references: [inlineU]}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        } as Flow);
+
+        it('warns (but stays valid) for a TEXT | BOOLEAN reference in an object field expecting TEXT', () => {
+            const flow = buildFlow("custom::sink::obj_nested", {count: 1, label: "${u}"});
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
+        });
+
+        it('warns (but stays valid) for a TEXT | BOOLEAN reference in an array element expecting TEXT', () => {
+            const flow = buildFlow("custom::sink::textList", ["${u}"]);
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(true);
+            expect(result.diagnostics.every(d => d.severity !== "error")).toBe(true);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "warning",
+                }),
+            ]));
+        });
+
+        it('still rejects a TEXT | BOOLEAN reference in an object field expecting NUMBER', () => {
+            // Neither TEXT nor BOOLEAN fits NUMBER, so the nested mismatch stays an error.
+            const flow = buildFlow("custom::sink::obj_nested_number", {count: "${u}"});
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(false);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "error",
+                }),
+            ]));
+        });
+
+        it('still rejects a TEXT | BOOLEAN reference in an array element expecting NUMBER', () => {
+            const flow = buildFlow("custom::sink::numberList2", ["${u}"]);
+
+            const result = getFlowValidation(flow, CUSTOM_FUNCTIONS, DATA_TYPES);
+
+            expect(result.isValid).toBe(false);
+            expect(result.diagnostics).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    nodeId: "gid://sagittarius/NodeFunction/2",
+                    parameterIndex: 0,
+                    severity: "error",
+                }),
+            ]));
+        });
+
+    });
+
 });

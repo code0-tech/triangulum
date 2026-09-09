@@ -592,17 +592,140 @@ const LIST_INPUTS = new Set<string>([
     "list-sub-flow",
 ]);
 
+// The specialized list-* input kinds. These express a UI intention (render a
+// dedicated multi-<primitive>/multi-select/… control) that is only meaningful
+// when the *declared* function parameter type asks for it. A concrete node value
+// must never surface one of these — it should only contribute the concrete
+// element types. list-file is included even though it carries no `items`.
+const SPECIALIZED_LIST_INPUTS = new Set<string>([
+    "list-select",
+    "list-boolean",
+    "list-number",
+    "list-text",
+    "list-sub-flow",
+    "list-file",
+]);
+
+/**
+ * Normalizes a node-side schema so it only contributes concrete resolved types
+ * to {@link mergeSchemas}, recursing through `items` and `properties`. It:
+ *
+ * - Rewrites every specialized list-* input back to the plain `list` kind. The
+ *   specialized variants are a declared-type (function-side) concern, so a
+ *   concrete value must never surface one; the resolved element types (via
+ *   `items`) are kept, and the `list-file` `mimetype` is dropped because a plain
+ *   list has no such field.
+ * - Drops an empty `suggestions` array. Node schemas are built with suggestions
+ *   enabled and therefore always carry the key — even when empty — whereas the
+ *   rest of the pipeline omits it entirely when there are none.
+ *
+ * The function-side schema still drives the final input kind in
+ * {@link mergeSchemas}.
+ */
+export const normalizeNodeSchema = (schema: Schema): Schema => {
+    let result: Schema = schema;
+
+    const items = (schema as ListInput).items;
+    if (items) {
+        result = {...result, items: items.map(normalizeNodeSchema)} as Schema;
+    }
+
+    const properties = (schema as DataInput).properties;
+    if (properties) {
+        const mapped: Record<string, Schema | Schema[]> = {};
+        for (const [key, value] of Object.entries(properties)) {
+            mapped[key] = Array.isArray(value)
+                ? value.map(normalizeNodeSchema)
+                : normalizeNodeSchema(value);
+        }
+        result = {...result, properties: mapped} as Schema;
+    }
+
+    if (SPECIALIZED_LIST_INPUTS.has(result.input as string)) {
+        const {mimetype, ...rest} = result as ListInput & {mimetype?: string};
+        result = {...rest, input: "list"};
+    }
+
+    if (result.suggestions && result.suggestions.length === 0) {
+        const {suggestions, ...rest} = result;
+        result = rest;
+    }
+
+    return result;
+};
+
+/**
+ * Treats a node-side schema as sitting in a fully generic ("accepts anything")
+ * slot: the declared type constrains nothing here, so the value keeps its shape
+ * while a select narrowed from a single literal is demoted to its free-form
+ * primitive. Recurses through `items` and `properties` so the whole subtree is
+ * treated uniformly.
+ *
+ * Suggestions: nested positions were built value-scoped (the recursion inside
+ * {@link getSchema} drops the suggestion scope), so they are replaced with the
+ * constant `any` set. The `overrideRoot` flag controls this for the top node
+ * only: at a nested position it is `true` (the node's own suggestions are the
+ * value-narrowed subset and must be replaced); at a parameter root it is `false`
+ * (the node's suggestions were already scoped by `suggestionType`/the
+ * type-parameter constraint — e.g. `keyof T` — so they are kept). Descendants are
+ * always overridden regardless.
+ */
+export const genericNodeSchema = (
+    schema: Schema,
+    anySuggestions: Input["suggestions"] = undefined,
+    overrideRoot: boolean = true,
+): Schema => {
+    let result = demoteSelect(schema);
+
+    const items = (result as ListInput).items;
+    if (items) {
+        result = {
+            ...result,
+            items: items.map((s) => genericNodeSchema(s, anySuggestions)),
+        } as Schema;
+    }
+
+    const properties = (result as DataInput).properties;
+    if (properties) {
+        const mapped: Record<string, Schema | Schema[]> = {};
+        for (const [key, value] of Object.entries(properties)) {
+            mapped[key] = Array.isArray(value)
+                ? value.map((s) => genericNodeSchema(s, anySuggestions))
+                : genericNodeSchema(value, anySuggestions);
+        }
+        result = {...result, properties: mapped} as Schema;
+    }
+
+    if (overrideRoot) {
+        if (anySuggestions && anySuggestions.length > 0) {
+            result = {...result, suggestions: anySuggestions};
+        } else if (result.suggestions) {
+            const {suggestions, ...rest} = result;
+            result = rest;
+        }
+    }
+
+    return result;
+};
+
 export const mergeSchemas = (
     functionSchema: Schema | undefined,
     nodeSchema: Schema,
     valueProvided: boolean = false,
+    anySuggestions: Input["suggestions"] = undefined,
+    topLevel: boolean = true,
 ): Schema => {
-    if (!functionSchema) {
-        return liftGenericIfValued(demoteSelect(nodeSchema), valueProvided);
-    }
-
-    if (functionSchema.input === "generic") {
-        return liftGenericIfValued(demoteSelect(nodeSchema), valueProvided);
+    // A function-less or fully generic slot constrains nothing here: the value
+    // drives the shape, and nested levels take the constant `any` set (see
+    // genericNodeSchema), never the value-narrowed subset. The root's own
+    // suggestions are kept only at the parameter top level, where they were
+    // already scoped by the type-parameter constraint (e.g. `keyof T` for a
+    // `key: K` slot); a nested generic hit is value-scoped and gets overridden.
+    if (!functionSchema || functionSchema.input === "generic") {
+        return liftGenericIfValued(
+            genericNodeSchema(nodeSchema, anySuggestions, !topLevel),
+            valueProvided,
+        );
     }
 
     const suggestions = mergeSuggestions(
@@ -617,9 +740,7 @@ export const mergeSchemas = (
         const properties: Record<string, Schema | Schema[]> = {};
         const keys = new Set([...Object.keys(fProps), ...Object.keys(nProps)]);
         for (const key of keys) {
-            const f = fProps[key];
-            const n = nProps[key];
-            properties[key] = mergeProperty(f, n);
+            properties[key] = mergeProperty(fProps[key], nProps[key], anySuggestions);
         }
         return {
             ...functionSchema,
@@ -634,18 +755,36 @@ export const mergeSchemas = (
     // per-literal values on a list-select or the sub-flow function suggestions on
     // a LIST<CONSUMER<T>> element — survive the merge instead of being dropped in
     // favour of the suggestion-less function schema. Suggestions must never be
-    // lost, whatever the list kind. Only merges when both sides are the same list
-    // kind. (list-file carries a `mimetype`, not `items`, so it is not listed.)
+    // lost, whatever the list kind. The node-side schema is always the plain
+    // `list` kind (specialized variants are stripped via normalizeNodeSchema
+    // before merging), so it is matched by kind family — any list input
+    // contributes its items — rather than requiring an exact kind match with the
+    // function schema.
     if (LIST_INPUTS.has(functionSchema.input as string)) {
         const fItems = (functionSchema as ListInput).items ?? [];
         const nItems =
-            nodeSchema.input === functionSchema.input
+            LIST_INPUTS.has(nodeSchema.input as string)
                 ? ((nodeSchema as ListInput).items ?? [])
                 : [];
+        // A generic function element (LIST<T> → a single `{input: "generic"}`
+        // item) carries no structure, so the node's concrete element schemas win
+        // outright. Their cardinality may differ from the function's single
+        // placeholder — e.g. LIST<boolean> expands its element to `true | false`,
+        // yielding two item schemas — which is why a strict pairwise merge cannot
+        // be used here. When the function element is itself concrete (e.g.
+        // LIST<HTTP_METHOD> → one select per literal), the counts line up and the
+        // items are merged pairwise so element-level suggestions survive.
+        const fAllGeneric =
+            fItems.length > 0 && fItems.every((it) => it.input === "generic");
+        // A generic function element leaves each item unconstrained, so the
+        // node's concrete items keep their shape but take the `any` suggestion
+        // set. A concrete function element merges pairwise so its own scope wins.
         const items =
-            fItems.length === nItems.length && fItems.length > 0
-                ? fItems.map((f, i) => mergeSchemas(f, nItems[i]))
-                : fItems;
+            fAllGeneric && nItems.length > 0
+                ? nItems.map((n) => genericNodeSchema(n, anySuggestions))
+                : fItems.length === nItems.length && fItems.length > 0
+                    ? fItems.map((f, i) => mergeSchemas(f, nItems[i], false, anySuggestions, false))
+                    : fItems;
         return {
             ...functionSchema,
             items,
@@ -662,9 +801,18 @@ export const mergeSchemas = (
 const mergeProperty = (
     f: Schema | Schema[] | undefined,
     n: Schema | Schema[] | undefined,
+    anySuggestions: Input["suggestions"] = undefined,
 ): Schema | Schema[] => {
     if (f && !Array.isArray(f) && n && !Array.isArray(n)) {
-        return mergeSchemas(f, n);
+        return mergeSchemas(f, n, false, anySuggestions, false);
+    }
+    // Present only on the node side → the declared type does not constrain this
+    // property, so it lives in a generic slot: keep the shape, use `any`
+    // suggestions. Present only on the function side → keep the declared schema.
+    if (f === undefined && n !== undefined) {
+        return Array.isArray(n)
+            ? n.map((s) => genericNodeSchema(s, anySuggestions))
+            : genericNodeSchema(n, anySuggestions);
     }
     return (f ?? n)!;
 };
