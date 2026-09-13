@@ -430,28 +430,70 @@ const generateNodeSchemas = (
         // type-driven, union-expanded items a plain type analysis would produce.
         // The whole-list suggestions (references/nodes that produce a matching
         // list) are still surfaced, scoped by what the function accepts.
+        // The same value-driven cardinality holds for an object literal: each
+        // entered property mirrors a field, and any list nested inside it renders
+        // one item per entered element (see buildValueDrivenObjectSchema).
+        const functionDeclarations = Array.from(declaredFunctionsMap.values())
+        const functionSchema = functionParameterType
+            ? getSchema(
+                checker,
+                node,
+                functionParameterType,
+                functionDeclarations,
+                functions,
+                false
+            )
+            : undefined
+
+        // An object literal is only expanded value-first when the node's resolved
+        // parameter type is genuinely an object. Against a scalar slot the `{}`
+        // value is a type mismatch (or a conditional that collapsed to a scalar),
+        // so the schema must follow the resolved kind — it falls through to the
+        // merge path below and is never forced into a `data` shape. Arrays are
+        // routed by the literal alone: a list slot's cardinality always comes from
+        // the value.
+        const nodeTypeIsObject =
+            (parameterType.flags & ts.TypeFlags.Object) !== 0 &&
+            !checker.isArrayType(parameterType) &&
+            !checker.isTupleType(parameterType)
+
         const argExpr = getArgumentExpression(node, index)
-        if (argExpr && ts.isArrayLiteralExpression(argExpr)) {
-            const listSuggestions = getSchema(
+        if (
+            argExpr &&
+            (ts.isArrayLiteralExpression(argExpr) ||
+                (ts.isObjectLiteralExpression(argExpr) && nodeTypeIsObject))
+        ) {
+            const wholeSuggestions = getSchema(
                 checker,
                 node,
                 parameterType,
-                Array.from(declaredFunctionsMap.values()),
+                functionDeclarations,
                 functions,
                 true,
                 suggestionType,
             ).suggestions
             return {
-                schema: buildValueDrivenListSchema(
-                    checker,
-                    node,
-                    functionParameterType,
-                    argExpr,
-                    Array.from(declaredFunctionsMap.values()),
-                    functions,
-                    listSuggestions,
-                    anySuggestions,
-                ),
+                schema: ts.isArrayLiteralExpression(argExpr)
+                    ? buildValueDrivenListSchema(
+                        checker,
+                        node,
+                        functionParameterType,
+                        argExpr,
+                        functionDeclarations,
+                        functions,
+                        wholeSuggestions,
+                        anySuggestions,
+                    )
+                    : buildValueDrivenObjectSchema(
+                        checker,
+                        node,
+                        functionParameterType,
+                        argExpr,
+                        functionDeclarations,
+                        functions,
+                        wholeSuggestions,
+                        anySuggestions,
+                    ),
                 blockedBy: funktionDependencies
                     .filter((dep) => dep.parameterIndex === index)
                     .map((dep) => dep.dependsOnIndex),
@@ -464,21 +506,11 @@ const generateNodeSchemas = (
             checker,
             node,
             parameterType,
-            Array.from(declaredFunctionsMap.values()),
+            functionDeclarations,
             functions,
             true,
             suggestionType,
         ))
-        const functionSchema = functionParameterType
-            ? getSchema(
-                checker,
-                node,
-                functionParameterType,
-                Array.from(declaredFunctionsMap.values()),
-                functions,
-                false
-            )
-            : undefined
 
         return {
             schema: mergeSchemas(
@@ -581,6 +613,13 @@ const buildValueDrivenItem = (
         return buildValueDrivenListSchema(checker, node, funcElementType, element, functionDeclarations, functions, undefined, anySuggestions)
     }
 
+    // A nested object literal recurses into a value-driven object, so a list
+    // buried inside it (e.g. `{test: [1, 1, 1]}`) still renders one item per
+    // entered element instead of collapsing to a single element-type item.
+    if (ts.isObjectLiteralExpression(element)) {
+        return buildValueDrivenObjectSchema(checker, node, funcElementType, element, functionDeclarations, functions, undefined, anySuggestions)
+    }
+
     const funcElementSchema = funcElementType
         ? getSchema(checker, node, funcElementType, functionDeclarations, functions, true)
         : undefined
@@ -608,6 +647,90 @@ const buildValueDrivenItem = (
 
     // Structured element (object, …): keep the declared schema as-is.
     return funcElementSchema!
+}
+
+/**
+ * Builds a value-driven object (`data`) schema from an object-literal argument.
+ *
+ * `properties` has exactly one entry per entered field (like a value-driven
+ * list's `items` mirror its elements), so cardinality is preserved through every
+ * nesting level — a list nested inside the object renders one item per element
+ * instead of collapsing to its single element type. Each property's schema is
+ * built the same way a list element is (see {@link buildValueDrivenItem}): its
+ * input kind and suggestions come from the declared property type when the
+ * function declares a concrete object, and a generic slot lets the value drive
+ * the shape while carrying the constant `any` suggestions. Whole-object
+ * suggestions (references/nodes that produce a matching object) are attached when
+ * provided.
+ */
+const buildValueDrivenObjectSchema = (
+    checker: ts.TypeChecker,
+    node: ts.VariableDeclaration,
+    funcObjectType: Type | undefined,
+    objectExpr: ts.ObjectLiteralExpression,
+    functionDeclarations: ts.FunctionDeclaration[],
+    functions: FunctionDefinition[],
+    suggestions?: Schema["suggestions"],
+    anySuggestions?: Schema["suggestions"],
+): Schema => {
+    const funcSchema = funcObjectType
+        ? getSchema(checker, node, funcObjectType, functionDeclarations, functions, false)
+        : undefined
+    const isDataKind = funcSchema?.input === "data"
+
+    const properties: Record<string, Schema | Schema[]> = {}
+    const required: string[] = []
+
+    for (const property of objectExpr.properties) {
+        if (!ts.isPropertyAssignment(property)) continue
+        const key =
+            ts.isStringLiteralLike(property.name) || ts.isNumericLiteral(property.name)
+                ? property.name.text
+                : property.name.getText()
+        // Only a concrete declared object contributes a per-property type; a
+        // generic slot leaves each entered field unconstrained.
+        const funcPropertyType = isDataKind
+            ? getObjectPropertyType(checker, funcObjectType!, key)
+            : undefined
+        properties[key] = buildValueDrivenItem(
+            checker,
+            node,
+            funcPropertyType,
+            property.initializer,
+            functionDeclarations,
+            functions,
+            anySuggestions,
+        )
+        required.push(key)
+    }
+
+    return {
+        input: "data",
+        type:
+            (isDataKind ? funcSchema!.type : undefined) ??
+            checker.typeToString(checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(objectExpr))),
+        properties,
+        required,
+        ...(suggestions?.length ? {suggestions} : {}),
+    } as Schema
+}
+
+/**
+ * Resolves the declared type of a named property on an object type, or undefined
+ * when the type has no such property (e.g. a field entered in the value that the
+ * declared object does not constrain).
+ */
+const getObjectPropertyType = (
+    checker: ts.TypeChecker,
+    objectType: Type,
+    key: string,
+): Type | undefined => {
+    const symbol = checker.getPropertyOfType(objectType, key)
+    if (!symbol) return undefined
+    const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0]
+    return declaration
+        ? checker.getTypeOfSymbolAtLocation(symbol, declaration)
+        : undefined
 }
 
 // Widen a function parameter type so that suggestion collection asks "what could

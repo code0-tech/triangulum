@@ -2207,6 +2207,22 @@ describe("Schema", () => {
             for (const s of containerSet) expect(leafSet.has(s)).toBe(true);
         });
 
+        it("renders one list item per entered element for a list nested in an OBJECT<T> value", () => {
+            // "Get key of object" (std::object::get) with a literal object value
+            // {test: [1, 1, 1]}. The `object` slot is a generic OBJECT<T>, so its
+            // shape is driven by the value: the `test` property holds a list of
+            // three entered elements and must surface exactly three list items —
+            // just like a top-level array-literal argument does. TypeScript
+            // collapses [1, 1, 1] to number[] (a single element type), so a
+            // type-driven schema would produce only one item; the value cardinality
+            // must be preserved instead.
+            const schema = firstParam(objectGetFlow({test: [1, 1, 1]}));
+
+            const list = at(schema, ["test"]);
+            expect((list.input as string).startsWith("list")).toBe(true);
+            expect(list.items).toHaveLength(3);
+        });
+
         it("keeps a constrained generic parameter (key: K extends keyof T) scoped, not widened to `any`", () => {
             // Regression guard. object::get's second parameter is `K extends
             // keyof T`. Its function schema resolves to `generic` (keyof T with a
@@ -2301,6 +2317,57 @@ describe("Schema", () => {
             // Nested HTTP_METHOD field → keeps its select shape.
             const method = at(config, ["method"]);
             expect(method.input).toBe("select");
+        });
+
+        it("gives an extra field, absent from the concrete declared OBJECT, a generic input", () => {
+            // The declared type constrains only `test: TEXT`. The value carries an
+            // additional `test2` field the declared object does not mention. That
+            // field lives in an unconstrained slot, so it must surface as the
+            // generic input — the declared type says nothing about it.
+            const storeConfig = {
+                __typename: "FunctionDefinition",
+                id: "gid://sagittarius/FunctionDefinition/902",
+                identifier: "test::object::store",
+                signature: "(object: OBJECT<{ test: TEXT }>): void",
+            } as FunctionDefinition;
+            const functions = [...FUNCTION_SIGNATURES, storeConfig];
+
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier: "test::object::store"},
+                            parameters: {
+                                nodes: [
+                                    {
+                                        value: {
+                                            __typename: "LiteralValue",
+                                            value: {test: "test", test2: null},
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            };
+
+            const object = getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[0].schema;
+
+            // Declared field → stays scoped to its declared TEXT kind.
+            expect(at(object, ["test"]).input).toBe("text");
+
+            // Undeclared field → unconstrained → generic input.
+            expect(at(object, ["test2"]).input).toBe("generic");
         });
     });
 
