@@ -349,12 +349,17 @@ export const getSchema = (
     // Strip undefined and null from unions (e.g. string | undefined | null → string).
     // Suggestions are collected above from the original type (preserving aliasSymbol literals),
     // the base schema is determined from the stripped type, then both are merged.
+    // The recursion keeps the caller's `suggestions` flag so nested members of the
+    // stripped type still get their own suggestions (e.g. an optional object
+    // `OBJ | undefined` must expose the same per-property suggestions as a required
+    // `OBJ`). Only this union node's own top-level suggestions are replaced by
+    // `combinedSuggestions`, which was scoped by the original (nullable) type.
     if (parameterType.isUnion()) {
         const nonNullish = parameterType.types.filter(
             (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
         )
         if (nonNullish.length === 1) {
-            const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, false, undefined, visited, recursionCache)
+            const baseSchema = getSchema(checker, node, nonNullish[0], functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
             return {...baseSchema, type, ...combinedSuggestions}
         }
     }

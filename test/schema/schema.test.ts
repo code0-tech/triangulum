@@ -2371,4 +2371,86 @@ describe("Schema", () => {
         });
     });
 
+    // An *optional* object parameter (`embed?: OBJ`, i.e. `OBJ | undefined`) must
+    // expose the same nested-field suggestions as the same parameter declared
+    // *required* (`embed: OBJ`). Only the optionality differs; the resolved type of
+    // each nested field (e.g. `title: TEXT`) is `string` either way, so the nested
+    // suggestions must not disappear just because the top-level slot is nullable.
+    describe("optional object parameter keeps nested suggestions", () => {
+
+        // A generic two-field object: one required TEXT field, one optional TEXT
+        // field. Deliberately not a product-specific data type.
+        const DEMO_OBJECT: DataType = {
+            identifier: "DEMO_OBJECT",
+            genericKeys: [],
+            type: "{ title: TEXT; description?: TEXT }",
+        } as DataType;
+
+        // Two functions that differ *only* in the optionality of the object parameter.
+        const withOptional: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9500",
+            identifier: "custom::test::with_optional_object",
+            signature: "(embed?: DEMO_OBJECT): void",
+        } as FunctionDefinition;
+
+        const withRequired: FunctionDefinition = {
+            id: "gid://sagittarius/FunctionDefinition/9501",
+            identifier: "custom::test::with_required_object",
+            signature: "(embed: DEMO_OBJECT): void",
+        } as FunctionDefinition;
+
+        // A single node calling `identifier` with no value supplied for the object
+        // parameter, probed at that node. Returns the schema for the sole parameter.
+        const probe = (identifier: string) => {
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier},
+                            parameters: {nodes: [{value: null}]},
+                        },
+                    ],
+                },
+            };
+            return getSignatureSchema(
+                flow,
+                [...DATA_TYPES, DEMO_OBJECT],
+                [...FUNCTION_SIGNATURES, withOptional, withRequired],
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[0].schema as any;
+        };
+
+        const titleSuggestionCount = (paramSchema: any): number =>
+            (paramSchema?.properties?.title?.suggestions ?? []).length;
+
+        it("exposes suggestions on the nested `title` field when required", () => {
+            const required = probe("custom::test::with_required_object");
+
+            expect(required.input).toBe("data");
+            // Baseline: the required case works — nested `title` gets suggestions
+            // (functions returning TEXT are valid producers for that slot).
+            expect(titleSuggestionCount(required)).toBeGreaterThan(0);
+        });
+
+        it("exposes the SAME nested suggestions when optional as when required", () => {
+            const optional = probe("custom::test::with_optional_object");
+            const required = probe("custom::test::with_required_object");
+
+            // The optional slot still resolves to the object shape...
+            expect(optional.input).toBe("data");
+            expect(Object.keys(optional.properties)).toEqual(
+                Object.keys(required.properties),
+            );
+
+            // ...and its nested fields must carry the same suggestions. Optionality
+            // of the parent must not strip suggestions from the children.
+            expect(titleSuggestionCount(optional)).toBe(titleSuggestionCount(required));
+            expect(titleSuggestionCount(optional)).toBeGreaterThan(0);
+        });
+    });
+
 })
