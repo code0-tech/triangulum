@@ -4,6 +4,7 @@ import {createCompilerHost, generateFlowSourceCode, ValidationResult} from "../u
 
 // TypeScript diagnostic codes we may soften into warnings for union-branch references.
 const TS_ARGUMENT_NOT_ASSIGNABLE = 2345; // "Argument of type X is not assignable to parameter of type Y."
+const TS_TYPE_NOT_ASSIGNABLE = 2322;     // "Type X is not assignable to type Y." (nested positions: object fields, array elements)
 const TS_PROPERTY_DOES_NOT_EXIST = 2339; // "Property 'p' does not exist on type X."
 
 /**
@@ -43,11 +44,18 @@ const isSoftReferenceMismatch = (
     const node = findInnermostNode(sourceFile, diagnostic.start, diagnostic.start + diagnostic.length);
     if (!node) return false;
 
-    // Argument not assignable: the argument's type is a union and at least one of its
-    // non-nullish branches is assignable to the contextually expected parameter type.
-    // Nullish branches are excluded so that `NUMBER | null` (no assignable base branch)
-    // stays a hard error, while `TEXT | null` and `TEXT | { deep: TEXT }` soften.
-    if (diagnostic.code === TS_ARGUMENT_NOT_ASSIGNABLE && ts.isExpression(node)) {
+    // (Argument | value) not assignable: the (argument | assigned value)'s type is a
+    // union and at least one of its non-nullish branches is assignable to the
+    // contextually expected type. Nullish branches are excluded so that `NUMBER | null`
+    // (no assignable base branch) stays a hard error, while `TEXT | null` and
+    // `TEXT | { deep: TEXT }` soften. Code 2345 covers a direct call argument; code 2322
+    // covers the same mismatch in a nested position — an object-literal field or an
+    // array-literal element — where a `TEXT | BOOLEAN` reference is dropped into a plain
+    // TEXT slot. Both are references the schema engine offers as suggestions.
+    if (
+        (diagnostic.code === TS_ARGUMENT_NOT_ASSIGNABLE || diagnostic.code === TS_TYPE_NOT_ASSIGNABLE) &&
+        ts.isExpression(node)
+    ) {
         const argType = checker.getTypeAtLocation(node);
         if (!argType.isUnion()) return false;
 
