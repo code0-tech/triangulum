@@ -1374,12 +1374,10 @@ export const DATA_TYPES: DataType[] = [
         "createdAt": "2026-06-19T15:33:16Z",
         "updatedAt": "2026-06-19T15:34:59Z",
         "identifier": "TYPE",
-        "genericKeys": [
-            "T"
-        ],
-        "type": "T",
+        "genericKeys": [],
+        "type": "any",
         "definitionSource": "",
-        "version": "0.0.0",
+        "version": "0.0.37",
         "name": [
             {
                 "__typename": "Translation",
@@ -1398,7 +1396,7 @@ export const DATA_TYPES: DataType[] = [
             {
                 "__typename": "Translation",
                 "code": "en-US",
-                "content": "Type of ${T}"
+                "content": "Type"
             }
         ],
         "runtime": {
