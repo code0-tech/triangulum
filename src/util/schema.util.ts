@@ -29,6 +29,7 @@ import {getSubFlows} from "./subflows.util";
  */
 export const CUSTOM_INPUT_IDENTIFIERS = {
     DATE: "date",
+    TYPE: "type",
 } as const satisfies Record<string, string>;
 
 /** A data type identifier that maps to a custom input. */
@@ -212,15 +213,13 @@ export interface ListInput extends Input {
 }
 
 /**
- * Represents a complex type input with properties and required fields.
- * Similar to DataInput but used for type definitions.
+ * Represents a type input.
+ * Emitted for the TYPE data type so the UI can render a dedicated type picker
+ * instead of the plain input its underlying type (`any`) would otherwise
+ * produce. Like {@link DateInput}, it carries no additional properties.
  */
 export interface TypeInput extends Input {
     input?: "type";
-    /** Record mapping property names to their schemas */
-    properties?: Record<string, Schema | Schema[]>;
-    /** Array of required property names */
-    required?: string[];
 }
 
 /**
@@ -288,6 +287,11 @@ export const getSchema = (
     suggestionType?: ts.Type,
     visited: Set<ts.Type> = new Set(),
     recursionCache: Map<ts.Type, boolean> = new Map(),
+    // The type this schema node is declared as, tracked alongside the concrete
+    // `parameterType` when they differ because of generic instantiation. Only the
+    // declared type still carries a type parameter's constraint (e.g. a REST
+    // trigger's `<T extends TYPE>` payload), which the instantiated type has lost.
+    declaredType?: ts.Type,
 ): Schema => {
 
     if ((parameterType.flags & ts.TypeFlags.TypeParameter) !== 0) {
@@ -301,19 +305,23 @@ export const getSchema = (
 
     // The raw TypeScript type as a string, carried on every schema node so the
     // consumer knows the concrete type each input was derived from. Custom-input
-    // data types (e.g. DATE) are branded as `<primitive> & {}` so their alias
-    // survives detection (see getSharedTypeDeclarations); for those, stringify the
-    // unbranded base member so the rendered type stays clean ("number", not
-    // "number & {}"). Every other type drops its top-level alias so the concrete
-    // structure is rendered rather than the wrapping alias name.
-    const type = checker.typeToString(
-        isCustomInputIdentifier(parameterType.aliasSymbol?.getName()) &&
-            parameterType.isIntersection()
-            ? parameterType.types.find(
+    // data types are branded so their alias survives detection (see
+    // getSharedTypeDeclarations): primitive-based ones (e.g. DATE) as
+    // `<primitive> & {}`, from which we stringify the unbranded base member so the
+    // rendered type stays clean ("number", not "number & {}"); the `any`-based TYPE
+    // as the empty object `{}`, rendered as the neutral "object". Every other type
+    // drops its top-level alias so the concrete structure is rendered rather than
+    // the wrapping alias name.
+    const isCustom = isCustomInputIdentifier(parameterType.aliasSymbol?.getName());
+    const type = isCustom && parameterType.isIntersection()
+        ? checker.typeToString(
+              parameterType.types.find(
                   (t) => (t.flags & ts.TypeFlags.Object) === 0
               ) ?? parameterType
-            : {...parameterType, aliasSymbol: undefined}
-    );
+          )
+        : isCustom
+            ? "object"
+            : checker.typeToString({...parameterType, aliasSymbol: undefined});
 
     // Suggestions are filtered by what the surrounding function accepts, not by
     // the narrower type a current value happens to narrow the node-side to.
@@ -345,6 +353,18 @@ export const getSchema = (
             ),
         ],
     } : {};
+
+    // A slot whose *declared* type is a type parameter constrained by a
+    // custom-input data type (e.g. a REST trigger's `<T extends TYPE>` payload,
+    // instantiated to a concrete argument) surfaces that custom input. The
+    // instantiated `type` string is kept so the concrete shape the value bound to
+    // stays visible (e.g. `{input: "type", type: "number"}`).
+    if (declaredType) {
+        const constraintInput = getCustomInputFromConstraint(checker, declaredType);
+        if (constraintInput) {
+            return {input: constraintInput, type, ...combinedSuggestions};
+        }
+    }
 
     // Strip undefined and null from unions (e.g. string | undefined | null → string).
     // Suggestions are collected above from the original type (preserving aliasSymbol literals),
@@ -528,9 +548,18 @@ export const getSchema = (
                 )
                 : [propertyType];
 
+            // The matching property on the declared type (when tracked), so a
+            // property whose declared type is a custom-input-constrained type
+            // parameter is recognised even after generic instantiation erased the
+            // constraint from the concrete `propertyType` (see getSchema's
+            // `declaredType` handling).
+            const declaredPropertyType = declaredType
+                ? getDeclaredPropertyType(checker, declaredType, property.name)
+                : undefined;
+
             // Recursively generate schemas for property types
             const propertySchemas = propertyTypes.map((type) =>
-                getSchema(checker, node, type, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
+                getSchema(checker, node, type, functionDeclarations, functions, suggestions, undefined, visited, recursionCache, declaredPropertyType)
             );
 
             properties[property.name] =
@@ -901,6 +930,60 @@ function getCustomInput(
 ): (typeof CUSTOM_INPUT_IDENTIFIERS)[CustomInputIdentifier] | undefined {
     const name = type.aliasSymbol?.getName();
     return isCustomInputIdentifier(name) ? CUSTOM_INPUT_IDENTIFIERS[name] : undefined;
+}
+
+/**
+ * Returns the custom input kind implied by a *declared* type when that type is a
+ * type parameter constrained by a custom-input data type — or undefined
+ * otherwise.
+ *
+ * Example: a REST trigger `<T extends TYPE>(...): REST_ADAPTER_INPUT<T>`. Once
+ * the call is resolved (e.g. `REST_ADAPTER_INPUT<number>`), the `payload`
+ * property's type is the concrete argument (`number`) and has lost the TYPE
+ * alias, so {@link getCustomInput} can no longer recover it. The signature's
+ * *declared* return type, however, still carries the type parameter `T` whose
+ * constraint is TYPE — so the custom input is recovered from there while the
+ * concrete instantiated type is still rendered as the schema's `type` (see the
+ * `declaredType` threading in {@link getSchema}).
+ */
+function getCustomInputFromConstraint(
+    checker: ts.TypeChecker,
+    type: ts.Type,
+): (typeof CUSTOM_INPUT_IDENTIFIERS)[CustomInputIdentifier] | undefined {
+    if ((type.flags & ts.TypeFlags.TypeParameter) === 0) return undefined;
+
+    const typeParamDecl = type.symbol?.declarations?.[0];
+    if (
+        !typeParamDecl ||
+        !ts.isTypeParameterDeclaration(typeParamDecl) ||
+        !typeParamDecl.constraint
+    ) {
+        return undefined;
+    }
+
+    // getTypeFromTypeNode (not getBaseConstraintOfType) so the constraint's
+    // alias name survives — the same reason the type-parameter branch of
+    // getSchema resolves constraints this way.
+    return getCustomInput(checker.getTypeFromTypeNode(typeParamDecl.constraint));
+}
+
+/**
+ * Resolves the type of a named property on the declared type, or undefined when
+ * it has no such property. Used to walk the declared type in step with the
+ * concrete type so a custom-input-constrained type parameter (see
+ * {@link getCustomInputFromConstraint}) can still be recovered from the
+ * declaration after instantiation.
+ */
+function getDeclaredPropertyType(
+    checker: ts.TypeChecker,
+    declaredType: ts.Type,
+    propertyName: string,
+): ts.Type | undefined {
+    const symbol = checker.getPropertyOfType(declaredType, propertyName);
+    const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+    return declaration
+        ? checker.getTypeOfSymbolAtLocation(symbol!, declaration)
+        : undefined;
 }
 
 /**
