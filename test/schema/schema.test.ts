@@ -80,7 +80,7 @@ describe("Schema", () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-06-19T15:34:11Z",
             "name": "Test_v1",
-            "signature": "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            "signature": "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -1318,12 +1318,14 @@ describe("Schema", () => {
         // A trigger is analyzed at the flow level (no nodeId). The flow's own
         // signature carries the return type, and its `settings` supply the
         // arguments the generic return is instantiated from. This mirrors the
-        // REST trigger: <T>(input_schema: TYPE<T>, ...): REST_ADAPTER_INPUT<T>.
+        // REST trigger, whose type parameter is bounded by the (non-generic)
+        // TYPE data type and whose payload echoes the bound argument:
+        // <T extends TYPE>(input_schema: T, ...): REST_ADAPTER_INPUT<T>.
         const restTrigger = (inputSchema: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
             signature:
-                "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+                "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
             settings: {
                 nodes: [
                     {value: inputSchema},
@@ -1368,12 +1370,12 @@ describe("Schema", () => {
                 ]),
             );
 
-            // T is bound from the input_schema setting ({name: TEXT}), so the
-            // payload keeps that concrete shape.
+            // T is bound from the input_schema setting ({name: TEXT}). The
+            // parameter is declared as `T extends TYPE`, so the resolved payload
+            // is a TYPE input carrying that concrete shape as its type.
             const payload = ret.properties.payload;
-            expect(payload.input).toBe("data");
-            expect(Object.keys(payload.properties)).toEqual(["name"]);
-            expect(payload.properties.name.input).toBe("text");
+            expect(payload.input).toBe("type");
+            expect(payload.type).toBe("{ name: string; }");
 
             // The remaining REST fields are open objects.
             expect(ret.properties.headers.input).toBe("data");
@@ -1395,7 +1397,7 @@ describe("Schema", () => {
 
             // input_schema = 42 → T = NUMBER → payload is a number input.
             const ret = result.return as { properties: Record<string, any> };
-            expect(ret.properties.payload).toEqual({input: "number", type: "number"});
+            expect(ret.properties.payload).toEqual({input: "type", type: "number"});
             expectNoSuggestionsAnywhere(ret);
         });
 
@@ -1456,6 +1458,32 @@ describe("Schema", () => {
                 input: "number",
                 type: "number",
             });
+        });
+    });
+
+    describe("TYPE data type", () => {
+        // TYPE is declared as `type: "any"`, but the schema layer must surface a
+        // dedicated type input instead of the generic input its underlying type
+        // would otherwise produce. Like DATE, it is a custom-input data type
+        // detected by its identifier alone and carries no additional properties.
+        it("resolves to a type input", () => {
+            // `type` renders the underlying type; TYPE is branded over `object`
+            // (see getSharedTypeDeclarations) so its alias survives detection while
+            // the rendered `type` stays a clean "object".
+            expect(getTypeSchema("TYPE", DATA_TYPES)).toEqual({
+                input: "type",
+                type: "object",
+            });
+        });
+
+        it("resolves to a type input when nested in a list and object", () => {
+            const list = getTypeSchema("LIST<TYPE>", DATA_TYPES) as any;
+            expect(list.input).toBe("list");
+            expect(list.items[0]).toEqual({input: "type", type: "object"});
+
+            const object = getTypeSchema("{ schema: TYPE }", DATA_TYPES) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.schema).toEqual({input: "type", type: "object"});
         });
     });
 
