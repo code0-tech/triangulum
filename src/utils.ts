@@ -141,7 +141,18 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         // Branding with an empty intersection keeps the alias name on the resolved
         // type — staying mutually assignable with the base type — so the schema
         // layer can recover the identifier and surface the mapped input.
-        const type = isCustomInputIdentifier(dt.identifier) ? `${dt.type} & {}` : dt.type;
+        //
+        // `any` is the exception: `any & {}` collapses straight back to `any`,
+        // dropping the alias. The `any`-typed TYPE is therefore branded as the
+        // empty object type `{}`, which keeps its alias name on the resolved type
+        // (surviving nesting like DATE does) while staying a supertype of every
+        // value — so a `<T extends TYPE>` constraint still binds T to the concrete
+        // argument, primitive or object alike.
+        const type = !isCustomInputIdentifier(dt.identifier)
+            ? dt.type
+            : dt.type?.trim() === "any"
+                ? "{}"
+                : `${dt.type} & {}`;
         return `type ${dt.identifier}${generics} = ${type};`;
     }).join("\n");
 
