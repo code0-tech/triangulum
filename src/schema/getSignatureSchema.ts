@@ -136,6 +136,12 @@ export const getSignatureSchema = (
     // describes the value the function produces, so it carries no input
     // suggestions.
     const returnType = extractReturnType(checker, node, funktion)
+    // The declared return type is resolved alongside the (possibly generic-
+    // instantiated) concrete one: only the declaration still carries a type
+    // parameter's constraint (e.g. a REST trigger's `<T extends TYPE>` payload),
+    // which the instantiated return has lost. getSchema uses it to recover
+    // custom inputs while still rendering the concrete instantiated type.
+    const declaredReturnType = extractDeclaredReturnType(checker, funktion)
     const returnSchema: Schema = returnType
         ? getSchema(
             checker,
@@ -144,6 +150,10 @@ export const getSignatureSchema = (
             Array.from(declaredFunctionsMap.values()),
             functions,
             false,
+            undefined,
+            undefined,
+            undefined,
+            declaredReturnType,
         )
         : {input: "generic"}
 
@@ -183,6 +193,23 @@ const extractReturnType = (
     }
 
     return undefined
+}
+
+/**
+ * Extracts the *declared* return type from the function declaration itself,
+ * without instantiating its type parameters from a call expression. Unlike
+ * {@link extractReturnType}, the result keeps any type parameters (and their
+ * constraints) intact — e.g. `REST_ADAPTER_INPUT<T>` with `T extends TYPE` stays
+ * generic — so a custom-input constraint the instantiated return has erased can
+ * still be recovered. Returns undefined when the declaration has no signature.
+ */
+const extractDeclaredReturnType = (
+    checker: ts.TypeChecker,
+    funktion: ts.FunctionDeclaration | undefined,
+): Type | undefined => {
+    if (!funktion) return undefined
+    const signature = checker.getSignatureFromDeclaration(funktion)
+    return signature ? checker.getReturnTypeOfSignature(signature) : undefined
 }
 
 /**
