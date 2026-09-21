@@ -80,7 +80,7 @@ describe("Schema", () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-06-19T15:34:11Z",
             "name": "Test_v1",
-            "signature": "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            "signature": "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -1243,6 +1243,24 @@ describe("Schema", () => {
             );
         };
 
+        // Asserts no schema node in the tree is a TYPE custom input. TYPE marks a
+        // slot the user fills with a type; a return only describes the value the
+        // signature produces, so it can never be a type picker — not at the root,
+        // and not in a nested property or list item instantiated from a
+        // `<T extends TYPE>` bound.
+        const expectNoTypeInputAnywhere = (schema: any, path = "return"): void => {
+            expect(schema.input, `${path} is a TYPE custom input`).not.toBe("type");
+            for (const [key, child] of Object.entries(schema.properties ?? {})) {
+                const children = Array.isArray(child) ? child : [child];
+                children.forEach((c, i) =>
+                    expectNoTypeInputAnywhere(c, `${path}.properties.${key}[${i}]`),
+                );
+            }
+            (schema.items ?? []).forEach((item: any, i: number) =>
+                expectNoTypeInputAnywhere(item, `${path}.items[${i}]`),
+            );
+        };
+
         it("resolves a NUMBER return to a number input", () => {
             // std::boolean::as_number → (value: BOOLEAN): NUMBER
             const ret = returnOf("std::boolean::as_number", [
@@ -1318,12 +1336,14 @@ describe("Schema", () => {
         // A trigger is analyzed at the flow level (no nodeId). The flow's own
         // signature carries the return type, and its `settings` supply the
         // arguments the generic return is instantiated from. This mirrors the
-        // REST trigger: <T>(input_schema: TYPE<T>, ...): REST_ADAPTER_INPUT<T>.
+        // REST trigger, whose type parameter is bounded by the (non-generic)
+        // TYPE data type and whose payload echoes the bound argument:
+        // <T extends TYPE>(input_schema: T, ...): REST_ADAPTER_INPUT<T>.
         const restTrigger = (inputSchema: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
             signature:
-                "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+                "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
             settings: {
                 nodes: [
                     {value: inputSchema},
@@ -1368,20 +1388,24 @@ describe("Schema", () => {
                 ]),
             );
 
-            // T is bound from the input_schema setting ({name: TEXT}), so the
-            // payload keeps that concrete shape.
+            // T is bound from the input_schema setting ({name: TEXT}). The
+            // parameter is declared as `T extends TYPE`, but a return describes a
+            // produced value — never a slot the user fills — so the TYPE bound is
+            // not carried over: the payload is the concrete shape T bound to.
             const payload = ret.properties.payload;
             expect(payload.input).toBe("data");
-            expect(Object.keys(payload.properties)).toEqual(["name"]);
             expect(payload.properties.name.input).toBe("text");
+            expect(payload.type).toBe("{ name: string; }");
 
             // The remaining REST fields are open objects.
             expect(ret.properties.headers.input).toBe("data");
             expect(ret.properties.query_params.input).toBe("data");
             expect(ret.properties.path_params.input).toBe("data");
 
-            // A return type describes an output → no suggestions anywhere.
+            // A return type describes an output → no suggestions and no TYPE
+            // picker anywhere.
             expectNoSuggestionsAnywhere(ret);
+            expectNoTypeInputAnywhere(ret);
         });
 
         it("instantiates the trigger's generic return payload from a primitive input_schema setting", () => {
@@ -1393,10 +1417,13 @@ describe("Schema", () => {
 
             expect(result.nodeId).toBeUndefined();
 
-            // input_schema = 42 → T = NUMBER → payload is a number input.
+            // input_schema = 42 → T = NUMBER → payload is a number input. A
+            // return describes a produced value, so the `T extends TYPE` bound
+            // never surfaces here as a type picker — only what T bound to.
             const ret = result.return as { properties: Record<string, any> };
             expect(ret.properties.payload).toEqual({input: "number", type: "number"});
             expectNoSuggestionsAnywhere(ret);
+            expectNoTypeInputAnywhere(ret);
         });
 
         it("never carries suggestions, whatever the return type", () => {
@@ -1456,6 +1483,235 @@ describe("Schema", () => {
                 input: "number",
                 type: "number",
             });
+        });
+    });
+
+    describe("TYPE data type", () => {
+        // TYPE is declared as `type: "any"`, but the schema layer must surface a
+        // dedicated type input instead of the generic input its underlying type
+        // would otherwise produce. Like DATE, it is a custom-input data type
+        // detected by its identifier alone and carries no additional properties.
+        it("resolves to a type input", () => {
+            // `type` renders the underlying type; TYPE is branded over `object`
+            // (see getSharedTypeDeclarations) so its alias survives detection while
+            // the rendered `type` stays a clean "object".
+            expect(getTypeSchema("TYPE", DATA_TYPES)).toEqual({
+                input: "type",
+                type: "object",
+            });
+        });
+
+        it("resolves to a type input when nested in a list and object", () => {
+            const list = getTypeSchema("LIST<TYPE>", DATA_TYPES) as any;
+            expect(list.input).toBe("list");
+            expect(list.items[0]).toEqual({input: "type", type: "object"});
+
+            const object = getTypeSchema("{ schema: TYPE }", DATA_TYPES) as any;
+            expect(object.input).toBe("data");
+            expect(object.properties.schema).toEqual({input: "type", type: "object"});
+        });
+    });
+
+    describe("TYPE custom input on parameters", () => {
+        // TYPE is a parameter-only custom input: it marks a slot the user fills
+        // with a type, so it surfaces on `result.parameters[i].schema` (here the
+        // `input_schema` argument) and never on a return, which merely describes
+        // the value the signature produces (see the "return schema" describe).
+        //
+        // A trigger is analyzed at the flow level (no nodeId): the flow's own
+        // signature declares the parameters and its `settings` supply the values
+        // each parameter is resolved against.
+        const GENERIC_SIG =
+            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>";
+        const DIRECT_SIG =
+            "(input_schema: TYPE, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<TYPE>";
+
+        const flowFor = (signature: string, firstValue: any): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature,
+            settings: {
+                nodes: [
+                    {value: firstValue},
+                    {value: "/u"},
+                    {value: "GET"},
+                ],
+            },
+            nodes: {nodes: []},
+        } as Flow);
+
+        // Schema of the first parameter (`input_schema`) at the flow level.
+        const paramSchema = (firstValue: any, signature = GENERIC_SIG) =>
+            (getSignatureSchema(
+                flowFor(signature, firstValue),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            ).parameters as any)[0].schema;
+
+        // Clone DATA_TYPES, replacing the TYPE entry's `type` (and optionally
+        // other fields) — used to probe how the branding in
+        // getSharedTypeDeclarations reacts to different underlying declarations.
+        const dataTypesWithType = (type: any, extra?: Partial<DataType>): DataType[] =>
+            DATA_TYPES.map(dt =>
+                dt.identifier === "TYPE" ? {...dt, type, ...extra} : dt,
+            );
+
+        describe("generic `T extends TYPE`", () => {
+            // The invariant: a `<T extends TYPE>` parameter is a type picker, so
+            // its own schema must always be the TYPE custom input ("type"),
+            // regardless of which value happens to be supplied.
+
+            it("resolves to a type input when no value is supplied", () => {
+                expect(paramSchema(undefined).input).toBe("type");
+            });
+
+            it("resolves to a type input for a null value", () => {
+                expect(paramSchema(null).input).toBe("type");
+            });
+
+            it("resolves a primitive number value to a type input carrying its type", () => {
+                // A supplied primitive narrows the rendered `type` from the T bound
+                // (TYPE's wide "object") to the value's concrete base type, while
+                // the input stays the "type" custom input — the parameter is still
+                // a type picker whatever value it currently holds.
+                expect(paramSchema(42)).toEqual({input: "type", type: "number"});
+            });
+
+            it("resolves a primitive string value to a type input carrying its type", () => {
+                expect(paramSchema("hi")).toEqual({input: "type", type: "string"});
+            });
+
+            it("resolves an object value to a type input carrying its shape", () => {
+                // BUG (fails today): an object value takes the value-driven object
+                // path in generateNodeSchemas (buildValueDrivenObjectSchema in
+                // getSignatureSchema.ts), which hardcodes input:"data" and drops
+                // the function-side TYPE custom input. The soll is a "type" input
+                // that still carries the concrete shape as its rendered type.
+                expect(paramSchema({name: "text"})).toEqual({
+                    input: "type",
+                    type: "{ name: string; }",
+                });
+            });
+
+            it("resolves a nested object value to a type input", () => {
+                // BUG (fails today): same value-driven object path → input:"data".
+                expect(paramSchema({a: {b: 1}}).input).toBe("type");
+            });
+        });
+
+        describe("direct `input_schema: TYPE` (non-generic)", () => {
+            // The same TYPE custom input, reached without a generic slot. This
+            // shows the inconsistency is not generic-specific: the object-value
+            // path drops the custom input here too.
+
+            it("resolves to a type input for a null value", () => {
+                expect(paramSchema(null, DIRECT_SIG).input).toBe("type");
+            });
+
+            it("resolves a primitive value to a type input", () => {
+                // No generic `T` to infer here, so the node-side type does not
+                // narrow: the value merely satisfies TYPE's wide bound and the
+                // rendered type stays "object". (The generic `<T extends TYPE>`
+                // case above narrows to the concrete primitive.)
+                expect(paramSchema(42, DIRECT_SIG)).toEqual({input: "type", type: "object"});
+            });
+
+            it("resolves an object value to a type input", () => {
+                // BUG (fails today): resolves to input:"data" via the value-driven
+                // object path, exactly as in the generic case.
+                expect(paramSchema({name: "text"}, DIRECT_SIG).input).toBe("type");
+            });
+        });
+
+        describe("DATE sibling stays a date input (regression guard)", () => {
+            // DATE is the sibling custom input, but with a primitive underlying
+            // type (number). It survives value resolution because a primitive
+            // value never takes the value-driven object path: it flows through
+            // mergeSchemas, whose final branch preserves the function-side kind
+            // (DATE → date). The upcoming TYPE fix must not disturb this.
+            const DATE_SIG = "(d: DATE): void";
+
+            it("keeps a date input for a primitive number value", () => {
+                expect(paramSchema(123, DATE_SIG)).toEqual({input: "date", type: "number"});
+            });
+
+            it("keeps a date input for a null value", () => {
+                expect(paramSchema(null, DATE_SIG)).toEqual({input: "date", type: "number"});
+            });
+        });
+
+        describe("getTypeSchema branding by the TYPE declaration's `type`", () => {
+            // TYPE maps to a custom input by its identifier alone, so a *non-generic*
+            // declaration must brand to a "type" input however loosely the backend
+            // declares its underlying type. getSharedTypeDeclarations (src/utils.ts)
+            // brands every non-primitive underlying — "any", "unknown", "object", an
+            // empty or missing `type` — as the empty object `{}` (which keeps the
+            // alias, while `any & {}` / `unknown & {}` etc. would not).
+
+            it("brands `type: \"any\"` to a type input", () => {
+                expect(getTypeSchema("TYPE", dataTypesWithType("any"))!.input).toBe("type");
+            });
+
+            it("brands `type: \"unknown\"` to a type input", () => {
+                expect(getTypeSchema("TYPE", dataTypesWithType("unknown"))!.input).toBe("type");
+            });
+
+            it("brands `type: \"object\"` to a type input", () => {
+                expect(getTypeSchema("TYPE", dataTypesWithType("object"))!.input).toBe("type");
+            });
+
+            it("brands an empty `type` to a type input", () => {
+                expect(getTypeSchema("TYPE", dataTypesWithType(""))!.input).toBe("type");
+            });
+
+            it("brands a missing `type` to a type input", () => {
+                expect(getTypeSchema("TYPE", dataTypesWithType(undefined))!.input).toBe("type");
+            });
+        });
+
+        describe("real backend shape: generic identity `TYPE<T> = T`", () => {
+            // The real backend declares TYPE as a generic identity type
+            // (`{type: "T", genericKeys: ["T"]}`), referenced both bare (`TYPE`) and
+            // parameterised (`TYPE<{ ... }>`). getSharedTypeDeclarations brands the
+            // body to `{}` and gives each type parameter an `= any` default, so the
+            // alias is recovered and the custom input surfaces at the signature
+            // level however the parameter is written.
+            const REAL_TYPE = {
+                identifier: "TYPE",
+                type: "T",
+                genericKeys: ["T"],
+                name: [],
+                aliases: [],
+            } as unknown as DataType;
+
+            const realParamSchema = (signature: string, value: any) =>
+                (getSignatureSchema(
+                    {
+                        id: "gid://sagittarius/Flow/1",
+                        startingNodeId: "gid://sagittarius/NodeFunction/1",
+                        signature,
+                        settings: {nodes: [{value}]},
+                        nodes: {nodes: []},
+                    } as Flow,
+                    [REAL_TYPE],
+                    [],
+                ).parameters as any)[0].schema;
+
+            for (const signature of [
+                "(input_schema: TYPE): void",
+                "(input_schema: TYPE<{ name: string }>): void",
+                "<T extends TYPE>(input_schema: T): void",
+                "<T extends TYPE<any>>(input_schema: T): void",
+            ]) {
+                it(`resolves \`${signature}\` to a type input for every value`, () => {
+                    expect(realParamSchema(signature, null).input).toBe("type");
+                    expect(realParamSchema(signature, 42).input).toBe("type");
+                    expect(realParamSchema(signature, {name: "x"})).toEqual({
+                        input: "type",
+                        type: "{ name: string; }",
+                    });
+                });
+            }
         });
     });
 
@@ -1613,6 +1869,65 @@ describe("Schema", () => {
             ) as any;
             expect(object.input).toBe("data");
             expect(object.properties.hue).toEqual({input: "number", type: "number"});
+        });
+
+        // The same type reached through getSignatureSchema instead of getTypeSchema.
+        // A COLOR value is structurally an object, so the value-driven object path
+        // could expand it back into a `data` input and lose the custom input — the
+        // invariant is that a supplied value never downgrades a color parameter.
+        const colorFlow = (signature: string, values: any[]): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature,
+            settings: {nodes: values.map((value) => ({value}))},
+            nodes: {nodes: []},
+        } as Flow);
+
+        const colorParams = (signature: string, values: any[]) =>
+            (getSignatureSchema(
+                colorFlow(signature, values),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            ).parameters as any[]).map((p) => p.schema);
+
+        it("resolves a COLOR parameter to a color input with and without a value", () => {
+            const [empty] = colorParams("(background: COLOR): void", [undefined]);
+            expect(empty.input).toBe("color");
+            expect(empty.type).toBe(COLOR_TYPE);
+
+            // A fully specified value (alpha included) must not expand the
+            // channels into a `data` input.
+            const [full] = colorParams("(background: COLOR): void", [
+                {hue: 210, saturation: 50, lightness: 40, alpha: 0.5},
+            ]);
+            expect(full.input).toBe("color");
+            expect(full.properties).toBeUndefined();
+
+            // alpha is optional, so a value omitting it is still a COLOR.
+            const [noAlpha] = colorParams("(background: COLOR): void", [
+                {hue: 0, saturation: 100, lightness: 50},
+            ]);
+            expect(noAlpha.input).toBe("color");
+        });
+
+        it("keeps color inputs for a LIST<COLOR> parameter carrying values", () => {
+            const [list] = colorParams("(palette: LIST<COLOR>): void", [
+                [
+                    {hue: 0, saturation: 100, lightness: 50},
+                    {hue: 120, saturation: 100, lightness: 50, alpha: 1},
+                ],
+            ]);
+            expect(list.input).toBe("list");
+            expect(list.items.map((i: any) => i.input)).toEqual(["color", "color"]);
+        });
+
+        it("keeps a color input for a COLOR property of an object parameter", () => {
+            const [theme] = colorParams("(theme: { background: COLOR, name: TEXT }): void", [
+                {background: {hue: 210, saturation: 50, lightness: 40}, name: "dark"},
+            ]);
+            expect(theme.input).toBe("data");
+            expect(theme.properties.background.input).toBe("color");
+            expect(theme.properties.name.input).toBe("text");
         });
     });
 

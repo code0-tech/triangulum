@@ -135,6 +135,14 @@ export const getSignatureSchema = (
     // Resolve the signature's return type and build its schema. The return type
     // describes the value the function produces, so it carries no input
     // suggestions.
+    //
+    // The *declared* return type is deliberately not threaded through here: its
+    // type parameters still carry their constraints (e.g. a REST trigger's
+    // `<T extends TYPE>` payload), and recovering a custom input from such a
+    // constraint would brand the return as a type picker. A return describes a
+    // produced value, never a slot the user fills, so a custom input like TYPE
+    // can never be the right answer for it — only the concrete instantiated type
+    // is resolved, which renders the shape the argument actually bound to.
     const returnType = extractReturnType(checker, node, funktion)
     const returnSchema: Schema = returnType
         ? getSchema(
@@ -677,6 +685,29 @@ const buildValueDrivenObjectSchema = (
         ? getSchema(checker, node, funcObjectType, functionDeclarations, functions, false)
         : undefined
     const isDataKind = funcSchema?.input === "data"
+
+    // Value-driven expansion only applies to a *structural* slot: a declared
+    // `data` object, whose properties and nested cardinality mirror the entered
+    // value, or a generic slot, which constrains nothing and lets the value drive
+    // the shape. Any other declared input is dedicated — the function side has
+    // already decided what the parameter is, and an entered value never downgrades
+    // it (the same rule mergeSchemas and buildValueDrivenItem follow).
+    //
+    // This matters for every data type that is structurally an object but renders
+    // as its own input (COLOR, FILE, and a `TYPE` / `<T extends TYPE>` picker):
+    // expanding it here would turn it back into the very `data` shape its input
+    // replaces. The declared schema is kept as-is — only the rendered `type` takes
+    // the entered value's concrete shape, mirroring how the instantiated return
+    // payload renders (see getSchema's custom-input handling).
+    if (funcSchema && !isDataKind && funcSchema.input !== "generic") {
+        return {
+            ...funcSchema,
+            type: checker.typeToString(
+                checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(objectExpr)),
+            ),
+            ...(suggestions?.length ? {suggestions} : {}),
+        } as Schema
+    }
 
     const properties: Record<string, Schema | Schema[]> = {}
     const required: string[] = []

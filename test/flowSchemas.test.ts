@@ -100,28 +100,32 @@ describe("getFlowSchemas", () => {
         expect(result?.outputSchema).toEqual({type: "number"});
     });
 
-    it("derives schemas from a generic REST adapter flow signature", () => {
-        // Taken from the REST trigger scenario in schema.test.ts: the signature
-        // carries a free type parameter T in TYPE<T> and REST_ADAPTER_INPUT<T>.
+    it("derives schemas from a REST adapter flow signature", () => {
+        // Taken from the REST trigger scenario in schema.test.ts: input_schema is
+        // the non-generic TYPE data type, echoed by the payload of
+        // REST_ADAPTER_INPUT<TYPE>.
         const flow = flowWithNodes(
             [],
-            "<T>(input_schema: TYPE<T>, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
         );
 
         const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        // A free T yields the open schema {}; concrete parameters resolve fully.
-        expect(result?.inputSchema.properties?.input_schema).toEqual({});
+        // TYPE is `any` underneath, so it maps to the open object schema; the
+        // concrete parameters resolve fully.
+        expect(result?.inputSchema.properties?.input_schema)
+            .toEqual({});
         expect(result?.inputSchema.properties?.httpURL).toEqual({type: "string"});
         expect((result?.inputSchema.properties?.httpMethod as JsonSchema).enum)
             .toEqual(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]);
         expect(result?.inputSchema.required)
             .toEqual(["input_schema", "httpURL", "httpMethod"]);
 
-        // REST_ADAPTER_INPUT<T> resolves structurally; the T-typed payload
-        // stays open while the concrete fields become object schemas.
+        // REST_ADAPTER_INPUT<TYPE> resolves structurally; the TYPE payload maps to
+        // the open object schema while the concrete fields become object schemas.
         expect(result?.outputSchema.type).toBe("object");
-        expect(result?.outputSchema.properties?.payload).toEqual({});
+        expect(result?.outputSchema.properties?.payload)
+            .toEqual({});
         expect(result?.outputSchema.required)
             .toEqual(["payload", "headers", "query_params", "path_params"]);
     });
