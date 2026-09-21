@@ -1,7 +1,7 @@
 import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
 import ts, {Type} from "typescript"
-import {genericNodeSchema, getSchema, mergeSchemas, normalizeNodeSchema, Schema} from "../util/schema.util"
+import {genericNodeSchema, getSchema, isCustomInputKind, mergeSchemas, normalizeNodeSchema, Schema} from "../util/schema.util"
 
 /**
  * Represents the schema information for a node parameter.
@@ -135,13 +135,15 @@ export const getSignatureSchema = (
     // Resolve the signature's return type and build its schema. The return type
     // describes the value the function produces, so it carries no input
     // suggestions.
+    //
+    // The *declared* return type is deliberately not threaded through here: its
+    // type parameters still carry their constraints (e.g. a REST trigger's
+    // `<T extends TYPE>` payload), and recovering a custom input from such a
+    // constraint would brand the return as a type picker. A return describes a
+    // produced value, never a slot the user fills, so a custom input like TYPE
+    // can never be the right answer for it — only the concrete instantiated type
+    // is resolved, which renders the shape the argument actually bound to.
     const returnType = extractReturnType(checker, node, funktion)
-    // The declared return type is resolved alongside the (possibly generic-
-    // instantiated) concrete one: only the declaration still carries a type
-    // parameter's constraint (e.g. a REST trigger's `<T extends TYPE>` payload),
-    // which the instantiated return has lost. getSchema uses it to recover
-    // custom inputs while still rendering the concrete instantiated type.
-    const declaredReturnType = extractDeclaredReturnType(checker, funktion)
     const returnSchema: Schema = returnType
         ? getSchema(
             checker,
@@ -150,10 +152,6 @@ export const getSignatureSchema = (
             Array.from(declaredFunctionsMap.values()),
             functions,
             false,
-            undefined,
-            undefined,
-            undefined,
-            declaredReturnType,
         )
         : {input: "generic"}
 
@@ -193,23 +191,6 @@ const extractReturnType = (
     }
 
     return undefined
-}
-
-/**
- * Extracts the *declared* return type from the function declaration itself,
- * without instantiating its type parameters from a call expression. Unlike
- * {@link extractReturnType}, the result keeps any type parameters (and their
- * constraints) intact — e.g. `REST_ADAPTER_INPUT<T>` with `T extends TYPE` stays
- * generic — so a custom-input constraint the instantiated return has erased can
- * still be recovered. Returns undefined when the declaration has no signature.
- */
-const extractDeclaredReturnType = (
-    checker: ts.TypeChecker,
-    funktion: ts.FunctionDeclaration | undefined,
-): Type | undefined => {
-    if (!funktion) return undefined
-    const signature = checker.getSignatureFromDeclaration(funktion)
-    return signature ? checker.getReturnTypeOfSignature(signature) : undefined
 }
 
 /**
@@ -704,6 +685,23 @@ const buildValueDrivenObjectSchema = (
         ? getSchema(checker, node, funcObjectType, functionDeclarations, functions, false)
         : undefined
     const isDataKind = funcSchema?.input === "data"
+
+    // A custom-input data type on the function side (e.g. a `TYPE` parameter, or
+    // a `<T extends TYPE>` type picker whose constraint resolves to one) keeps its
+    // dedicated input even when the entered value is an object literal. Expanding
+    // it into a structural `data` object would drop the custom input, so surface
+    // the custom input directly and carry the entered value's concrete shape as
+    // the rendered `type` — mirroring how the instantiated return payload renders
+    // (see getSchema's custom-input handling).
+    if (funcSchema && isCustomInputKind(funcSchema.input as string | undefined)) {
+        return {
+            input: funcSchema.input,
+            type: checker.typeToString(
+                checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(objectExpr)),
+            ),
+            ...(suggestions?.length ? {suggestions} : {}),
+        } as Schema
+    }
 
     const properties: Record<string, Schema | Schema[]> = {}
     const required: string[] = []

@@ -7,7 +7,8 @@ import {
     SubFlowValue,
     NodeParameter,
     ReferenceValue, Maybe,
-    InlineReferenceValue
+    InlineReferenceValue,
+    FlowSetting
 } from "@code0-tech/sagittarius-graphql-types";
 import ts from "typescript";
 import {createSystem, createVirtualTypeScriptEnvironment, VirtualTypeScriptEnvironment} from "@typescript/vfs"
@@ -124,6 +125,16 @@ function genericParamNames(key: string): string[] {
         .filter(name => name.length > 0);
 }
 
+// The only underlying types a custom-input data type preserves via a brand
+// intersection (`<type> & {}`): a concrete primitive whose value/inference
+// behaviour must stay intact (e.g. DATE = number). Every other underlying — a top
+// type (any/unknown/object), an empty or missing `type`, or a generic parameter —
+// is branded as the empty object type `{}` instead, because `<those> & {}` either
+// collapses (`any & {}` → `any`, dropping the alias) or is not detected, whereas
+// `{}` keeps the alias, renders as the neutral "object" and stays a supertype of
+// every value.
+const BRAND_PRESERVING_UNDERLYING_TYPES: ReadonlySet<string> = new Set(["number", "string", "boolean"]);
+
 /**
  * Extracts and returns common type and generic declarations from DATA_TYPES.
  */
@@ -133,7 +144,16 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         .join("\n");
 
     const typeAliasDeclarations = dataTypes?.map(dt => {
-        const generics = (dt.genericKeys?.length ?? 0) > 0 ? `<${dt.genericKeys?.join(",")}>` : "";
+        const isCustom = isCustomInputIdentifier(dt.identifier);
+        // A custom-input data type gets an `= any` default per type parameter (unless
+        // the key already declares one), so a *bare* reference — `TYPE` rather than
+        // `TYPE<...>` — still resolves to the branded alias below instead of failing
+        // to bind its parameters. The branding makes the body independent of them.
+        const generics = (dt.genericKeys?.length ?? 0) > 0
+            ? isCustom
+                ? `<${dt.genericKeys!.map(k => k.includes("=") ? k : `${k} = any`).join(", ")}>`
+                : `<${dt.genericKeys?.join(",")}>`
+            : "";
         // Custom-input data types (e.g. DATE) map to a dedicated input based on
         // their identifier alone. TypeScript discards the alias name of bare
         // primitive aliases (`type DATE = number` resolves to plain `number`),
@@ -142,17 +162,18 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
         // type — staying mutually assignable with the base type — so the schema
         // layer can recover the identifier and surface the mapped input.
         //
-        // `any` is the exception: `any & {}` collapses straight back to `any`,
-        // dropping the alias. The `any`-typed TYPE is therefore branded as the
-        // empty object type `{}`, which keeps its alias name on the resolved type
-        // (surviving nesting like DATE does) while staying a supertype of every
+        // Only a concrete primitive underlying is brand-preserved that way (see
+        // BRAND_PRESERVING_UNDERLYING_TYPES); every other underlying is branded as
+        // the empty object type `{}`, which keeps the alias name on the resolved
+        // type (surviving nesting like DATE does) while staying a supertype of every
         // value — so a `<T extends TYPE>` constraint still binds T to the concrete
         // argument, primitive or object alike.
-        const type = !isCustomInputIdentifier(dt.identifier)
+        const underlying = dt.type?.trim() ?? "";
+        const type = !isCustom
             ? dt.type
-            : dt.type?.trim() === "any"
-                ? "{}"
-                : `${dt.type} & {}`;
+            : BRAND_PRESERVING_UNDERLYING_TYPES.has(underlying)
+                ? `${dt.type} & {}`
+                : "{}";
         return `type ${dt.identifier}${generics} = ${type};`;
     }).join("\n");
 
@@ -166,6 +187,68 @@ export function getSharedTypeDeclarations(dataTypes?: DataType[], genericType: s
 
     return `${useGenericDeclarations ? genericDeclarations : ""}\n${typeAliasDeclarations}\n${widenedDeclarations}`;
 }
+
+/**
+ * Characters a cast may consist of. A cast is backend-provided text that is
+ * spliced verbatim into the generated source, so it is only accepted when it
+ * looks like a type expression: identifiers, the punctuation type syntax uses
+ * (generic arguments, tuples/arrays, object members, unions/intersections,
+ * string literal types) and whitespace. Notably absent are `/` (so no comment
+ * can be opened), `;`, `=` and backticks — a cast carrying any of those could
+ * terminate the assertion and turn the rest of the file into arbitrary code.
+ */
+const CAST_ALLOWED_CHARACTERS = /^[A-Za-z0-9_$<>\[\]{}(),.:?|&+\-'"\s]+$/;
+
+/**
+ * Whether a cast can be safely spliced into the generated source. Beyond the
+ * character allow-list the brackets must be balanced (outside of string literal
+ * types), because an unbalanced `<` or `{` would swallow the remainder of the
+ * file and fail the parse of the whole flow rather than just this one value.
+ */
+const isSafeCast = (cast: string): boolean => {
+    if (!CAST_ALLOWED_CHARACTERS.test(cast)) return false;
+
+    const closing: Record<string, string> = {"<": ">", "[": "]", "{": "}", "(": ")"};
+    const stack: string[] = [];
+    let quote: string | null = null;
+    for (const ch of cast) {
+        if (quote) {
+            if (ch === quote) quote = null;
+            continue;
+        }
+        if (ch === "'" || ch === '"') {
+            quote = ch;
+        } else if (closing[ch]) {
+            stack.push(closing[ch]);
+        } else if (ch === ">" || ch === "]" || ch === "}" || ch === ")") {
+            if (stack.pop() !== ch) return false;
+        }
+    }
+    return quote === null && stack.length === 0;
+};
+
+/**
+ * Applies the cast a parameter or flow setting carries to its generated value
+ * expression, emitting `(<value>) as unknown as <cast>`.
+ *
+ * The cast is the type the value is *meant* to have, which is what the rest of
+ * the pipeline has to see: it drives the generic inference of the surrounding
+ * call (a bare `[]` cast to `LIST<TEXT>` binds the function's type parameter),
+ * and with it the node's return type, the suggestions and the generated JSON
+ * schemas. The detour through `unknown` makes the assertion unconditional: a
+ * cast is a deliberate reinterpretation of the value, so it must hold even
+ * between types TypeScript considers non-overlapping (a JSON literal stated to
+ * be some data type) instead of failing the flow with a conversion error.
+ *
+ * The value is parenthesised so the assertion applies to the whole expression
+ * and not, e.g., to the body of a generated sub-flow lambda. A cast that is
+ * empty or not a safe type expression is dropped and the value emitted as-is.
+ */
+const applyCast = (expression: string, cast?: Maybe<string>): string => {
+    const type = cast?.trim();
+    if (!type || !isSafeCast(type)) return expression;
+    return `(${expression}) as unknown as ${type}`;
+};
 
 /**
  * Sanitizes an ID for use as a TypeScript variable name.
@@ -347,13 +430,24 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            if (!val) return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
+            // A parameter without a value: during inference the `{}` placeholder
+            // is asserted to the cast so an unfilled slot still carries its
+            // intended type. During validation the `undefined` placeholder stays
+            // uncast — the cast would silently satisfy the parameter and hide the
+            // fact that nothing was provided.
+            const missing = isForInference
+                ? `/* @pos ${id} ${index} */ ${applyCast("{}", p.cast)}`
+                : `/* @pos ${id} ${index} */ undefined`;
+            if (!val) return missing;
             if (val.__typename === "ReferenceValue") {
-                return `/* @pos ${id} ${index} */ ${renderReference(val as ReferenceValue)}`;
+                return `/* @pos ${id} ${index} */ ${applyCast(renderReference(val as ReferenceValue), p.cast)}`;
             }
             if (val.__typename === "LiteralValue") {
                 const jsonString = renderLiteral(val.value, val.references, {id, index, indent});
-                return `/* @pos ${id} ${index} */ ${jsonString}`;
+                // A null/undefined literal renders as nothing; it is emitted as the
+                // `undefined` placeholder and, like the missing value above, uncast.
+                if (jsonString === undefined) return `/* @pos ${id} ${index} */ undefined`;
+                return `/* @pos ${id} ${index} */ ${applyCast(jsonString, p.cast)}`;
             }
             if (val.__typename === "SubFlowValue") {
                 // Direct mapping: the sub-flow *is* an existing function, with no
@@ -361,9 +455,15 @@ export function generateFlowSourceCode(
                 // reference itself as the value so its own signature drives the
                 // sub-flow's I/O — e.g. mapping `std::math::add` yields
                 // `(a, b) => NUMBER` rather than an empty `(...p) => {}` lambda.
+                //
+                // A cast is deliberately not applied here: the generated lambda is
+                // contextually typed by the callback parameter of the surrounding
+                // call, which is what gives its inputs their real (instantiated)
+                // types — an assertion would replace that context and the sub-flow
+                // would lose both its input types and its schemas.
                 return `/* @pos ${id} ${index} */ ${renderSubFlow(val as SubFlowValue, id, index, indent)}`;
             }
-            return isForInference ? `/* @pos ${id} ${index} */ {}` : `/* @pos ${id} ${index} */ undefined`;
+            return missing;
         });
 
         const varName = `node_${sanitizeId(node.id!)}`;
@@ -407,7 +507,17 @@ export function generateFlowSourceCode(
         if (p?.value?.__typename === "SubFlowValue" && (p.value.startingNodeId || p.value.functionDefinition?.id)) subTreeIds.add(p.value.startingNodeId || p.value.functionDefinition?.id);
     }));
 
-    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map((setting, index) => `/* @pos null ${index} */ ${setting?.value !== null && setting?.value !== undefined ? stringify(setting?.value) : undefined}`).join(", ") ?? ""});` : ""
+    // A flow setting is emitted as a positional argument of the flow signature and,
+    // like a node parameter, carries the cast its value is meant to have (a setting
+    // without a value stays the uncast `undefined` placeholder).
+    const renderSetting = (setting: Maybe<FlowSetting>, index: number): string => {
+        const value = setting?.value !== null && setting?.value !== undefined
+            ? stringify(setting.value)
+            : undefined;
+        return `/* @pos null ${index} */ ${value === undefined ? "undefined" : applyCast(value, setting?.cast)}`;
+    };
+
+    const flowCode = flow ? `const flow_${sanitizeId(flow.id ?? "")} = /* @pos null null */ flow(${flow.settings?.nodes?.map(renderSetting).join(", ") ?? ""});` : ""
 
     const executionCode = nodes
         .filter(n => n?.id && !nextNodeIds.has(n.id) && !subTreeIds.has(n.id))

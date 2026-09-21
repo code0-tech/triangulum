@@ -41,6 +41,22 @@ export const isCustomInputIdentifier = (
 ): identifier is CustomInputIdentifier =>
     identifier != null && identifier in CUSTOM_INPUT_IDENTIFIERS;
 
+/** The set of input kinds produced by {@link CUSTOM_INPUT_IDENTIFIERS} (e.g. "date", "type"). */
+const CUSTOM_INPUT_KINDS: ReadonlySet<string> = new Set(
+    Object.values(CUSTOM_INPUT_IDENTIFIERS),
+);
+
+/**
+ * Returns true if the given input kind is one produced by a custom-input data
+ * type (e.g. "date", "type"). Used to keep a custom input intact where the
+ * pipeline would otherwise expand it — e.g. an object literal entered against a
+ * `TYPE` (or `<T extends TYPE>`) parameter must stay a "type" input rather than
+ * being turned into a structural "data" object.
+ */
+export const isCustomInputKind = (
+    input: string | undefined,
+): boolean => input != null && CUSTOM_INPUT_KINDS.has(input);
+
 /**
  * Base interface for all input types.
  * Provides common properties for suggestions and input metadata.
@@ -822,6 +838,22 @@ export const mergeSchemas = (
         return {
             ...functionSchema,
             items,
+            ...(suggestions ? {suggestions} : {}),
+        };
+    }
+
+    // A custom-input data type (e.g. TYPE) keeps its dedicated input, but a
+    // supplied primitive value narrows the rendered `type` from the declared
+    // bound (TYPE's wide "object") to the value's concrete base type — so `42`
+    // against a `<T extends TYPE>` (or plain `TYPE`) slot renders
+    // {input:"type", type:"number"}, mirroring the instantiated return payload.
+    // Without a value the node side falls back to the function type, so the bound
+    // is preserved. Concrete-bound custom inputs (DATE = number) are unaffected:
+    // their node-side type already equals the bound.
+    if (isCustomInputKind(functionSchema.input as string | undefined)) {
+        return {
+            ...functionSchema,
+            ...(nodeSchema.type !== undefined ? {type: nodeSchema.type} : {}),
             ...(suggestions ? {suggestions} : {}),
         };
     }
