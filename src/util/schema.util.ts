@@ -48,10 +48,15 @@ const CUSTOM_INPUT_KINDS: ReadonlySet<string> = new Set(
 
 /**
  * Returns true if the given input kind is one produced by a custom-input data
- * type (e.g. "date", "type"). Used to keep a custom input intact where the
- * pipeline would otherwise expand it — e.g. an object literal entered against a
- * `TYPE` (or `<T extends TYPE>`) parameter must stay a "type" input rather than
- * being turned into a structural "data" object.
+ * type (e.g. "date", "type"). Used by {@link mergeSchemas} to let a supplied
+ * value narrow the rendered `type` of such an input while the input kind itself
+ * is kept.
+ *
+ * Note this covers the registry-driven kinds only, so it is not the test for
+ * "is this input dedicated rather than structural" — COLOR is detected by shape
+ * (see isColorType) and never appears here. Code that must not expand a
+ * dedicated input back into the shape it was built from checks for the
+ * structural kinds it does expand ("data", "generic") instead.
  */
 export const isCustomInputKind = (
     input: string | undefined,

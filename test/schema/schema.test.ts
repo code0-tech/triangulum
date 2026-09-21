@@ -1870,6 +1870,65 @@ describe("Schema", () => {
             expect(object.input).toBe("data");
             expect(object.properties.hue).toEqual({input: "number", type: "number"});
         });
+
+        // The same type reached through getSignatureSchema instead of getTypeSchema.
+        // A COLOR value is structurally an object, so the value-driven object path
+        // could expand it back into a `data` input and lose the custom input — the
+        // invariant is that a supplied value never downgrades a color parameter.
+        const colorFlow = (signature: string, values: any[]): Flow => ({
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature,
+            settings: {nodes: values.map((value) => ({value}))},
+            nodes: {nodes: []},
+        } as Flow);
+
+        const colorParams = (signature: string, values: any[]) =>
+            (getSignatureSchema(
+                colorFlow(signature, values),
+                DATA_TYPES,
+                FUNCTION_SIGNATURES,
+            ).parameters as any[]).map((p) => p.schema);
+
+        it("resolves a COLOR parameter to a color input with and without a value", () => {
+            const [empty] = colorParams("(background: COLOR): void", [undefined]);
+            expect(empty.input).toBe("color");
+            expect(empty.type).toBe(COLOR_TYPE);
+
+            // A fully specified value (alpha included) must not expand the
+            // channels into a `data` input.
+            const [full] = colorParams("(background: COLOR): void", [
+                {hue: 210, saturation: 50, lightness: 40, alpha: 0.5},
+            ]);
+            expect(full.input).toBe("color");
+            expect(full.properties).toBeUndefined();
+
+            // alpha is optional, so a value omitting it is still a COLOR.
+            const [noAlpha] = colorParams("(background: COLOR): void", [
+                {hue: 0, saturation: 100, lightness: 50},
+            ]);
+            expect(noAlpha.input).toBe("color");
+        });
+
+        it("keeps color inputs for a LIST<COLOR> parameter carrying values", () => {
+            const [list] = colorParams("(palette: LIST<COLOR>): void", [
+                [
+                    {hue: 0, saturation: 100, lightness: 50},
+                    {hue: 120, saturation: 100, lightness: 50, alpha: 1},
+                ],
+            ]);
+            expect(list.input).toBe("list");
+            expect(list.items.map((i: any) => i.input)).toEqual(["color", "color"]);
+        });
+
+        it("keeps a color input for a COLOR property of an object parameter", () => {
+            const [theme] = colorParams("(theme: { background: COLOR, name: TEXT }): void", [
+                {background: {hue: 210, saturation: 50, lightness: 40}, name: "dark"},
+            ]);
+            expect(theme.input).toBe("data");
+            expect(theme.properties.background.input).toBe("color");
+            expect(theme.properties.name.input).toBe("text");
+        });
     });
 
     describe("list-select input", () => {

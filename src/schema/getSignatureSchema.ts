@@ -1,7 +1,7 @@
 import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
 import ts, {Type} from "typescript"
-import {genericNodeSchema, getSchema, isCustomInputKind, mergeSchemas, normalizeNodeSchema, Schema} from "../util/schema.util"
+import {genericNodeSchema, getSchema, mergeSchemas, normalizeNodeSchema, Schema} from "../util/schema.util"
 
 /**
  * Represents the schema information for a node parameter.
@@ -686,16 +686,22 @@ const buildValueDrivenObjectSchema = (
         : undefined
     const isDataKind = funcSchema?.input === "data"
 
-    // A custom-input data type on the function side (e.g. a `TYPE` parameter, or
-    // a `<T extends TYPE>` type picker whose constraint resolves to one) keeps its
-    // dedicated input even when the entered value is an object literal. Expanding
-    // it into a structural `data` object would drop the custom input, so surface
-    // the custom input directly and carry the entered value's concrete shape as
-    // the rendered `type` — mirroring how the instantiated return payload renders
-    // (see getSchema's custom-input handling).
-    if (funcSchema && isCustomInputKind(funcSchema.input as string | undefined)) {
+    // Value-driven expansion only applies to a *structural* slot: a declared
+    // `data` object, whose properties and nested cardinality mirror the entered
+    // value, or a generic slot, which constrains nothing and lets the value drive
+    // the shape. Any other declared input is dedicated — the function side has
+    // already decided what the parameter is, and an entered value never downgrades
+    // it (the same rule mergeSchemas and buildValueDrivenItem follow).
+    //
+    // This matters for every data type that is structurally an object but renders
+    // as its own input (COLOR, FILE, and a `TYPE` / `<T extends TYPE>` picker):
+    // expanding it here would turn it back into the very `data` shape its input
+    // replaces. The declared schema is kept as-is — only the rendered `type` takes
+    // the entered value's concrete shape, mirroring how the instantiated return
+    // payload renders (see getSchema's custom-input handling).
+    if (funcSchema && !isDataKind && funcSchema.input !== "generic") {
         return {
-            input: funcSchema.input,
+            ...funcSchema,
             type: checker.typeToString(
                 checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(objectExpr)),
             ),
