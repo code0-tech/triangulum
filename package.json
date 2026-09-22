@@ -35,7 +35,7 @@
     "build": "vite build"
   },
   "devDependencies": {
-    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2780674370-053799e843870f117430b3b00f75ffec35767193",
+    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2849666031-48da50a1b462b8d91f795b5a521927b90239489d",
     "@types/node": "^25.6.0",
     "@typescript/vfs": "^1.6.4",
     "lossless-json": "^4.3.1",
@@ -46,7 +46,7 @@
     "vitest": "^4.1.8"
   },
   "peerDependencies": {
-    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2780674370-053799e843870f117430b3b00f75ffec35767193",
+    "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-2849666031-48da50a1b462b8d91f795b5a521927b90239489d",
     "@typescript/vfs": "^1.6.4",
     "lossless-json": "^4.3.0",
     "ts-json-schema-generator": "^2.9.0",
