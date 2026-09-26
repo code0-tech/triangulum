@@ -63,6 +63,7 @@ function mapFlowSetting(flowSetting: TucanaFlowSetting): FlowSetting {
         id: gid('FlowSetting', flowSetting.databaseId!) as FlowSetting['id'],
         flowSettingIdentifier: flowSetting.flowSettingId,
         value: flowSetting.value ? toAllowedValue(flowSetting.value) : null,
+        cast: flowSetting.cast
     }
 }
 
@@ -84,7 +85,8 @@ function mapNodeParameter(nodeParameter: TucanaNodeParameter): NodeParameter {
 
     return {
         id: gid('NodeParameter', nodeParameter.databaseId) as NodeParameter['id'],
-        value
+        value,
+        cast: nodeParameter.cast
     }
 }
 
@@ -99,8 +101,7 @@ function mapNodeValue(tucanaNodeValue: TucanaNodeValue): NodeParameterValue {
             references: nodeValue.literalValue.references.map(r => ({
                 signature: r.signature,
                 value: mapNodeValue(r.value!)
-            }))
-
+            })),
         };
     } else if (nodeValue?.oneofKind === 'referenceValue') {
         const target = nodeValue.referenceValue.target;
