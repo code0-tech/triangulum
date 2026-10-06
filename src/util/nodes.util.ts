@@ -1,6 +1,5 @@
 import ts from "typescript";
 import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
-import {isSubFlow} from "./schema.util";
 
 /**
  * Filters and transforms function declarations into a collection of compatible node functions.
@@ -9,6 +8,13 @@ import {isSubFlow} from "./schema.util";
  * a target parameter type. It returns node functions for all functions whose return types
  * are assignable to the specified parameter type. Each node function is enriched with
  * metadata including function definitions and parameter information.
+ *
+ * A callable (sub-flow) parameter is no exception: it is matched by the same
+ * rule as every other slot — a function qualifies when the value it produces is
+ * assignable to the slot's type. Such a node is offered alongside the
+ * {@link getSubFlows} candidates, which bind an existing function as the
+ * sub-flow itself; the two kinds are told apart by their `__typename` and may
+ * both be present for the same function definition.
  *
  * @param {ts.TypeChecker} checker - The TypeScript type checker instance used to analyze
  *        type information and verify type compatibility
@@ -20,8 +26,8 @@ import {isSubFlow} from "./schema.util";
  *        functions. Only functions with return types assignable to this type are included
  *
  * @returns {NodeFunction[]} Array of node functions that are compatible with the
- *          specified parameter type. Returns an empty array if the parameter type
- *          is a sub-flow or if no compatible functions are found
+ *          specified parameter type, or an empty array if no compatible
+ *          functions are found
  *
  * @example
  * const compatibleNodes = getNodes(checker, funcDecls, funcDefs, stringType);
@@ -32,11 +38,6 @@ export const getNodes = (
     functions: FunctionDefinition[],
     paramType: ts.Type
 ): NodeFunction[] => {
-    // Early exit: if the parameter type is a sub-flow, no node functions are applicable
-    if (isSubFlow(paramType)) {
-        return [];
-    }
-
     // Transform each function declaration into a node function if it matches the parameter type
     return functionDeclarations.flatMap((func) => {
         const nodeFunction = createNodeFunctionIfCompatible(checker, func, functions, paramType);
