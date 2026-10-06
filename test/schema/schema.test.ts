@@ -2283,8 +2283,224 @@ describe("Schema", () => {
                 "gid://sagittarius/NodeFunction/1",
             );
 
-            expect((result.parameters[0].schema as ListSubFlowInput)?.items?.[0]?.suggestions?.length).toBe(114)
+            // 114 sub-flow bindings plus the 9 node functions a callable slot
+            // now also offers (see "node-function suggestions on a callable
+            // (sub-flow) slot" below).
+            expect((result.parameters[0].schema as ListSubFlowInput)?.items?.[0]?.suggestions?.length).toBe(123)
 
+        });
+    });
+
+    // A callable (sub-flow) slot used to be the one position that got no node
+    // function suggestions at all: the collector behind them bailed out on a
+    // callable type, while the sub-flow collector bailed out on everything else,
+    // so the two were mutually exclusive. Both kinds are collected now.
+    describe("node-function suggestions on a callable (sub-flow) slot", () => {
+        /** The function identifiers a position suggests, for one suggestion kind. */
+        const identifiersOf = (schema: any, typename: string): string[] =>
+            ((schema?.suggestions ?? []) as any[])
+                .filter((suggestion) => suggestion.__typename === typename)
+                .map((suggestion) => suggestion.functionDefinition?.identifier)
+                .sort();
+
+        /** The schema of one parameter of a single-node flow. */
+        const parameterSchema = (
+            identifier: string,
+            parameters: any[],
+            index: number,
+            functions: FunctionDefinition[] = FUNCTION_SIGNATURES,
+        ): any => {
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier},
+                            parameters: {nodes: parameters},
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            return getSignatureSchema(
+                flow,
+                DATA_TYPES,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[index].schema as any;
+        };
+
+        const numbers = {__typename: "LiteralValue", value: [1, 2, 3]};
+
+        // The functions whose produced value is unconstrained — a bare type
+        // parameter, or `any`. A callable type is satisfied by nothing else, so
+        // these are exactly the node functions a sub-flow slot accepts.
+        const UNCONSTRAINED_PRODUCERS = [
+            "std::control::return",
+            "std::control::value",
+            "std::list::at",
+            "std::list::find",
+            "std::list::find_last",
+            "std::list::first",
+            "std::list::last",
+            "std::list::pop",
+        ];
+
+        it("offers node functions next to the sub-flow bindings", () => {
+            const consumer = parameterSchema(
+                "std::list::for_each",
+                [{value: numbers}, {value: null}],
+                1,
+            );
+
+            expect(consumer.input).toBe("sub-flow");
+            expect(identifiersOf(consumer, "NodeFunction")).toEqual(UNCONSTRAINED_PRODUCERS);
+            // The node path does not widen the sub-flow path: the bindings a
+            // CONSUMER<T> accepts are the same ones as before.
+            expect(identifiersOf(consumer, "SubFlowValue").length).toBe(56);
+        });
+
+        // Both kinds are offered for the same function definition — they are
+        // different actions (bind this function as the sub-flow vs. create a node
+        // that produces it), so consumers must tell them apart by `__typename`
+        // rather than by the function definition.
+        it("offers both kinds for the same function definition", () => {
+            const consumer = parameterSchema(
+                "std::list::for_each",
+                [{value: numbers}, {value: null}],
+                1,
+            );
+
+            const asNode = identifiersOf(consumer, "NodeFunction");
+            const asBinding = identifiersOf(consumer, "SubFlowValue");
+            const inBoth = asNode.filter((identifier) => asBinding.includes(identifier));
+
+            expect(inBoth.length).toBeGreaterThan(0);
+        });
+
+        // The matching rule is the ordinary one — a function qualifies when the
+        // value it produces is assignable to the slot's type — applied to the
+        // callable type itself. The sub-flow's declared return type therefore does
+        // not narrow the candidates: a PREDICATE (`=> BOOLEAN`) offers the same
+        // node functions as a CONSUMER (`=> void`). Only the sub-flow bindings are
+        // scoped by the declared signature.
+        it("matches against the callable type, not the sub-flow's return type", () => {
+            const predicate = parameterSchema(
+                "std::list::filter",
+                [{value: numbers}, {value: null}],
+                1,
+            );
+            const consumer = parameterSchema(
+                "std::list::for_each",
+                [{value: numbers}, {value: null}],
+                1,
+            );
+
+            expect(identifiersOf(predicate, "NodeFunction")).toEqual(UNCONSTRAINED_PRODUCERS);
+            expect(identifiersOf(predicate, "NodeFunction")).toEqual(
+                identifiersOf(consumer, "NodeFunction"),
+            );
+
+            // A BOOLEAN-producing function is not among them: it produces a
+            // boolean, not the `(item: T) => boolean` the slot declares. It is
+            // still offered as a binding, where the signature does match.
+            expect(identifiersOf(predicate, "NodeFunction")).not.toContain("std::boolean::negate");
+            expect(identifiersOf(predicate, "SubFlowValue")).toContain("std::boolean::negate");
+        });
+
+        it("offers them on a list's element slot as well", () => {
+            // A parameter whose element is an unconstrained callable.
+            const runAll: FunctionDefinition = {
+                __typename: "FunctionDefinition",
+                id: "gid://sagittarius/FunctionDefinition/950",
+                identifier: "test::flows::run_all",
+                signature: "(handlers: LIST<(...args: any): any>): void",
+            } as FunctionDefinition;
+
+            const handlers = parameterSchema(
+                "test::flows::run_all",
+                [{value: null}],
+                0,
+                [...FUNCTION_SIGNATURES, runAll],
+            );
+
+            expect(handlers.input).toBe("list-sub-flow");
+            // Both the declared element expansion and the (here identical) items
+            // carry them — an element slot is where the sub-flow is actually filled.
+            for (const element of [handlers.declaredItems[0], handlers.items[0]]) {
+                expect(element.input).toBe("sub-flow");
+                expect(identifiersOf(element, "NodeFunction")).toEqual([
+                    ...UNCONSTRAINED_PRODUCERS,
+                    "test::flows::run_all",
+                ].sort());
+                expect(identifiersOf(element, "SubFlowValue").length).toBeGreaterThan(0);
+            }
+        });
+
+        // An element slot scopes each of its options to the whole element type,
+        // and a union loses its call signatures as soon as one member is not
+        // callable. The bindings of a callable option must not depend on that:
+        // the sub-flow option of `FN | OBJECT<…>` offers exactly what the same
+        // element declared on its own does.
+        it("offers the same bindings on a callable option of a union element", () => {
+            const withSignature = (signature: string): FunctionDefinition[] => [
+                ...FUNCTION_SIGNATURES,
+                {
+                    __typename: "FunctionDefinition",
+                    id: "gid://sagittarius/FunctionDefinition/950",
+                    identifier: "test::flows::run_all",
+                    signature,
+                } as FunctionDefinition,
+            ];
+
+            const alone = parameterSchema(
+                "test::flows::run_all",
+                [{value: null}],
+                0,
+                withSignature("(handlers: LIST<(...args: any[]) => any>): void"),
+            );
+            const inUnion = parameterSchema(
+                "test::flows::run_all",
+                [{value: null}],
+                0,
+                withSignature(
+                    "(handlers: LIST<((...args: any[]) => any) | OBJECT<{test: NUMBER}>>): void",
+                ),
+            );
+
+            const optionOf = (schema: any, input: string): any =>
+                schema.declaredItems.find((item: any) => item.input === input);
+
+            const declared = alone.declaredItems[0];
+            expect(identifiersOf(declared, "SubFlowValue").length).toBeGreaterThan(0);
+            expect(identifiersOf(optionOf(inUnion, "sub-flow"), "SubFlowValue")).toEqual(
+                identifiersOf(declared, "SubFlowValue"),
+            );
+            // The items of a value-less list mirror the declared expansion, so the
+            // option carries them there as well.
+            expect(
+                identifiersOf(
+                    inUnion.items.find((item: any) => item.input === "sub-flow"),
+                    "SubFlowValue",
+                ),
+            ).toEqual(identifiersOf(declared, "SubFlowValue"));
+            // The object option is not callable, so it offers no bindings at all.
+            expect(identifiersOf(optionOf(inUnion, "data"), "SubFlowValue")).toEqual([]);
+        });
+
+        // Non-callable slots are untouched: they never hit the removed bail-out.
+        it("leaves a non-callable slot unchanged", () => {
+            const list = parameterSchema("std::list::at", [{value: null}, {value: null}], 0);
+
+            expect(identifiersOf(list, "NodeFunction").length).toBe(22);
+            expect(identifiersOf(list, "SubFlowValue")).toEqual([]);
+            // The element slot accepts anything, so it keeps the full set —
+            // including the producers a callable slot rejects.
+            expect(identifiersOf(list.declaredItems[0], "NodeFunction").length).toBe(107);
+            expect(identifiersOf(list.declaredItems[0], "NodeFunction")).toContain("std::number::add");
         });
     });
 
@@ -2765,6 +2981,488 @@ describe("Schema", () => {
             // of the parent must not strip suggestions from the children.
             expect(titleSuggestionCount(optional)).toBe(titleSuggestionCount(required));
             expect(titleSuggestionCount(optional)).toBeGreaterThan(0);
+        });
+    });
+
+    // Whether a parameter carries a value or not must never change *which*
+    // suggestions a position offers: the declared type decides that, and a value
+    // only drives the shape (how many items/properties, and each position's
+    // concrete `type`). Before, a value collapsed nested positions onto the
+    // node-side schema, which is scoped by the *narrowed* value type — so a nested
+    // list/object came out with no suggestions at all and a union-typed property
+    // with only the literal that had been entered.
+    describe("suggestion parity between an empty and a filled parameter", () => {
+
+        // A concrete object data type: a select field, a text field, an open object
+        // field and a list field — one of each shape a nested position can take.
+        const TEST_REQUEST: DataType = {
+            __typename: "DataType",
+            id: "gid://sagittarius/DataType/9200",
+            identifier: "TEST_REQUEST",
+            genericKeys: [],
+            type: "{ http_method: HTTP_METHOD, url: HTTP_URL, headers: OBJECT<{}>, tags: LIST<TEXT> }",
+        } as unknown as DataType;
+
+        // A union field whose members render as different inputs, so it must stay
+        // split into one schema per member (the select/boolean unions do not).
+        const TEST_MIXED: DataType = {
+            __typename: "DataType",
+            id: "gid://sagittarius/DataType/9201",
+            identifier: "TEST_MIXED",
+            genericKeys: [],
+            type: "{ flexible: TEXT | LIST<TEXT> }",
+        } as unknown as DataType;
+
+        const fn = (identifier: string, signature: string): FunctionDefinition =>
+            ({
+                __typename: "FunctionDefinition",
+                id: `gid://sagittarius/FunctionDefinition/92${identifier.length}`,
+                identifier,
+                signature,
+            }) as FunctionDefinition;
+
+        const functions = [
+            ...FUNCTION_SIGNATURES,
+            fn("test::parity::required", "(request: TEST_REQUEST): void"),
+            fn("test::parity::optional", "(request?: TEST_REQUEST): void"),
+            fn("test::parity::methods", "(methods: LIST<HTTP_METHOD>): void"),
+            fn("test::parity::matrix", "(matrix: LIST<LIST<HTTP_METHOD>>): void"),
+            fn("test::parity::mixed", "(mixed: TEST_MIXED): void"),
+            // A list whose element is a union of *alternative inputs*: a COLOR
+            // (dedicated input, structurally an object) or a plain object.
+            fn("test::parity::either", "(items: LIST<COLOR | OBJECT<{test: NUMBER}>>): void"),
+            // The same union in a scalar slot.
+            fn("test::parity::either_one", "(item: COLOR | OBJECT<{test: NUMBER}>): void"),
+            fn("test::parity::objects", "(objects: LIST<OBJECT<{test: NUMBER}>>): void"),
+            fn("test::parity::texts_or_numbers", "(values: LIST<TEXT | NUMBER>): void"),
+            fn("test::parity::flags", "(flags: LIST<BOOLEAN>): void"),
+        ];
+        const dataTypes = [...DATA_TYPES, TEST_REQUEST, TEST_MIXED];
+
+        /** The sole parameter's schema of a single node calling `identifier` with `value`. */
+        const probe = (identifier: string, value: unknown): any => {
+            const flow: Flow = {
+                id: "gid://sagittarius/Flow/1",
+                startingNodeId: "gid://sagittarius/NodeFunction/1",
+                signature: "(): void",
+                nodes: {
+                    nodes: [
+                        {
+                            id: "gid://sagittarius/NodeFunction/1",
+                            functionDefinition: {identifier},
+                            parameters: {
+                                nodes: [
+                                    {
+                                        value:
+                                            value === undefined
+                                                ? null
+                                                : {__typename: "LiteralValue", value},
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                },
+            } as unknown as Flow;
+
+            return getSignatureSchema(
+                flow,
+                dataTypes,
+                functions,
+                "gid://sagittarius/NodeFunction/1",
+            ).parameters[0].schema;
+        };
+
+        /** A position's suggestions as a comparable, order-independent set. */
+        const suggestionSet = (schema: any): Set<string> =>
+            new Set(((schema?.suggestions ?? []) as unknown[]).map((s) => JSON.stringify(s)));
+
+        /** The literal options a position offers, by their value. */
+        const literalOptions = (schema: any): unknown[] =>
+            ((schema?.suggestions ?? []) as any[])
+                .filter((suggestion) => "value" in suggestion)
+                .map((suggestion) => suggestion.value);
+
+        const property = (schema: any, key: string): any => {
+            const prop = schema.properties?.[key];
+            return Array.isArray(prop) ? prop[0] : prop;
+        };
+
+        const REQUEST_VALUE = {
+            http_method: "GET",
+            url: "/test",
+            headers: {"x-trace": "1"},
+            tags: ["a", "b"],
+        };
+
+        it("keeps a nested object property's own suggestions when a value is entered", () => {
+            const empty = probe("test::parity::required", undefined);
+            const filled = probe("test::parity::required", REQUEST_VALUE);
+
+            const emptyHeaders = property(empty, "headers");
+            const filledHeaders = property(filled, "headers");
+
+            expect(emptyHeaders.input).toBe("data");
+            expect(filledHeaders.input).toBe("data");
+            // The entered field is mirrored...
+            expect(Object.keys(filledHeaders.properties)).toEqual(["x-trace"]);
+            // ...while the object slot itself keeps offering what can produce it.
+            expect(suggestionSet(emptyHeaders).size).toBeGreaterThan(0);
+            expect(suggestionSet(filledHeaders)).toEqual(suggestionSet(emptyHeaders));
+        });
+
+        it("keeps a nested list property's own suggestions when a value is entered", () => {
+            const empty = probe("test::parity::required", undefined);
+            const filled = probe("test::parity::required", REQUEST_VALUE);
+
+            const emptyTags = property(empty, "tags");
+            const filledTags = property(filled, "tags");
+
+            // One item per entered element, but the same list-level suggestions.
+            expect(filledTags.items).toHaveLength(2);
+            expect(suggestionSet(emptyTags).size).toBeGreaterThan(0);
+            expect(suggestionSet(filledTags)).toEqual(suggestionSet(emptyTags));
+
+            // ...and the same element-level suggestions on every item.
+            const emptyItem = suggestionSet(emptyTags.items[0]);
+            expect(emptyItem.size).toBeGreaterThan(0);
+            filledTags.items.forEach((item: any) =>
+                expect(suggestionSet(item)).toEqual(emptyItem),
+            );
+        });
+
+        it("keeps a select property one input carrying every option, filled or not", () => {
+            const empty = probe("test::parity::required", undefined);
+            const filled = probe("test::parity::required", REQUEST_VALUE);
+
+            // A literal union is a single select — not one input per option.
+            expect(Array.isArray(empty.properties.http_method)).toBe(false);
+            expect(empty.properties.http_method.input).toBe("select");
+            expect(filled.properties.http_method.input).toBe("select");
+
+            expect(literalOptions(empty.properties.http_method)).toEqual(
+                ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+            );
+            // Entering "GET" must not reduce the options to the entered one.
+            expect(suggestionSet(filled.properties.http_method)).toEqual(
+                suggestionSet(empty.properties.http_method),
+            );
+        });
+
+        it("expands an optional object parameter's entered fields like a required one", () => {
+            const optional = probe("test::parity::optional", REQUEST_VALUE);
+            const required = probe("test::parity::required", REQUEST_VALUE);
+
+            // `request?: TEST_REQUEST` resolves to `TEST_REQUEST | undefined`, whose
+            // union flags carry no object bit — the entered fields used to vanish.
+            expect(Object.keys(optional.properties)).toEqual(Object.keys(required.properties));
+            expect(suggestionSet(property(optional, "headers"))).toEqual(
+                suggestionSet(property(required, "headers")),
+            );
+            expect(property(optional, "tags").items).toHaveLength(2);
+        });
+
+        it("offers every option on each element of a list-select, filled or not", () => {
+            const empty = probe("test::parity::methods", undefined);
+            const filled = probe("test::parity::methods", ["GET", "POST"]);
+
+            expect(empty.input).toBe("list-select");
+            expect(filled.input).toBe("list-select");
+            expect(filled.items).toHaveLength(2);
+
+            // An item of the empty list describes one *option* of the element slot,
+            // so it is scoped to the whole element type — the same set an entered
+            // element gets.
+            const options = suggestionSet(empty.items[0]);
+            expect(literalOptions(empty.items[0])).toEqual(
+                ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+            );
+            empty.items.forEach((item: any) => expect(suggestionSet(item)).toEqual(options));
+            filled.items.forEach((item: any) => expect(suggestionSet(item)).toEqual(options));
+
+            // The whole-list slot keeps its own suggestions either way.
+            expect(suggestionSet(filled)).toEqual(suggestionSet(empty));
+        });
+
+        it("keeps a nested list's suggestions inside a value-driven list", () => {
+            const empty = probe("test::parity::matrix", undefined);
+            const filled = probe("test::parity::matrix", [["GET"], ["POST"]]);
+
+            const emptyInner = empty.items[0];
+            expect(emptyInner.input).toBe("list-select");
+            expect(suggestionSet(emptyInner).size).toBeGreaterThan(0);
+
+            expect(filled.items).toHaveLength(2);
+            filled.items.forEach((inner: any) => {
+                expect(inner.input).toBe("list-select");
+                expect(suggestionSet(inner)).toEqual(suggestionSet(emptyInner));
+                expect(suggestionSet(inner.items[0])).toEqual(suggestionSet(emptyInner.items[0]));
+            });
+        });
+
+        it("still splits a property whose union members render as different inputs", () => {
+            const empty = probe("test::parity::mixed", undefined);
+
+            // `TEXT | LIST<TEXT>` has no single input kind, so it stays one schema
+            // per member — each with the suggestions of its own member type.
+            const members = empty.properties.flexible;
+            expect(Array.isArray(members)).toBe(true);
+            expect(members.map((m: any) => m.input).sort()).toEqual(["list-text", "text"]);
+            members.forEach((member: any) =>
+                expect(suggestionSet(member).size).toBeGreaterThan(0),
+            );
+        });
+
+        // `items` is value-driven on purpose, so on its own it cannot answer "what
+        // may an element be": an entered value reduces it to the elements that are
+        // there (and `[]` empties it entirely), which changes the element schemas —
+        // and with them the cumulated element suggestions — of the very same slot.
+        // `declaredItems` carries that declared answer next to it, always.
+        describe("declaredItems", () => {
+
+            it("carries the element options unchanged, empty, filled or emptied", () => {
+                const empty = probe("test::parity::methods", undefined);
+                const filled = probe("test::parity::methods", ["GET", "POST"]);
+                const emptied = probe("test::parity::methods", []);
+
+                // The declared expansion is the same in all three cases...
+                expect(filled.declaredItems).toEqual(empty.declaredItems);
+                expect(emptied.declaredItems).toEqual(empty.declaredItems);
+                expect(empty.declaredItems.map((item: any) => item.input)).toEqual(
+                    Array(6).fill("select"),
+                );
+                expect(literalOptions(empty.declaredItems[0])).toEqual(
+                    ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+                );
+
+                // ...while `items` follows the value.
+                expect(empty.items).toHaveLength(6);
+                expect(filled.items).toHaveLength(2);
+                expect(emptied.items).toHaveLength(0);
+
+                // The cumulated element suggestions are therefore stable, even for
+                // the emptied list that has no `items` left to read them from.
+                const cumulated = (schema: any): Set<string> =>
+                    new Set(
+                        (schema.declaredItems as any[]).flatMap((item) => [
+                            ...suggestionSet(item),
+                        ]),
+                    );
+                expect(cumulated(filled)).toEqual(cumulated(empty));
+                expect(cumulated(emptied)).toEqual(cumulated(empty));
+            });
+
+            it("is present at every level of a nested list", () => {
+                const filled = probe("test::parity::matrix", [["GET"], ["POST"]]);
+                const empty = probe("test::parity::matrix", undefined);
+
+                // Outer level: one declared entry, the inner list.
+                expect(filled.declaredItems).toEqual(empty.declaredItems);
+                expect(filled.declaredItems[0].input).toBe("list-select");
+
+                // Inner level: the six options, on the entered inner lists too.
+                expect(filled.declaredItems[0].declaredItems).toEqual(
+                    empty.declaredItems[0].declaredItems,
+                );
+                filled.items.forEach((inner: any) =>
+                    expect(inner.declaredItems).toEqual(empty.declaredItems[0].declaredItems),
+                );
+            });
+
+            it("describes an unconstrained element slot as one generic entry", () => {
+                // `<T>(value: T)` — the slot declares nothing about its elements, so
+                // the declared answer is "anything", with the constant `any` set.
+                const generic = probe("std::control::value", [1, 2]);
+
+                expect(generic.input).toBe("list");
+                expect(generic.items.map((item: any) => item.input)).toEqual(["number", "number"]);
+                expect(generic.declaredItems).toHaveLength(1);
+                expect(generic.declaredItems[0].input).toBe("generic");
+                expect(suggestionSet(generic.declaredItems[0])).toEqual(
+                    suggestionSet(generic.items[0]),
+                );
+            });
+
+            // An element of a union-typed list is one of the union's members, so
+            // `items[i]` must be the schema of that member — the same entry
+            // `declaredItems` already offers for it, refined by the value — and not
+            // a shape read off the raw value. Before this, the union (which carries
+            // none of its members' type flags) read as an unconstrained slot: a
+            // COLOR value was expanded back into the `{hue, saturation, lightness}`
+            // object its dedicated input replaces, and an object value lost the
+            // declared property schemas the member describes.
+            describe("union-typed element", () => {
+
+                const COLOR_VALUE = {hue: 210, saturation: 50, lightness: 40};
+
+                it("renders each entered element as the declared member it picked", () => {
+                    const filled = probe("test::parity::either", [COLOR_VALUE, {test: 1}]);
+
+                    expect(filled.items.map((item: any) => item.input)).toEqual(["color", "data"]);
+                    expect(filled.items[1].properties.test.input).toBe("number");
+                    expect(filled.items[1].required).toEqual(["test"]);
+                });
+
+                it("picks the member per element, whatever the element count", () => {
+                    // The declared union has two members and the value three
+                    // elements: cardinality comes from the value, the member from
+                    // each element.
+                    const filled = probe("test::parity::either", [COLOR_VALUE, {test: 1}, COLOR_VALUE]);
+
+                    expect(filled.items.map((item: any) => item.input))
+                        .toEqual(["color", "data", "color"]);
+                });
+
+                it("offers both members as the element's options, filled or not", () => {
+                    const empty = probe("test::parity::either", undefined);
+                    const filled = probe("test::parity::either", [COLOR_VALUE]);
+
+                    // The declared answer enumerates the union's members...
+                    expect(empty.declaredItems.map((item: any) => item.input))
+                        .toEqual(["color", "data"]);
+                    expect(filled.declaredItems).toEqual(empty.declaredItems);
+
+                    // ...and every entered element is one of them, with that
+                    // member's own suggestions.
+                    const declaredKinds = empty.declaredItems.map((item: any) => item.input);
+                    filled.items.forEach((item: any) => {
+                        expect(declaredKinds).toContain(item.input);
+                        expect(suggestionSet(item)).toEqual(
+                            suggestionSet(
+                                empty.declaredItems.find((d: any) => d.input === item.input),
+                            ),
+                        );
+                    });
+                });
+
+                it("identifies the member of a half-filled element", () => {
+                    // `null` is not assignable to NUMBER, so the member is found by
+                    // the keys the value names — an unfilled field must not cost the
+                    // element its declared schema.
+                    const filled = probe("test::parity::either", [{test: null}]);
+
+                    expect(filled.items).toHaveLength(1);
+                    expect(filled.items[0].input).toBe("data");
+                    expect(filled.items[0].properties.test.input).toBe("number");
+                });
+
+                it("narrows a scalar union slot to the member the value picked", () => {
+                    expect(probe("test::parity::either_one", COLOR_VALUE).input).toBe("color");
+
+                    const object = probe("test::parity::either_one", {test: 1});
+                    expect(object.input).toBe("data");
+                    expect(object.properties.test.input).toBe("number");
+                });
+
+                it("renders a primitive union element as the member's own input", () => {
+                    const empty = probe("test::parity::texts_or_numbers", undefined);
+                    const filled = probe("test::parity::texts_or_numbers", ["a", 1]);
+
+                    // `TEXT | NUMBER` are two inputs, not two options of one: the
+                    // entered elements render as the member each picked — the same
+                    // kinds the empty slot offers.
+                    expect(empty.items.map((item: any) => item.input)).toEqual(["text", "number"]);
+                    expect(filled.items.map((item: any) => item.input)).toEqual(["text", "number"]);
+                    expect(filled.declaredItems).toEqual(empty.declaredItems);
+                });
+
+                it("leaves an options union unnarrowed", () => {
+                    // A literal union is the option list of a single select, and
+                    // `boolean` is `true | false` — entering one member must not hide
+                    // the others.
+                    const methods = probe("test::parity::methods", ["GET"]);
+                    expect(methods.items[0].input).toBe("select");
+                    expect(literalOptions(methods.items[0]))
+                        .toEqual(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]);
+
+                    const flags = probe("test::parity::flags", [true]);
+                    const emptyFlags = probe("test::parity::flags", undefined);
+                    expect(flags.items[0].input).toBe("boolean");
+                    expect(suggestionSet(flags.items[0])).toEqual(suggestionSet(emptyFlags.items[0]));
+                });
+            });
+
+            it("keeps a declared property's own type when its value is null", () => {
+                // An unfilled field narrows nothing: the property stays the number
+                // input of type number it is declared as, rather than being
+                // retyped to the `null` that sits in it.
+                const filled = probe("test::parity::objects", [{test: null}]);
+                const empty = probe("test::parity::objects", undefined);
+
+                expect(filled.items[0].properties.test).toEqual(empty.items[0].properties.test);
+                expect(filled.items[0].properties.test.input).toBe("number");
+                expect(filled.items[0].properties.test.type).toBe("number");
+            });
+
+            it("is omitted on a schema that describes a produced value", () => {
+                // A type schema (like a signature's return) is type-driven through
+                // and through: `items` is already the declared expansion there.
+                const typeSchema = getTypeSchema("LIST<HTTP_METHOD>", DATA_TYPES) as any;
+
+                expect(typeSchema.items).toHaveLength(6);
+                expect(typeSchema.declaredItems).toBeUndefined();
+            });
+        });
+
+        // A value only ever refines the declared object: the fields it does not
+        // mention keep their declared schema instead of disappearing, which is what
+        // lets the UI render (and suggest for) the fields still to be filled.
+        describe("partially filled object", () => {
+
+            it("keeps every declared field, with the declared required list", () => {
+                const empty = probe("test::parity::required", undefined);
+                const partial = probe("test::parity::required", {url: "/x"});
+
+                expect(Object.keys(partial.properties)).toEqual(Object.keys(empty.properties));
+                expect(partial.required).toEqual(empty.required);
+
+                // The untouched fields are identical to the empty case, suggestions
+                // included; only the entered `url` takes the value's `type`.
+                expect(partial.properties.http_method).toEqual(empty.properties.http_method);
+                expect(partial.properties.tags).toEqual(empty.properties.tags);
+                expect(partial.properties.url.input).toBe("text");
+                expect(suggestionSet(partial.properties.url)).toEqual(
+                    suggestionSet(empty.properties.url),
+                );
+            });
+
+            it("adds a field the declared type does not mention", () => {
+                const partial = probe("test::parity::required", {url: "/x", extra: 1});
+
+                // The extra field is unconstrained → its own shape, `any` suggestions.
+                expect(partial.properties.extra.input).toBe("number");
+                expect(suggestionSet(partial.properties.extra).size).toBeGreaterThan(0);
+                // ...and it is not part of what the declared type requires.
+                expect(partial.required).not.toContain("extra");
+            });
+        });
+
+        it("never emits an empty suggestions array", () => {
+            // Suggestion-carrying schemas are built with the key always present;
+            // the published schema omits it instead of exposing an empty list.
+            const seen: string[] = [];
+            const walk = (schema: any, path: string): void => {
+                if (Array.isArray(schema?.suggestions) && schema.suggestions.length === 0) {
+                    seen.push(path);
+                }
+                (schema?.items ?? []).forEach((item: any, index: number) =>
+                    walk(item, `${path}.items[${index}]`),
+                );
+                (schema?.declaredItems ?? []).forEach((item: any, index: number) =>
+                    walk(item, `${path}.declaredItems[${index}]`),
+                );
+                for (const [key, value] of Object.entries<any>(schema?.properties ?? {})) {
+                    (Array.isArray(value) ? value : [value]).forEach((member, index) =>
+                        walk(member, `${path}.${key}[${index}]`),
+                    );
+                }
+            };
+
+            walk(probe("test::parity::required", REQUEST_VALUE), "request");
+            walk(probe("test::parity::matrix", [["GET"], ["POST"]]), "matrix");
+            walk(probe("test::parity::optional", REQUEST_VALUE), "optional");
+
+            expect(seen).toEqual([]);
         });
     });
 
