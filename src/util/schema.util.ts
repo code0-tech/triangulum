@@ -229,8 +229,42 @@ export interface DataInput extends Input {
  */
 export interface ListInput extends Input {
     input?: "list";
-    /** Schema or array of schemas for list items */
+    /**
+     * Schema or array of schemas for list items.
+     *
+     * In a parameter schema this is *value-driven*: once an array value is
+     * entered it holds exactly one entry per entered element, so it says what the
+     * list currently contains — not what an element may be. Use
+     * {@link ListInput.declaredItems} for the latter.
+     *
+     * An entered entry only ever *refines* one of the `declaredItems`: it is that
+     * option's input kind, properties and suggestions, with the concrete value's
+     * `type` and per-element cardinality filled in. A union element type is
+     * resolved to the member the entered element picked, so the COLOR entries of a
+     * `LIST<COLOR | OBJECT<…>>` stay color inputs and its object entries keep the
+     * declared object's property schemas.
+     */
     items?: Schema[];
+    /**
+     * The item schemas the *declared* element type produces — what `items` holds
+     * while no value is entered, and therefore the answer to "what may an element
+     * of this list be": its input kind, and the suggestions an element slot offers.
+     * A union element contributes one entry per member (e.g. all six methods of a
+     * `LIST<HTTP_METHOD>`), so the entries enumerate the element's options rather
+     * than the list's contents.
+     *
+     * Always present alongside `items` on an input slot's schema — an entered
+     * value can empty `items` (`[]`) or reduce it to the elements that happen to be
+     * there, and neither tells the UI what to render for a new element or which
+     * candidates the element slot accepts. An unconstrained element slot (a generic
+     * `LIST<T>`, or a list in a slot the declared type does not describe) yields a
+     * single generic entry carrying the "accepts anything" suggestion set.
+     *
+     * Omitted on schemas that describe a *produced* value rather than an input slot
+     * (a signature's return type, {@link getTypeSchema}); there `items` is already
+     * the declared expansion.
+     */
+    declaredItems?: Schema[];
 }
 
 /**
@@ -350,6 +384,18 @@ export const getSchema = (
     // every reference in scope, because the function takes anything.
     const typeForSuggestions = suggestionType ?? parameterType;
 
+    // Sub-flow bindings are the one exception to that scope: they are matched
+    // against the slot's *callable* type, and a wider scope is not necessarily
+    // callable where this position is. A union element scopes every one of its
+    // options to the whole union (see the item expansion below), and a union
+    // loses its call signatures as soon as one member is not callable — matching
+    // the bindings against it would drop every one of them from an option that
+    // is itself a sub-flow. They are therefore scoped to this schema node's own
+    // (member) type whenever the wider scope has no call signatures to match.
+    // The other three sources filter by assignability, where the wider scope is
+    // a superset and needs no such fallback.
+    const typeForSubFlows = isSubFlow(typeForSuggestions) ? typeForSuggestions : parameterType;
+
     // Collect all available suggestions for this parameter
     const combinedSuggestions = suggestions ? {
         suggestions: [
@@ -370,7 +416,7 @@ export const getSchema = (
                 checker,
                 functionDeclarations,
                 functions,
-                typeForSuggestions
+                typeForSubFlows
             ),
         ],
     } : {};
@@ -467,7 +513,8 @@ export const getSchema = (
 
         // A list of FILEs (LIST<FILE>, FILE[], ...) surfaces a dedicated
         // multi-file input instead of a generic list of file objects, carrying
-        // the same mimetype as its element FILE would.
+        // the same mimetype as its element FILE would. It carries no `items`, and
+        // hence no `declaredItems` either.
         if (itemTypes.length === 1 && isFileType(checker, itemTypes[0])) {
             const mimetype = getFileMimetype(checker, itemTypes[0]);
             return {input: "list-file", type, mimetype, ...combinedSuggestions};
@@ -476,12 +523,26 @@ export const getSchema = (
         // Per-item schemas, computed the same way for a generic list and a
         // list-select (whose `items` mirror a normal list's). A union element is
         // split into one schema per member; a single element yields one schema.
+        //
+        // A split member describes one *option* of the element slot, not a slot of
+        // its own, so its suggestions stay scoped to the whole element type: every
+        // item of a LIST<HTTP_METHOD> offers all six methods, not just the one its
+        // `type` names. That is also what the value-driven path produces once
+        // elements are entered (see buildValueDrivenItem), so an item's suggestions
+        // no longer depend on whether the list carries a value.
         const itemSchemas = itemTypes.flatMap(itemType => {
             const memberTypes = itemType.isUnion() ? itemType.types : [itemType];
+            const elementSuggestionType = memberTypes.length > 1 ? itemType : undefined;
             return memberTypes.map((memberType) =>
-                getSchema(checker, node, memberType, functionDeclarations, functions, suggestions, undefined, visited, recursionCache)
+                getSchema(checker, node, memberType, functionDeclarations, functions, suggestions, elementSuggestionType, visited, recursionCache)
             )
         })
+
+        // The declared element expansion, kept next to `items` so it survives a
+        // value overwriting them (see ListInput.declaredItems). Only an input slot
+        // carries it: a suggestion-less schema describes a produced value, where
+        // `items` is the declared expansion already.
+        const declaredItems = suggestions ? {declaredItems: itemSchemas} : {};
 
         // A list of a select type (LIST<HTTP_METHOD>, ('GET' | 'POST')[], ...)
         // surfaces a dedicated multi-select. Its `items` are the element schemas,
@@ -490,7 +551,7 @@ export const getSchema = (
         // cases below because a single literal (e.g. LIST<1>) is a select, not a
         // plain number.
         if (itemTypes.length === 1 && isSelectType(itemTypes[0])) {
-            return {input: "list-select", type, items: itemSchemas, ...combinedSuggestions};
+            return {input: "list-select", type, items: itemSchemas, ...declaredItems, ...combinedSuggestions};
         }
 
         // A homogeneous list of a plain primitive surfaces a dedicated
@@ -504,19 +565,20 @@ export const getSchema = (
         // per-item schema of the generic list below.
         if (itemTypes.length === 1) {
             const element = itemTypes[0];
-            if (isBoolean(element)) return {input: "list-boolean", type, items: itemSchemas, ...combinedSuggestions};
-            if (isNumber(element)) return {input: "list-number", type, items: itemSchemas, ...combinedSuggestions};
-            if (isString(element)) return {input: "list-text", type, items: itemSchemas, ...combinedSuggestions};
+            if (isBoolean(element)) return {input: "list-boolean", type, items: itemSchemas, ...declaredItems, ...combinedSuggestions};
+            if (isNumber(element)) return {input: "list-number", type, items: itemSchemas, ...declaredItems, ...combinedSuggestions};
+            if (isString(element)) return {input: "list-text", type, items: itemSchemas, ...declaredItems, ...combinedSuggestions};
             // A homogeneous list of a callable/sub-flow element surfaces a
             // dedicated multi-sub-flow input. Checked after the primitives (none
             // of which are callable) and before the generic list fallback.
-            if (isSubFlow(element)) return {input: "list-sub-flow", type, items: itemSchemas, ...combinedSuggestions};
+            if (isSubFlow(element)) return {input: "list-sub-flow", type, items: itemSchemas, ...declaredItems, ...combinedSuggestions};
         }
 
         return {
             input: "list",
             type,
             items: itemSchemas,
+            ...declaredItems,
             ...combinedSuggestions,
         };
     }
@@ -562,12 +624,22 @@ export const getSchema = (
                         (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) !== 0
                     ));
 
-            // Filter out undefined and null types from union types
-            const propertyTypes = propertyType.isUnion()
-                ? propertyType.types.filter(
-                    (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
-                )
-                : [propertyType];
+            // A nullish member never describes an input of its own, so it is stripped
+            // first. What remains may still be a union: a heterogeneous one (e.g.
+            // `TEXT | OBJECT<…>`) yields one schema per member, while a union that
+            // renders as a *single* input — a literal-union select, or boolean's
+            // `true | false` — is kept whole. Splitting those would turn one select
+            // into one input per option, each carrying only its own literal as a
+            // suggestion, and the property would stop matching both the single input
+            // the same type produces as a parameter and the one the value-driven path
+            // builds once a value is entered.
+            const nonNullishPropertyType = checker.getNonNullableType(propertyType);
+            const propertyTypes =
+                nonNullishPropertyType.isUnion() &&
+                !isSelectType(nonNullishPropertyType) &&
+                !isBoolean(nonNullishPropertyType)
+                    ? nonNullishPropertyType.types
+                    : [nonNullishPropertyType];
 
             // The matching property on the declared type (when tracked), so a
             // property whose declared type is a custom-input-constrained type
@@ -615,20 +687,24 @@ export const getSchema = (
 /**
  * Merges a function-declared parameter schema with the schema derived from the
  * concrete node value. The function schema is treated as the source of truth for
- * the structural shape (input kind, properties, items); the node schema only
- * contributes additional suggestions and, when the function schema is generic,
- * a fallback shape.
+ * the structural shape (input kind, properties, items) *and* for the suggestions
+ * of every nested position; the node schema contributes the parameter root's
+ * suggestion scope, the value-driven shape of positions the declared type leaves
+ * open, and — when the function schema is generic — a fallback shape.
  *
  * Rules:
  * - If the function schema is generic, follow the node schema — but never as a
  *   select. A single literal value (e.g. "Test") narrowing a generic T must not
  *   collapse the input into a select with one option; it should remain free-form
  *   text/number/boolean matching the literal kind.
- * - Otherwise use the function schema's input kind and merge suggestions from both.
- *   Recurse into `properties` (for data) and `items` (for list) so nested generics
- *   inside concrete containers are handled the same way.
+ * - Otherwise use the function schema's input kind. Recurse into `properties` (for
+ *   data) and `items` (for list) so nested generics inside concrete containers are
+ *   handled the same way.
+ * - Suggestions come from the declared side at every nested position (see the
+ *   comment on `suggestions` below) and are de-duplicated by structural equality.
  *
- * Suggestions are concatenated and de-duplicated by structural equality.
+ * Both schemas are expected to carry suggestions (built with the flag enabled);
+ * the node side is additionally passed through {@link normalizeNodeSchema} first.
  *
  * @param functionSchema - The schema derived from the declared function parameter type
  * @param nodeSchema - The schema derived from the node's concrete (narrowed) parameter type
@@ -685,6 +761,11 @@ export const normalizeNodeSchema = (schema: Schema): Schema => {
         result = {...result, items: items.map(normalizeNodeSchema)} as Schema;
     }
 
+    const declared = (schema as ListInput).declaredItems;
+    if (declared) {
+        result = {...result, declaredItems: declared.map(normalizeNodeSchema)} as Schema;
+    }
+
     const properties = (schema as DataInput).properties;
     if (properties) {
         const mapped: Record<string, Schema | Schema[]> = {};
@@ -710,6 +791,89 @@ export const normalizeNodeSchema = (schema: Schema): Schema => {
 };
 
 /**
+ * Strips `undefined` and `null` from a union type so the *declared* shape can be
+ * inspected. An optional parameter (or property) resolves to
+ * `<declared> | undefined`, and a union carries none of its members' type flags —
+ * so a test like "is this an object" or `checker.isArrayType` answers `false` for
+ * every optional slot unless the nullish part is removed first. A union that has
+ * more than one real member left is returned unchanged: there is no single
+ * declared shape to speak of then.
+ */
+export const nonNullishType = (type: ts.Type): ts.Type => {
+    if (!type.isUnion()) return type;
+    const nonNullish = type.types.filter(
+        (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0,
+    );
+    return nonNullish.length === 1 ? nonNullish[0] : type;
+};
+
+/**
+ * Sets a schema's `suggestions` to the given set, dropping the key entirely when
+ * the set is empty or missing. Suggestion-carrying schemas are built with the
+ * key always present (an empty array when nothing matched), whereas the rest of
+ * the pipeline omits it — so every schema that is spread into a result passes
+ * through here instead of relying on the spread.
+ */
+export const withSuggestions = <T extends Schema>(
+    schema: T,
+    suggestions: Input["suggestions"] | undefined,
+): T => {
+    if (suggestions && suggestions.length > 0) return {...schema, suggestions};
+    if (schema.suggestions === undefined) return schema;
+    const {suggestions: _dropped, ...rest} = schema;
+    return rest as T;
+};
+
+/**
+ * A declared (function-side) schema kept as the answer for its position, because
+ * the node side has no counterpart to merge into it — e.g. a property the entered
+ * value does not carry, or a union-typed position whose members no longer line up.
+ *
+ * The declared schema already carries the suggestions of every level it
+ * describes; only a fully generic slot inside it is rewritten to the constant
+ * `any` set, which is what the merge itself would have produced for such a slot
+ * (see {@link genericNodeSchema}). Empty suggestion arrays are dropped so the
+ * result follows the same convention as every other schema.
+ */
+export const declaredSchema = (
+    schema: Schema,
+    anySuggestions: Input["suggestions"] = undefined,
+): Schema => {
+    let result: Schema = schema;
+
+    const items = (result as ListInput).items;
+    if (items) {
+        result = {
+            ...result,
+            items: items.map((s) => declaredSchema(s, anySuggestions)),
+        } as Schema;
+    }
+
+    const declared = (result as ListInput).declaredItems;
+    if (declared) {
+        result = {
+            ...result,
+            declaredItems: declared.map((s) => declaredSchema(s, anySuggestions)),
+        } as Schema;
+    }
+
+    const properties = (result as DataInput).properties;
+    if (properties) {
+        const mapped: Record<string, Schema | Schema[]> = {};
+        for (const [key, value] of Object.entries(properties)) {
+            mapped[key] = Array.isArray(value)
+                ? value.map((s) => declaredSchema(s, anySuggestions))
+                : declaredSchema(value, anySuggestions);
+        }
+        result = {...result, properties: mapped} as Schema;
+    }
+
+    return result.input === "generic"
+        ? withSuggestions(result, anySuggestions)
+        : withSuggestions(result, result.suggestions);
+};
+
+/**
  * Treats a node-side schema as sitting in a fully generic ("accepts anything")
  * slot: the declared type constrains nothing here, so the value keeps its shape
  * while a select narrowed from a single literal is demoted to its free-form
@@ -725,6 +889,24 @@ export const normalizeNodeSchema = (schema: Schema): Schema => {
  * type-parameter constraint — e.g. `keyof T` — so they are kept). Descendants are
  * always overridden regardless.
  */
+/**
+ * The declared element expansion of a list slot: the function-side `items`, each
+ * kept as the declared answer for its position (see {@link declaredSchema}). An
+ * element the declared type leaves unconstrained — a generic `LIST<T>`, or a list
+ * in a slot with no declared type at all — yields a single generic entry carrying
+ * the "accepts anything" set, which is what such an element slot accepts.
+ *
+ * This is what {@link ListInput.declaredItems} carries, and it never depends on the
+ * entered value.
+ */
+export const declaredItemsOf = (
+    functionItems: Schema[] | undefined,
+    anySuggestions: Input["suggestions"] = undefined,
+): Schema[] =>
+    functionItems && functionItems.length > 0
+        ? functionItems.map((item) => declaredSchema(item, anySuggestions))
+        : [withSuggestions({input: "generic"} as Schema, anySuggestions)];
+
 export const genericNodeSchema = (
     schema: Schema,
     anySuggestions: Input["suggestions"] = undefined,
@@ -737,6 +919,14 @@ export const genericNodeSchema = (
         result = {
             ...result,
             items: items.map((s) => genericNodeSchema(s, anySuggestions)),
+        } as Schema;
+    }
+
+    const declared = (result as ListInput).declaredItems;
+    if (declared) {
+        result = {
+            ...result,
+            declaredItems: declared.map((s) => genericNodeSchema(s, anySuggestions)),
         } as Schema;
     }
 
@@ -783,9 +973,26 @@ export const mergeSchemas = (
         );
     }
 
-    const suggestions = mergeSuggestions(
-        functionSchema.suggestions,
-        nodeSchema.suggestions,
+    // Suggestions answer "what may be put into this slot", and only the *declared*
+    // type decides that — never the value that happens to sit there.
+    //
+    // At the parameter root the node side is the authority: its suggestions were
+    // collected against the widened function parameter type (see
+    // `widenForSuggestions`), so a `T` slot still offers everything in scope after
+    // the current value narrowed `T` to, say, a boolean.
+    //
+    // At every nested position — a property of a `data`, an element of a `list` —
+    // the node side was collected against the concrete, value-narrowed type
+    // instead: a `TEXT` property holding "GET" would offer only the literal "GET"
+    // rather than everything that can produce a text. The function side carries the
+    // declared property/element type's own scope there, so it is the authority and
+    // the node side only fills in for positions the declared type does not
+    // describe. That keeps a nested slot's suggestions identical whether or not a
+    // value has been entered.
+    const suggestions = dedupeSuggestions(
+        topLevel
+            ? nodeSchema.suggestions
+            : (functionSchema.suggestions ?? nodeSchema.suggestions),
     );
 
     if (functionSchema.input === "data") {
@@ -797,19 +1004,14 @@ export const mergeSchemas = (
         for (const key of keys) {
             properties[key] = mergeProperty(fProps[key], nProps[key], anySuggestions);
         }
-        return {
-            ...functionSchema,
-            properties,
-            ...(suggestions ? {suggestions} : {}),
-        };
+        return withSuggestions({...functionSchema, properties}, suggestions);
     }
 
     // The generic list and every specialized list-* variant (list-select,
     // list-boolean/number/text, list-sub-flow) carry their element schemas in
     // `items`. Merge those pairwise so element-level suggestions — e.g. the
     // per-literal values on a list-select or the sub-flow function suggestions on
-    // a LIST<CONSUMER<T>> element — survive the merge instead of being dropped in
-    // favour of the suggestion-less function schema. Suggestions must never be
+    // a LIST<CONSUMER<T>> element — survive the merge. Suggestions must never be
     // lost, whatever the list kind. The node-side schema is always the plain
     // `list` kind (specialized variants are stripped via normalizeNodeSchema
     // before merging), so it is matched by kind family — any list input
@@ -839,12 +1041,19 @@ export const mergeSchemas = (
                 ? nItems.map((n) => genericNodeSchema(n, anySuggestions))
                 : fItems.length === nItems.length && fItems.length > 0
                     ? fItems.map((f, i) => mergeSchemas(f, nItems[i], false, anySuggestions, false))
-                    : fItems;
-        return {
-            ...functionSchema,
-            items,
-            ...(suggestions ? {suggestions} : {}),
-        };
+                    // No node-side items to pair with (the value narrowed the list
+                    // to something else, or expanded a union element to a different
+                    // cardinality): the declared items stand on their own, carrying
+                    // the suggestions of the element type they describe.
+                    : declaredItemsOf(fItems, anySuggestions);
+        return withSuggestions(
+            {
+                ...functionSchema,
+                items,
+                declaredItems: declaredItemsOf(fItems, anySuggestions),
+            },
+            suggestions,
+        );
     }
 
     // A custom-input data type (e.g. TYPE) keeps its dedicated input, but a
@@ -856,17 +1065,16 @@ export const mergeSchemas = (
     // is preserved. Concrete-bound custom inputs (DATE = number) are unaffected:
     // their node-side type already equals the bound.
     if (isCustomInputKind(functionSchema.input as string | undefined)) {
-        return {
-            ...functionSchema,
-            ...(nodeSchema.type !== undefined ? {type: nodeSchema.type} : {}),
-            ...(suggestions ? {suggestions} : {}),
-        };
+        return withSuggestions(
+            {
+                ...functionSchema,
+                ...(nodeSchema.type !== undefined ? {type: nodeSchema.type} : {}),
+            },
+            suggestions,
+        );
     }
 
-    return {
-        ...functionSchema,
-        ...(suggestions ? {suggestions} : {}),
-    };
+    return withSuggestions({...functionSchema}, suggestions);
 };
 
 const mergeProperty = (
@@ -874,29 +1082,44 @@ const mergeProperty = (
     n: Schema | Schema[] | undefined,
     anySuggestions: Input["suggestions"] = undefined,
 ): Schema | Schema[] => {
-    if (f && !Array.isArray(f) && n && !Array.isArray(n)) {
-        return mergeSchemas(f, n, false, anySuggestions, false);
-    }
     // Present only on the node side → the declared type does not constrain this
     // property, so it lives in a generic slot: keep the shape, use `any`
-    // suggestions. Present only on the function side → keep the declared schema.
+    // suggestions.
     if (f === undefined && n !== undefined) {
         return Array.isArray(n)
             ? n.map((s) => genericNodeSchema(s, anySuggestions))
             : genericNodeSchema(n, anySuggestions);
     }
-    return (f ?? n)!;
+    if (f && !Array.isArray(f) && n && !Array.isArray(n)) {
+        return mergeSchemas(f, n, false, anySuggestions, false);
+    }
+    // A union-typed property carries one schema per member on both sides; merge
+    // them pairwise while the members still line up.
+    if (Array.isArray(f) && Array.isArray(n) && f.length === n.length) {
+        return f.map((member, index) =>
+            mergeSchemas(member, n[index], false, anySuggestions, false),
+        );
+    }
+    // Nothing on the node side to merge with, or the members no longer line up
+    // (e.g. the value narrowed a union property to one of its members): the
+    // declared schema stands on its own.
+    return Array.isArray(f)
+        ? f.map((member) => declaredSchema(member, anySuggestions))
+        : declaredSchema(f!, anySuggestions);
 };
 
-const mergeSuggestions = (
-    a: Input["suggestions"],
-    b: Input["suggestions"],
+/**
+ * The suggestion set of a merged position: de-duplicated by structural equality,
+ * and `undefined` when nothing is left so the key is omitted rather than emitted
+ * empty.
+ */
+const dedupeSuggestions = (
+    suggestions: Input["suggestions"],
 ): Input["suggestions"] | undefined => {
-    const all = [...(a ?? []), ...(b ?? [])];
-    if (all.length === 0) return undefined;
+    if (!suggestions || suggestions.length === 0) return undefined;
     const seen = new Set<string>();
     const result: NonNullable<Input["suggestions"]> = [];
-    for (const item of all) {
+    for (const item of suggestions) {
         const key = JSON.stringify(item);
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1227,6 +1450,34 @@ function isStringOrNumberLiteral(type: ts.Type): boolean {
 function isSelectType(type: ts.Type): boolean {
     if (isBoolean(type)) return false;
     return isPrimitiveLiteralUnion(type) || isStringOrNumberLiteral(type);
+}
+
+/**
+ * Checks whether a union's members are the *options of one input* rather than
+ * alternative inputs: a string/number literal union (`'GET' | 'POST' | …`, which
+ * renders as a single select offering all of them) or `boolean` (internally the
+ * union `true | false`, which renders as a single boolean input).
+ *
+ * The distinction decides whether an entered value may narrow a union-typed slot
+ * to the single member it picked. For an options union it must not: narrowing
+ * `HTTP_METHOD` to the entered "GET" would hide the five other options of the
+ * very select the user is filling. For a union of alternative inputs
+ * (`COLOR | OBJECT<…>`, `TEXT | NUMBER`) it must: the member the value picked is
+ * the one input of the set that describes it, and it is also the entry the slot's
+ * {@link ListInput.declaredItems} already offers for it.
+ *
+ * @param type - The type to check
+ * @returns True if the type is a union whose members are options of one input
+ */
+export function isOptionsUnion(type: ts.Type): boolean {
+    if (!type.isUnion()) return false;
+    // `boolean` is `true | false` internally, so it is a union whose two members
+    // are the options of the one boolean input.
+    if (isBoolean(type)) return true;
+    const nonNullish = type.types.filter(
+        (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
+    );
+    return nonNullish.length > 0 && nonNullish.every(isStringOrNumberLiteral);
 }
 
 /**
