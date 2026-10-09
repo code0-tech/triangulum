@@ -1,5 +1,6 @@
 import ts from "typescript";
 import {ReferencePath, ReferenceValue} from "@code0-tech/sagittarius-graphql-types";
+import {SuggestionCandidate, SuggestionCertainty, typeMatchCertainty} from "./suggestion.util";
 
 /**
  * Extracts reference values from a collection of TypeScript symbols.
@@ -12,7 +13,9 @@ import {ReferencePath, ReferenceValue} from "@code0-tech/sagittarius-graphql-typ
  * @param node - The VariableDeclaration context in which symbols are analyzed
  * @param paramType - The expected parameter type for property matching during extraction
  * @param symbols - The array of symbols to process and analyze
- * @returns An array of ReferenceValue objects representing extracted references with their paths
+ * @returns An array of reference candidates representing extracted references with
+ *          their paths, each carrying how certainly the type at that path produces
+ *          the expected type
  *
  * @example
  * // Extracts all references from symbols prefixed with node_, p_, or flow_
@@ -23,7 +26,7 @@ export const getReferences = (
   node: ts.VariableDeclaration,
   paramType: ts.Type,
   symbols: ts.Symbol[]
-): ReferenceValue[] => {
+): SuggestionCandidate[] => {
   return symbols.flatMap((symbol) => {
     const name = symbol.getName();
 
@@ -76,14 +79,14 @@ const isValidSymbolPrefix = (name: string): boolean => {
  * @param symbolType - The TypeScript type of the symbol
  * @param checker - TypeScript TypeChecker for type operations
  * @param paramType - The expected parameter type for property matching
- * @returns Array of ReferenceValue objects for this node symbol
+ * @returns Array of reference candidates for this node symbol
  */
 const processNodeSymbol = (
   name: string,
   symbolType: ts.Type,
   checker: ts.TypeChecker,
   paramType: ts.Type
-): ReferenceValue[] => {
+): SuggestionCandidate[] => {
   // Skip void types
   if ((symbolType.flags & ts.TypeFlags.Void) !== 0) {
     return [];
@@ -95,7 +98,7 @@ const processNodeSymbol = (
   // Extract all properties that match the expected parameter type
   const propertyPaths = extractObjectProperties(symbolType, checker, paramType);
 
-  return propertyPaths.flatMap(({ path }) => {
+  return propertyPaths.map(({ path, certainty }) => {
     const referenceValue: ReferenceValue = {
       __typename: "ReferenceValue",
       nodeFunctionId: nodeFunctionId as any,
@@ -105,7 +108,7 @@ const processNodeSymbol = (
       referenceValue.referencePath = path;
     }
 
-    return referenceValue;
+    return { value: referenceValue, certainty };
   });
 };
 
@@ -120,14 +123,14 @@ const processNodeSymbol = (
  * @param symbolType - The TypeScript type of the symbol
  * @param checker - TypeScript TypeChecker for type operations
  * @param paramType - The expected parameter type for property matching
- * @returns Array of ReferenceValue objects for this parameter symbol
+ * @returns Array of reference candidates for this parameter symbol
  */
 const processParameterSymbol = (
   name: string,
   symbolType: ts.Type,
   checker: ts.TypeChecker,
   paramType: ts.Type
-): ReferenceValue[] => {
+): SuggestionCandidate[] => {
   // Decode parameter information from symbol name
   const { nodeFunctionId, paramIndexFromName } = decodeParameterName(name);
 
@@ -142,7 +145,7 @@ const processParameterSymbol = (
   return typeArguments.flatMap((tupleElementType, tupleIndex) => {
     const propertyPaths = extractObjectProperties(tupleElementType, checker, paramType);
 
-    return propertyPaths.flatMap(({ path }) => {
+    return propertyPaths.map(({ path, certainty }) => {
       const referenceValue: ReferenceValue = {
         __typename: "ReferenceValue",
         nodeFunctionId: nodeFunctionId as any,
@@ -157,7 +160,7 @@ const processParameterSymbol = (
         referenceValue.referencePath = path;
       }
 
-      return referenceValue;
+      return { value: referenceValue, certainty };
     });
   });
 };
@@ -171,16 +174,16 @@ const processParameterSymbol = (
  * @param symbolType - The TypeScript type of the symbol
  * @param checker - TypeScript TypeChecker for type operations
  * @param paramType - The expected parameter type for property matching
- * @returns Array of ReferenceValue objects for this flow symbol
+ * @returns Array of reference candidates for this flow symbol
  */
 const processFlowSymbol = (
   symbolType: ts.Type,
   checker: ts.TypeChecker,
   paramType: ts.Type
-): ReferenceValue[] => {
+): SuggestionCandidate[] => {
   const propertyPaths = extractObjectProperties(symbolType, checker, paramType);
 
-  return propertyPaths.flatMap(({ path }) => {
+  return propertyPaths.map(({ path, certainty }) => {
     const referenceValue: ReferenceValue = {
       __typename: "ReferenceValue",
       nodeFunctionId: null,
@@ -190,7 +193,7 @@ const processFlowSymbol = (
       referenceValue.referencePath = path;
     }
 
-    return referenceValue;
+    return { value: referenceValue, certainty };
   });
 };
 
@@ -289,41 +292,13 @@ export const isRecursiveType = (
  * @param currentPath - The current property path being built during recursion (default: empty array)
  * @param visited - Object types already on the current traversal branch, used to break cycles in recursive data types
  * @param recursionCache - Memoization cache for isRecursiveType, shared across the whole traversal
- * @returns An array of objects containing the property path and the type at that path
+ * @returns An array of objects containing the property path, the type at that path
+ *          and how certainly that type produces the expected type
  *
  * @example
  * // For type {user: {name: string, age: number}} with expectedType = string
- * // Returns: [{path: [{path: 'user'}, {path: 'name'}], type: stringType}]
+ * // Returns: [{path: [{path: 'user'}, {path: 'name'}], type: stringType, certainty: {match: "exact"}}]
  */
-/**
- * Determines whether a candidate type matches an expected parameter type.
- *
- * A plain type matches when it is (non-nullably) assignable to the expected type.
- * A union matches when ANY of its constituents matches: a union such as
- * `string | { deep: string }` is not assignable to `string` as a whole, yet its
- * string branch makes the union key a valid suggestion for a string parameter.
- *
- * @param type - The candidate type (already non-nullable)
- * @param checker - TypeScript TypeChecker for type operations
- * @param expectedType - The target parameter type to match against
- * @returns True if the type (or one of its union branches) matches the expected type
- */
-const matchesExpectedType = (
-  type: ts.Type,
-  checker: ts.TypeChecker,
-  expectedType: ts.Type
-): boolean => {
-  if (type.isUnion()) {
-    return type.types.some((constituent) =>
-      matchesExpectedType(checker.getNonNullableType(constituent), checker, expectedType)
-    );
-  }
-
-  return (
-    (type.flags & ts.TypeFlags.Never) === 0 &&
-    checker.isTypeAssignableTo(type, expectedType)
-  );
-};
 
 /**
  * Resolves the object types whose properties should be traversed for a candidate.
@@ -355,23 +330,18 @@ const extractObjectProperties = (
   currentPath: ReferencePath[] = [],
   visited: Set<ts.Type> = new Set(),
   recursionCache: Map<ts.Type, boolean> = new Map()
-): Array<{ path: ReferencePath[]; type: ts.Type }> => {
-  const results: Array<{ path: ReferencePath[]; type: ts.Type }> = [];
+): Array<{ path: ReferencePath[]; type: ts.Type; certainty: SuggestionCertainty }> => {
+  const results: Array<{ path: ReferencePath[]; type: ts.Type; certainty: SuggestionCertainty }> = [];
 
-  // Check if the current type matches the expected type. The nullish part of a
-  // candidate is ignored: a reference typed `string | null` (or an optional
-  // property `text?: string | null`) is still a valid suggestion for a plain
-  // `string` parameter — strict assignability would reject it under strictNullChecks.
-  // A purely nullish candidate strips down to `never` (assignable to anything),
-  // so it must be excluded explicitly.
-  //
-  // A union candidate (e.g. `TEXT | { deep: TEXT }`) matches when ANY of its
-  // constituents is assignable to the expected type: the whole union is not
-  // assignable to `string`, but its string branch is, so the union key is still a
-  // valid string suggestion.
+  // Whether the type at this path produces the expected type, and how certainly,
+  // is {@link typeMatchCertainty}'s rule: a nullable reference (`string | null`,
+  // an optional `text?: string`) and a union key whose branches do not all fit
+  // (`TEXT | { deep: TEXT }` for a TEXT slot) are still offered here, as
+  // `nullable` / `union-member` possible matches.
   const nonNullableType = checker.getNonNullableType(type);
-  if (matchesExpectedType(nonNullableType, checker, expectedType)) {
-    results.push({ path: currentPath, type });
+  const certainty = typeMatchCertainty(type, checker, expectedType);
+  if (certainty) {
+    results.push({ path: currentPath, type, certainty });
   }
 
   // Recursively traverse into object properties. Traversal also runs on the
