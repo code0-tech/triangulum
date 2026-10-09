@@ -1,6 +1,7 @@
 import ts from "typescript";
 import {FunctionDefinition, SubFlowValue, SubFlowValueSetting} from "@code0-tech/sagittarius-graphql-types";
 import {isSubFlow} from "./schema.util";
+import {SuggestionCandidate, typeMatchCertainty} from "./suggestion.util";
 
 /**
  * Extracts and creates a list of SubFlowValue objects from function declarations
@@ -15,23 +16,24 @@ import {isSubFlow} from "./schema.util";
  * @param {FunctionDefinition[]} functions - Array of function definitions for reference lookup
  * @param {ts.Type} paramType - The target parameter type that functions must be compatible with
  *
- * @returns {SubFlowValue[]} An array of SubFlowValue objects for compatible functions,
- *          or an empty array if the paramType is not a sub-flow type
+ * @returns {SuggestionCandidate[]} An array of sub-flow candidates for compatible
+ *          functions, each carrying how certainly it satisfies the slot, or an
+ *          empty array if the paramType is not a sub-flow type
  */
 export const getSubFlows = (
     checker: ts.TypeChecker,
     functionDeclarations: ts.FunctionDeclaration[],
     functions: FunctionDefinition[],
     paramType: ts.Type
-): SubFlowValue[] => {
+): SuggestionCandidate[] => {
 
     if (!isSubFlow(paramType)) {
         return [];
     }
 
     return functionDeclarations.flatMap((func) => {
-        const subFlow = createSubFlowIfCompatible(checker, func, functions, paramType);
-        return subFlow ? [subFlow] : [];
+        const candidate = createSubFlowIfCompatible(checker, func, functions, paramType);
+        return candidate ? [candidate] : [];
     });
 
 }
@@ -50,23 +52,26 @@ export const getSubFlows = (
  * @param {FunctionDefinition[]} functions - Array of function definitions for lookup
  * @param {ts.Type} paramType - The expected parameter type to check compatibility against
  *
- * @returns {SubFlowValue | null} A SubFlowValue object if the function is compatible
- *          with the paramType and a matching function definition exists, or null otherwise
+ * @returns {SuggestionCandidate | null} A sub-flow candidate with its certainty if the
+ *          function is compatible with the paramType and a matching function
+ *          definition exists, or null otherwise
  */
 const createSubFlowIfCompatible = (
     checker: ts.TypeChecker,
     func: ts.FunctionDeclaration,
     functions: FunctionDefinition[],
     paramType: ts.Type
-): SubFlowValue | null => {
+): SuggestionCandidate | null => {
 
     // Get the full function type from the declaration
     const functionType = checker.getTypeAtLocation(func);
 
-    // Check if the function type is assignable to the parameter type
-    // This ensures the function signature matches the expected interface
-    // e.g., paramType might be (number: number) => void, and functionType should be compatible
-    if (!checker.isTypeAssignableTo(functionType, paramType)) {
+    // Check whether the function type fits the parameter type: the signature must
+    // match the expected interface — e.g., paramType might be
+    // (number: number) => void. A binding that only fits under a condition carries
+    // that condition as its certainty (see {@link typeMatchCertainty}).
+    const certainty = typeMatchCertainty(functionType, checker, paramType);
+    if (!certainty) {
         return null;
     }
 
@@ -78,7 +83,7 @@ const createSubFlowIfCompatible = (
         return null;
     }
 
-    return buildSubFlowValue(functionDefinition);
+    return {value: buildSubFlowValue(functionDefinition), certainty};
 
 }
 

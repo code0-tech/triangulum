@@ -15,6 +15,7 @@ import {
     Schema,
     withSuggestions,
 } from "../util/schema.util"
+import {SuggestionCandidate, suggestionCandidates} from "../util/suggestion.util"
 
 /**
  * Represents the schema information for a node parameter.
@@ -428,14 +429,14 @@ const generateNodeSchemas = (
     // The suggestion set for a fully generic ("accepts anything") slot. Every
     // position the declared type leaves unconstrained offers this same set,
     // independent of the concrete value entered there — computed once against `any`.
-    const anySuggestions = getSchema(
+    const anySuggestions = suggestionCandidates(getSchema(
         checker,
         node,
         checker.getAnyType(),
         Array.from(declaredFunctionsMap.values()),
         functions,
         true,
-    ).suggestions
+    ))
 
     return nodeParameterTypes.map((parameterType, index) => {
         const functionParameterType = functionParameterTypes?.[index]
@@ -511,7 +512,7 @@ const generateNodeSchemas = (
                     (nodeTypeIsObject ||
                         (declaredMember != null && isPlainObjectType(checker, declaredMember)))))
         ) {
-            const wholeSuggestions = getSchema(
+            const wholeSuggestions = suggestionCandidates(getSchema(
                 checker,
                 node,
                 parameterType,
@@ -519,7 +520,7 @@ const generateNodeSchemas = (
                 functions,
                 true,
                 suggestionType,
-            ).suggestions
+            ))
             return {
                 schema: ts.isArrayLiteralExpression(argExpr)
                     ? buildValueDrivenListSchema(
@@ -723,8 +724,8 @@ const buildValueDrivenListSchema = (
     arrayExpr: ts.ArrayLiteralExpression,
     functionDeclarations: ts.FunctionDeclaration[],
     functions: FunctionDefinition[],
-    suggestions?: Schema["suggestions"],
-    anySuggestions?: Schema["suggestions"],
+    suggestions?: SuggestionCandidate[],
+    anySuggestions?: SuggestionCandidate[],
 ): Schema => {
     const funcSchema = funcListType
         ? getSchema(checker, node, funcListType, functionDeclarations, functions, true)
@@ -778,11 +779,11 @@ const buildValueDrivenListSchema = (
  */
 const ownSuggestions = (
     funcSchema: Schema | undefined,
-    anySuggestions?: Schema["suggestions"],
-): Schema["suggestions"] | undefined =>
+    anySuggestions?: SuggestionCandidate[],
+): SuggestionCandidate[] | undefined =>
     !funcSchema || funcSchema.input === "generic"
         ? anySuggestions
-        : funcSchema.suggestions
+        : suggestionCandidates(funcSchema)
 
 /**
  * Builds a single list item schema for one array-literal element.
@@ -803,7 +804,7 @@ const buildValueDrivenItem = (
     element: ts.Expression,
     functionDeclarations: ts.FunctionDeclaration[],
     functions: FunctionDefinition[],
-    anySuggestions?: Schema["suggestions"],
+    anySuggestions?: SuggestionCandidate[],
 ): Schema => {
     // A union declared element (or property) type lists the options of this
     // position; the entered value picks one, and that member is what describes
@@ -852,7 +853,7 @@ const buildValueDrivenItem = (
                     ? {}
                     : {type: checker.typeToString(valueType)}),
             } as Schema,
-            funcElementSchema!.suggestions,
+            suggestionCandidates(funcElementSchema!),
         )
     }
 
@@ -883,8 +884,8 @@ const buildValueDrivenObjectSchema = (
     objectExpr: ts.ObjectLiteralExpression,
     functionDeclarations: ts.FunctionDeclaration[],
     functions: FunctionDefinition[],
-    suggestions?: Schema["suggestions"],
-    anySuggestions?: Schema["suggestions"],
+    suggestions?: SuggestionCandidate[],
+    anySuggestions?: SuggestionCandidate[],
 ): Schema => {
     const funcSchema = funcObjectType
         ? getSchema(checker, node, funcObjectType, functionDeclarations, functions, true)
@@ -912,7 +913,7 @@ const buildValueDrivenObjectSchema = (
                     checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(objectExpr)),
                 ),
             } as Schema,
-            suggestions ?? funcSchema.suggestions,
+            suggestions ?? suggestionCandidates(funcSchema),
         )
     }
 

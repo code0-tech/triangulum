@@ -1,5 +1,11 @@
 import ts from "typescript";
 import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {
+    possibleMatch,
+    SuggestionCandidate,
+    typeMatchCertainty,
+    weakestCertainty,
+} from "./suggestion.util";
 
 /**
  * Filters and transforms function declarations into a collection of compatible node functions.
@@ -25,9 +31,10 @@ import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-
  * @param {ts.Type} paramType - The target parameter type used to filter compatible
  *        functions. Only functions with return types assignable to this type are included
  *
- * @returns {NodeFunction[]} Array of node functions that are compatible with the
- *          specified parameter type, or an empty array if no compatible
- *          functions are found
+ * @returns {SuggestionCandidate[]} Array of node-function candidates compatible with
+ *          the specified parameter type, each carrying how certainly its return
+ *          type produces that type, or an empty array if no compatible functions
+ *          are found
  *
  * @example
  * const compatibleNodes = getNodes(checker, funcDecls, funcDefs, stringType);
@@ -37,11 +44,11 @@ export const getNodes = (
     functionDeclarations: ts.FunctionDeclaration[],
     functions: FunctionDefinition[],
     paramType: ts.Type
-): NodeFunction[] => {
+): SuggestionCandidate[] => {
     // Transform each function declaration into a node function if it matches the parameter type
     return functionDeclarations.flatMap((func) => {
-        const nodeFunction = createNodeFunctionIfCompatible(checker, func, functions, paramType);
-        return nodeFunction ? [nodeFunction] : [];
+        const candidate = createNodeFunctionIfCompatible(checker, func, functions, paramType);
+        return candidate ? [candidate] : [];
     });
 };
 
@@ -53,13 +60,20 @@ export const getNodes = (
  * It extracts the function signature, resolves type parameters, verifies type compatibility,
  * and builds a complete node function object with parameter definitions.
  *
+ * The match is not only a yes/no: a return type that had to be weakened to fit —
+ * a type parameter matched through its constraint, an `any` return, a return
+ * that may be nullish where the slot is not — yields a `possible` candidate
+ * rather than an `exact` one. The function is still offered, but a consumer can
+ * tell a dedicated producer of the slot's type from one that merely cannot be
+ * ruled out (see {@link SuggestionCertainty}).
+ *
  * @param {ts.TypeChecker} checker - The TypeScript type checker for type analysis
  * @param {ts.FunctionDeclaration} func - The function declaration to process
  * @param {FunctionDefinition[]} functions - Array of function definitions for metadata lookup
  * @param {ts.Type} paramType - The target parameter type for compatibility check
  *
- * @returns {NodeFunction | null} A node function object if the function is compatible
- *          with the parameter type, otherwise null
+ * @returns {SuggestionCandidate | null} A node-function candidate with its certainty if
+ *          the function is compatible with the parameter type, otherwise null
  *
  * @private
  */
@@ -68,7 +82,7 @@ const createNodeFunctionIfCompatible = (
     func: ts.FunctionDeclaration,
     functions: FunctionDefinition[],
     paramType: ts.Type
-): NodeFunction | null => {
+): SuggestionCandidate | null => {
 
     // Extract the function signature and its return type
     const signature = checker.getSignatureFromDeclaration(func);
@@ -77,25 +91,27 @@ const createNodeFunctionIfCompatible = (
     // Simplify the return type by resolving type parameters
     const simplifiedReturnType = resolveReturnType(checker, returnType);
 
-    // Only proceed if the return type is assignable to the target parameter type.
-    // The nullish part of the return type is ignored: a function returning
-    // `string | null` is still a valid suggestion for a plain `string` parameter.
-    // A purely nullish return type strips down to `never` (assignable to anything),
-    // so it must be excluded explicitly.
-    const nonNullableReturnType = checker.getNonNullableType(simplifiedReturnType);
-    if (
-        (nonNullableReturnType.flags & ts.TypeFlags.Never) !== 0 ||
-        !checker.isTypeAssignableTo(nonNullableReturnType, paramType)
-    ) {
+    // Only proceed if the return type fits the target parameter type, under
+    // {@link typeMatchCertainty}'s rule: a function returning `string | null` is
+    // still offered for a plain `string` parameter, as a `nullable` possible
+    // match rather than being dropped.
+    const matched = typeMatchCertainty(simplifiedReturnType, checker, paramType);
+    if (!matched) {
         return null;
     }
+
+    // Resolving a type parameter to its constraint is a weakening of its own: the
+    // concrete instantiation may be narrower than what matched here.
+    const certainty = returnType.isTypeParameter()
+        ? weakestCertainty(matched, possibleMatch("generic"))
+        : matched;
 
     // Extract and normalize the function name
     const functionName = normalizeFunctionName(func.name?.getText());
     const functionDefinition = functions.find((f) => f.identifier === functionName);
 
-    // Build and return the node function object
-    return buildNodeFunction(functionDefinition);
+    // Build and return the node function candidate
+    return {value: buildNodeFunction(functionDefinition), certainty};
 };
 
 /**
@@ -104,6 +120,10 @@ const createNodeFunctionIfCompatible = (
  * If the provided type is a type parameter, this function retrieves its base constraint.
  * If no base constraint exists, it falls back to the `any` type. Otherwise, it returns
  * the type as-is.
+ *
+ * Both outcomes are a weakening the caller records as a `possible` match: the
+ * constraint only bounds the instantiation, and the `any` fallback matches every
+ * slot at all.
  *
  * @param {ts.TypeChecker} checker - The TypeScript type checker
  * @param {ts.Type} returnType - The return type to resolve

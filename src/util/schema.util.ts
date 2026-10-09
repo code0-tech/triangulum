@@ -2,14 +2,26 @@ import ts, {FunctionDeclaration} from "typescript";
 import {getValues} from "./values.util";
 import {getReferences, isRecursiveType} from "./references.util";
 import {getNodes} from "./nodes.util";
-import {
-    FunctionDefinition,
-    LiteralValue,
-    NodeFunction,
-    ReferenceValue,
-    SubFlowValue,
-} from "@code0-tech/sagittarius-graphql-types";
+import {FunctionDefinition, LiteralValue} from "@code0-tech/sagittarius-graphql-types";
 import {getSubFlows} from "./subflows.util";
+import {
+    exactCandidates,
+    strongerCertainty,
+    SuggestionCandidate,
+    SuggestionCertainty,
+    suggestionCandidates,
+    suggestionFields,
+    suggestionPair,
+    SuggestionValue,
+} from "./suggestion.util";
+
+export type {
+    SuggestionCandidate,
+    SuggestionCertainty,
+    SuggestionMatch,
+    SuggestionMatchReason,
+    SuggestionValue,
+} from "./suggestion.util";
 
 
 /**
@@ -76,7 +88,27 @@ export interface Input {
      */
     type?: string;
     /** Array of suggested values (functions, references, or literals) */
-    suggestions?: (NodeFunction | ReferenceValue | LiteralValue | SubFlowValue)[];
+    suggestions?: SuggestionValue[];
+    /**
+     * How certainly each entry of `suggestions` produces this slot's type,
+     * index-aligned with it and of the same length — `suggestions[i]` is
+     * described by `suggestionCertainty[i]`.
+     *
+     * A suggestion is `exact` when its own type is assignable to the slot's, and
+     * `possible` when the match was only reached by weakening one of the two
+     * sides: a generic return matched through its constraint, an `any` that fits
+     * everything, a union whose branches do not all fit, a value that may be
+     * nullish where the slot is not (see {@link SuggestionCertainty}).
+     *
+     * Both kinds are listed — a `possible` candidate is often the one the user
+     * wants — but the split answers two questions the flat list cannot: whether a
+     * slot has *dedicated* producers (which a consumer may want to offer ahead of
+     * building a value by hand), and whether picking one is the case that may
+     * need a cast to type-check.
+     *
+     * Present exactly when `suggestions` is.
+     */
+    suggestionCertainty?: SuggestionCertainty[];
 }
 
 /**
@@ -396,30 +428,33 @@ export const getSchema = (
     // a superset and needs no such fallback.
     const typeForSubFlows = isSubFlow(typeForSuggestions) ? typeForSuggestions : parameterType;
 
-    // Collect all available suggestions for this parameter
-    const combinedSuggestions = suggestions ? {
-        suggestions: [
-            ...getValues(typeForSuggestions, checker),
-            ...(node ? getReferences(
-                checker,
-                node,
-                typeForSuggestions,
-                checker.getSymbolsInScope(node, ts.SymbolFlags.Variable)
-            ) : []),
-            ...getNodes(
-                checker,
-                functionDeclarations,
-                functions,
-                typeForSuggestions
-            ),
-            ...getSubFlows(
-                checker,
-                functionDeclarations,
-                functions,
-                typeForSubFlows
-            ),
-        ],
-    } : {};
+    // Collect all available suggestions for this parameter, each with how
+    // certainly it produces this slot's type. Literal options come straight out of
+    // the slot's own type and are therefore always exact; the three
+    // assignability-based sources report what had to be weakened to make them fit.
+    const candidates: SuggestionCandidate[] = suggestions ? [
+        ...exactCandidates(getValues(typeForSuggestions, checker)),
+        ...(node ? getReferences(
+            checker,
+            node,
+            typeForSuggestions,
+            checker.getSymbolsInScope(node, ts.SymbolFlags.Variable)
+        ) : []),
+        ...getNodes(
+            checker,
+            functionDeclarations,
+            functions,
+            typeForSuggestions
+        ),
+        ...getSubFlows(
+            checker,
+            functionDeclarations,
+            functions,
+            typeForSubFlows
+        ),
+    ] : [];
+
+    const combinedSuggestions = suggestions ? suggestionPair(candidates) : {};
 
     // A slot whose *declared* type is a type parameter constrained by a
     // custom-input data type (e.g. a REST trigger's `<T extends TYPE>` payload,
@@ -746,9 +781,10 @@ const SPECIALIZED_LIST_INPUTS = new Set<string>([
  *   concrete value must never surface one; the resolved element types (via
  *   `items`) are kept, and the `list-file` `mimetype` is dropped because a plain
  *   list has no such field.
- * - Drops an empty `suggestions` array. Node schemas are built with suggestions
- *   enabled and therefore always carry the key — even when empty — whereas the
- *   rest of the pipeline omits it entirely when there are none.
+ * - Drops an empty `suggestions` array (and its `suggestionCertainty` twin). Node
+ *   schemas are built with suggestions enabled and therefore always carry the
+ *   keys — even when empty — whereas the rest of the pipeline omits them
+ *   entirely when there are none.
  *
  * The function-side schema still drives the final input kind in
  * {@link mergeSchemas}.
@@ -783,7 +819,7 @@ export const normalizeNodeSchema = (schema: Schema): Schema => {
     }
 
     if (result.suggestions && result.suggestions.length === 0) {
-        const {suggestions, ...rest} = result;
+        const {suggestions, suggestionCertainty, ...rest} = result;
         result = rest;
     }
 
@@ -808,19 +844,23 @@ export const nonNullishType = (type: ts.Type): ts.Type => {
 };
 
 /**
- * Sets a schema's `suggestions` to the given set, dropping the key entirely when
- * the set is empty or missing. Suggestion-carrying schemas are built with the
- * key always present (an empty array when nothing matched), whereas the rest of
- * the pipeline omits it — so every schema that is spread into a result passes
- * through here instead of relying on the spread.
+ * Sets a schema's suggestions to the given candidates, dropping both the
+ * `suggestions` key and its `suggestionCertainty` twin entirely when the set is
+ * empty or missing. Suggestion-carrying schemas are built with the keys always
+ * present (empty arrays when nothing matched), whereas the rest of the pipeline
+ * omits them — so every schema that is spread into a result passes through here
+ * instead of relying on the spread.
+ *
+ * Taking candidates rather than two parallel arrays is what keeps the pair
+ * aligned: there is no call site that can set one without the other.
  */
 export const withSuggestions = <T extends Schema>(
     schema: T,
-    suggestions: Input["suggestions"] | undefined,
+    candidates: SuggestionCandidate[] | undefined,
 ): T => {
-    if (suggestions && suggestions.length > 0) return {...schema, suggestions};
+    if (candidates && candidates.length > 0) return {...schema, ...suggestionFields(candidates)};
     if (schema.suggestions === undefined) return schema;
-    const {suggestions: _dropped, ...rest} = schema;
+    const {suggestions: _dropped, suggestionCertainty: _droppedCertainty, ...rest} = schema;
     return rest as T;
 };
 
@@ -837,7 +877,7 @@ export const withSuggestions = <T extends Schema>(
  */
 export const declaredSchema = (
     schema: Schema,
-    anySuggestions: Input["suggestions"] = undefined,
+    anySuggestions: SuggestionCandidate[] | undefined = undefined,
 ): Schema => {
     let result: Schema = schema;
 
@@ -870,7 +910,7 @@ export const declaredSchema = (
 
     return result.input === "generic"
         ? withSuggestions(result, anySuggestions)
-        : withSuggestions(result, result.suggestions);
+        : withSuggestions(result, suggestionCandidates(result));
 };
 
 /**
@@ -901,7 +941,7 @@ export const declaredSchema = (
  */
 export const declaredItemsOf = (
     functionItems: Schema[] | undefined,
-    anySuggestions: Input["suggestions"] = undefined,
+    anySuggestions: SuggestionCandidate[] | undefined = undefined,
 ): Schema[] =>
     functionItems && functionItems.length > 0
         ? functionItems.map((item) => declaredSchema(item, anySuggestions))
@@ -909,7 +949,7 @@ export const declaredItemsOf = (
 
 export const genericNodeSchema = (
     schema: Schema,
-    anySuggestions: Input["suggestions"] = undefined,
+    anySuggestions: SuggestionCandidate[] | undefined = undefined,
     overrideRoot: boolean = true,
 ): Schema => {
     let result = demoteSelect(schema);
@@ -942,12 +982,7 @@ export const genericNodeSchema = (
     }
 
     if (overrideRoot) {
-        if (anySuggestions && anySuggestions.length > 0) {
-            result = {...result, suggestions: anySuggestions};
-        } else if (result.suggestions) {
-            const {suggestions, ...rest} = result;
-            result = rest;
-        }
+        result = withSuggestions(result, anySuggestions);
     }
 
     return result;
@@ -957,7 +992,7 @@ export const mergeSchemas = (
     functionSchema: Schema | undefined,
     nodeSchema: Schema,
     valueProvided: boolean = false,
-    anySuggestions: Input["suggestions"] = undefined,
+    anySuggestions: SuggestionCandidate[] | undefined = undefined,
     topLevel: boolean = true,
 ): Schema => {
     // A function-less or fully generic slot constrains nothing here: the value
@@ -989,11 +1024,9 @@ export const mergeSchemas = (
     // the node side only fills in for positions the declared type does not
     // describe. That keeps a nested slot's suggestions identical whether or not a
     // value has been entered.
-    const suggestions = dedupeSuggestions(
-        topLevel
-            ? nodeSchema.suggestions
-            : (functionSchema.suggestions ?? nodeSchema.suggestions),
-    );
+    const suggestions = dedupeSuggestions(suggestionCandidates(
+        topLevel || functionSchema.suggestions === undefined ? nodeSchema : functionSchema,
+    ));
 
     if (functionSchema.input === "data") {
         const fProps = functionSchema.properties ?? {};
@@ -1080,7 +1113,7 @@ export const mergeSchemas = (
 const mergeProperty = (
     f: Schema | Schema[] | undefined,
     n: Schema | Schema[] | undefined,
-    anySuggestions: Input["suggestions"] = undefined,
+    anySuggestions: SuggestionCandidate[] | undefined = undefined,
 ): Schema | Schema[] => {
     // Present only on the node side → the declared type does not constrain this
     // property, so it lives in a generic slot: keep the shape, use `any`
@@ -1109,23 +1142,28 @@ const mergeProperty = (
 };
 
 /**
- * The suggestion set of a merged position: de-duplicated by structural equality,
- * and `undefined` when nothing is left so the key is omitted rather than emitted
- * empty.
+ * The suggestion set of a merged position: de-duplicated by the structural
+ * equality of the suggested *values*, and `undefined` when nothing is left so
+ * the keys are omitted rather than emitted empty.
+ *
+ * The same value can arrive twice with different certainties — the two sides of
+ * a merge collected it against differently scoped types — in which case the
+ * stronger certainty wins: the slot does accept it for the better of the two
+ * reasons.
  */
 const dedupeSuggestions = (
-    suggestions: Input["suggestions"],
-): Input["suggestions"] | undefined => {
-    if (!suggestions || suggestions.length === 0) return undefined;
-    const seen = new Set<string>();
-    const result: NonNullable<Input["suggestions"]> = [];
-    for (const item of suggestions) {
-        const key = JSON.stringify(item);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        result.push(item);
+    candidates: SuggestionCandidate[] | undefined,
+): SuggestionCandidate[] | undefined => {
+    if (!candidates || candidates.length === 0) return undefined;
+    const byValue = new Map<string, SuggestionCandidate>();
+    for (const candidate of candidates) {
+        const key = JSON.stringify(candidate.value);
+        const seen = byValue.get(key);
+        byValue.set(key, seen
+            ? {...seen, certainty: strongerCertainty(seen.certainty, candidate.certainty)}
+            : candidate);
     }
-    return result;
+    return [...byValue.values()];
 };
 
 // Generic means "we extracted nothing structural from either side". That is the
@@ -1137,21 +1175,23 @@ const dedupeSuggestions = (
 // produces a concrete kind before this lift runs.
 const liftGenericIfValued = (schema: Schema, valueProvided: boolean): Schema => {
     if (!valueProvided || schema.input !== "generic") return schema;
-    return {
-        input: "data",
-        ...(schema.type ? {type: schema.type} : {}),
-        properties: {},
-        required: [],
-        ...(schema.suggestions ? {suggestions: schema.suggestions} : {}),
-    };
+    return withSuggestions(
+        {
+            input: "data",
+            ...(schema.type ? {type: schema.type} : {}),
+            properties: {},
+            required: [],
+        } as Schema,
+        suggestionCandidates(schema),
+    );
 };
 
 const demoteSelect = (schema: Schema): Schema => {
     if (schema.input !== "select") return schema;
-    const suggestions = schema.suggestions ?? [];
+    const candidates = suggestionCandidates(schema);
     const literalKinds = new Set<string>();
-    for (const s of suggestions) {
-        const value = (s as LiteralValue).value;
+    for (const candidate of candidates) {
+        const value = (candidate.value as LiteralValue).value;
         const kind = typeof value;
         if (kind === "string" || kind === "number" || kind === "boolean") {
             literalKinds.add(kind);
@@ -1167,11 +1207,13 @@ const demoteSelect = (schema: Schema): Schema => {
                   } as const
               )[[...literalKinds][0] as "string" | "number" | "boolean"]
             : "text";
-    return {
-        input: target,
-        ...(schema.type ? {type: schema.type} : {}),
-        ...(suggestions.length > 0 ? {suggestions} : {}),
-    };
+    return withSuggestions(
+        {
+            input: target,
+            ...(schema.type ? {type: schema.type} : {}),
+        } as Schema,
+        candidates,
+    );
 };
 
 /**
