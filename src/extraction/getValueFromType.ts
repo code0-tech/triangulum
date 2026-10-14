@@ -63,7 +63,21 @@ export const getValueFromType = (
             return generateSample(typeToUse, node, localVisited);
         }
 
-        // 2. Handle Primitives and Literals
+        // 2. Handle the brand intersection a custom-input data type keeps its alias
+        // name with (`DATE = number & {}`). An intersection carries none of its
+        // constituents' primitive flags, so without this the branded primitive
+        // reaches the object branch, has no properties there and samples as null —
+        // which is not assignable to its own underlying type.
+        if (t.isIntersection()) {
+            const primitive = t.types.find(subType =>
+                subType.getFlags() & (ts.TypeFlags.StringLike | ts.TypeFlags.NumberLike | ts.TypeFlags.BooleanLike));
+            if (primitive) {
+                localVisited.add(t);
+                return generateSample(primitive, node, localVisited);
+            }
+        }
+
+        // 3. Handle Primitives and Literals
         if (flags & ts.TypeFlags.StringLiteral) return (t as ts.StringLiteralType).value;
         if (flags & ts.TypeFlags.String) return "";
 
@@ -73,7 +87,7 @@ export const getValueFromType = (
         if (flags & ts.TypeFlags.BooleanLiteral) return (t as any).intrinsicName === "true";
         if (flags & ts.TypeFlags.Boolean) return false;
 
-        // 3. Handle Arrays
+        // 4. Handle Arrays
         if (checker.isArrayType(t)) {
             localVisited.add(t);
             const typeRef = t as ts.TypeReference;
@@ -82,7 +96,7 @@ export const getValueFromType = (
             return sample !== null ? [sample] : [];
         }
 
-        // 4. Handle Objects / Interfaces
+        // 5. Handle Objects / Interfaces
         if (t.isClassOrInterface() || (flags & ts.TypeFlags.Object) || t.getProperties().length > 0) {
             localVisited.add(t);
             const obj: any = {};

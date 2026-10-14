@@ -103,5 +103,22 @@ describe('getValueFromType', () => {
             const result = getValueFromType('AnyRandomUnknownType', DATA_TYPES);
             expect(result.value).toBeNull();
         });
+
+        it('sollte einen gebrandeten Custom-Input-Typ als seinen Primitive generieren', () => {
+            expect(getValueFromType('DATE', DATA_TYPES).value).toBe(0);
+            expect(getValueFromType('number & {}', DATA_TYPES).value).toBe(0);
+        });
+
+        it('sollte einen gebrandeten Typ auch verschachtelt generieren', () => {
+            expect(getValueFromType('{ when: DATE, name: TEXT }', DATA_TYPES).value)
+                .toEqual({ when: 0, name: '' });
+            expect(getValueFromType('LIST<DATE>', DATA_TYPES).value).toEqual([0]);
+        });
+
+        it('sollte für void, undefined, null und never null generieren', () => {
+            for (const type of ['void', 'undefined', 'null', 'never']) {
+                expect(getValueFromType(type, DATA_TYPES).value).toBeNull();
+            }
+        });
     });
 });
