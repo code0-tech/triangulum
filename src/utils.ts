@@ -331,7 +331,6 @@ export function generateFlowSourceCode(
     flow?: Flow,
     functions?: FunctionDefinition[],
     dataTypes?: DataType[],
-    isForInference: boolean = false,
     assertNonNullReferences: boolean = true
 ): string {
     const nodes = flow?.nodes?.nodes || [];
@@ -430,14 +429,10 @@ export function generateFlowSourceCode(
         const params = (node.parameters?.nodes as NodeParameter[]) || [];
         const args = params.map((p, index) => {
             const val = p.value;
-            // A parameter without a value: during inference the `{}` placeholder
-            // is asserted to the cast so an unfilled slot still carries its
-            // intended type. During validation the `undefined` placeholder stays
-            // uncast — the cast would silently satisfy the parameter and hide the
-            // fact that nothing was provided.
-            const missing = isForInference
-                ? `/* @pos ${id} ${index} */ ${applyCast("{}", p.cast)}`
-                : `/* @pos ${id} ${index} */ undefined`;
+            // A parameter without a value is emitted as an uncast `undefined`
+            // placeholder: applying the cast would silently satisfy the parameter
+            // and hide the fact that nothing was provided.
+            const missing = `/* @pos ${id} ${index} */ undefined`;
             if (!val) return missing;
             if (val.__typename === "ReferenceValue") {
                 return `/* @pos ${id} ${index} */ ${applyCast(renderReference(val as ReferenceValue), p.cast)}`;

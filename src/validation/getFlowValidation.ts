@@ -140,7 +140,7 @@ export const getFlowValidation = (
     // Validation keeps reference nullability (assertNonNullReferences = false) so that a
     // possibly-null reference into a non-null parameter surfaces as a diagnostic, which is
     // then downgraded to a warning below instead of being silently suppressed by a `!`.
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, false);
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false);
 
     // 3. Virtual TypeScript Compilation
     const fileName = "index.ts";

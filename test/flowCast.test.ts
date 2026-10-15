@@ -156,22 +156,24 @@ describe("cast handling in the generated flow source", () => {
             FUNCTION_SIGNATURES,
             DATA_TYPES,
             false,
-            false,
         );
 
         expect(source).toContain("*/ undefined");
         expect(source).not.toContain("(undefined) as");
     });
 
-    it("asserts an unfilled parameter to its cast during inference", () => {
+    it("leaves an unfilled parameter uncast for inference and schemas too", () => {
+        // The unfilled slot stays an uncast `undefined` placeholder regardless of
+        // how references are rendered: applying the cast would make an empty slot
+        // look filled, so an unfilled parameter contributes no type anywhere.
         const source = generateFlowSourceCode(
             firstOf({value: null, cast: "LIST<TEXT>"}),
             FUNCTION_SIGNATURES,
             DATA_TYPES,
-            true,
         );
 
-        expect(source).toContain("({}) as unknown as LIST<TEXT>");
+        expect(source).toContain("*/ undefined");
+        expect(source).not.toContain("as unknown as LIST<TEXT>");
     });
 
     it("asserts a flow setting value to its cast", () => {
