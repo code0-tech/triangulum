@@ -49,7 +49,11 @@ export type SchematizedFlow = Flow & SignatureSchemas
  *
  * The schemas are computed from the real signatures, resolved through the same
  * virtual TypeScript program that {@link generateFlowSourceCode} builds:
- * - For the flow, the schemas come from the flow's own `signature`.
+ * - For the flow, the schemas come from the flow's own `signature`, resolved at
+ *   the generated `flow(<settings>)` call so the flow settings instantiate its
+ *   type parameters — a generic link between input and output (as a REST flow's
+ *   `<T extends TYPE>(input_schema: T, …): REST_ADAPTER_INPUT<T>`) therefore
+ *   carries the shape the settings actually supply.
  * - For a sub-flow, the schemas come from the *value* generated at that argument
  *   position — the lambda `(...p) => { …body… }` emitted by
  *   {@link generateFlowSourceCode} — not from the callback parameter the
@@ -119,9 +123,23 @@ const subFlowAlias = (
 ): string => `Node_${sanitizeId(nodeId!)}_${parameterIndex}_${kind}`
 
 /**
- * Collects the flow's own input/output type expressions from its declared
- * signature (`declare function flow(...): ...` in the generated source). A flow
- * without a signature contributes nothing and falls back to the empty schemas.
+ * Collects the flow's own input/output type expressions from its signature.
+ *
+ * The signature is read from the generated `flow(...)` *call* — the one
+ * {@link generateFlowSourceCode} emits with the flow's settings as positional
+ * arguments — rather than from the `declare function flow(...)` declaration, so
+ * the settings instantiate the signature's type parameters. This is what makes a
+ * generic link between input and output hold: a REST flow declared as
+ * `<T extends TYPE>(input_schema: T, …): REST_ADAPTER_INPUT<T>` has its payload
+ * resolved to the shape the `input_schema` setting actually carries, instead of
+ * collapsing to the `TYPE` bound. The same resolution already drives the sub-flow
+ * schemas (whose lambdas are contextually typed by their call), which is why they
+ * reflect the settings while the flow's own schemas did not.
+ *
+ * Falls back to the declaration's signature when no call was generated (no flow)
+ * — a flow whose settings are missing or unfilled simply leaves each type
+ * parameter at its constraint. A flow without a signature contributes nothing and
+ * falls back to the empty schemas.
  */
 const collectFlowTypeExpressions = (
     checker: ts.TypeChecker,
@@ -132,15 +150,46 @@ const collectFlowTypeExpressions = (
         .find((declaration) => declaration.name?.getText() === "flow")
     if (!flowDeclaration) return {}
 
-    const flowSignature = checker.getSignatureFromDeclaration(flowDeclaration)
+    const flowCall = findFlowCallExpression(sourceFile)
+    const resolvedSignature = flowCall
+        ? checker.getResolvedSignature(flowCall)
+        : undefined
+    const flowSignature =
+        resolvedSignature ?? checker.getSignatureFromDeclaration(flowDeclaration)
     if (!flowSignature) return {}
 
     const {input, output} = signatureToTypeExpressions(
         checker,
         flowSignature,
-        flowDeclaration,
+        flowCall ?? flowDeclaration,
     )
     return {[FLOW_INPUT_ALIAS]: input, [FLOW_OUTPUT_ALIAS]: output}
+}
+
+/**
+ * Finds the generated `flow(<settings>)` call, i.e. the initializer of the
+ * `const flow_<id> = flow(...)` statement. Traverses the AST because that
+ * constant lives inside the generated IIFE.
+ */
+const findFlowCallExpression = (
+    sourceFile: ts.SourceFile,
+): ts.CallExpression | undefined => {
+    let flowCall: ts.CallExpression | undefined
+
+    sourceFile.forEachChild(function visit(child) {
+        if (flowCall) return
+        const isFlowCall =
+            ts.isCallExpression(child) &&
+            ts.isIdentifier(child.expression) &&
+            child.expression.text === "flow"
+        if (isFlowCall) {
+            flowCall = child as ts.CallExpression
+            return
+        }
+        child.forEachChild(visit)
+    })
+
+    return flowCall
 }
 
 /**

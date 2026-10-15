@@ -111,23 +111,80 @@ describe("getFlowSchemas", () => {
 
         const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
 
-        // TYPE is `any` underneath, so it maps to the open object schema; the
-        // concrete parameters resolve fully.
+        // The flow carries no settings, so there is nothing to bind T to and it
+        // stays at its `TYPE` bound — the open object schema. The concrete
+        // parameters resolve fully.
         expect(result?.inputSchema.properties?.input_schema)
-            .toEqual({});
+            .toEqual({type: "object", additionalProperties: false});
         expect(result?.inputSchema.properties?.httpURL).toEqual({type: "string"});
         expect((result?.inputSchema.properties?.httpMethod as JsonSchema).enum)
             .toEqual(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]);
         expect(result?.inputSchema.required)
             .toEqual(["input_schema", "httpURL", "httpMethod"]);
 
-        // REST_ADAPTER_INPUT<TYPE> resolves structurally; the TYPE payload maps to
-        // the open object schema while the concrete fields become object schemas.
+        // REST_ADAPTER_INPUT<TYPE> resolves structurally; with T unbound its
+        // payload is the same open object schema as the input slot, while the
+        // concrete fields become object schemas.
         expect(result?.outputSchema.type).toBe("object");
         expect(result?.outputSchema.properties?.payload)
-            .toEqual({});
+            .toEqual({type: "object", additionalProperties: false});
         expect(result?.outputSchema.required)
             .toEqual(["payload", "headers", "query_params", "path_params"]);
+    });
+
+    it("instantiates the flow's generic schemas from its settings", () => {
+        // The REST trigger links input to output generically: whatever
+        // `input_schema` binds T to is what REST_ADAPTER_INPUT<T> echoes as its
+        // payload. The settings are the values that binding comes from, so they
+        // have to reach the flow's own schemas — not just the sub-flows'.
+        const flow: Flow = {
+            ...flowWithNodes(
+                [],
+                "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            ),
+            settings: {
+                nodes: [
+                    {value: {name: "text", age: 5}},
+                    {value: "/users"},
+                    {value: "GET"},
+                ],
+            },
+        };
+
+        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        const boundSchema: JsonSchema = {
+            type: "object",
+            additionalProperties: false,
+            properties: {name: {type: "string"}, age: {type: "number"}},
+            required: ["name", "age"],
+        };
+
+        // T is bound from the input_schema setting, so the input slot carries the
+        // concrete shape rather than the TYPE bound.
+        expect(result?.inputSchema.properties?.input_schema).toEqual(boundSchema);
+
+        // …and the generically linked payload echoes that same shape.
+        expect(result?.outputSchema.properties?.payload).toEqual(boundSchema);
+
+        // The remaining REST fields stay open objects.
+        expect(result?.outputSchema.required)
+            .toEqual(["payload", "headers", "query_params", "path_params"]);
+    });
+
+    it("falls back to the parameter bounds when a setting carries no value", () => {
+        // An unfilled setting binds nothing: T stays at its TYPE bound instead of
+        // collapsing to the `undefined` placeholder the slot renders as.
+        const flow: Flow = {
+            ...flowWithNodes([], "<T extends TYPE>(input_schema: T): REST_ADAPTER_INPUT<T>"),
+            settings: {nodes: [{}]},
+        };
+
+        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+
+        expect(result?.inputSchema.properties?.input_schema)
+            .toEqual({type: "object", additionalProperties: false});
+        expect(result?.outputSchema.type).toBe("object");
     });
 
     it("maps the DATE data type to its underlying number type", () => {
