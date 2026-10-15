@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {DataType, Flow, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
 import {getSignatureSchema, getTypeSchema, ListSubFlowInput} from "../../src";
-import {DATA_TYPES, FUNCTION_SIGNATURES} from "../data";
+import {DATA_TYPES, FLOW_TYPE, FUNCTION_SIGNATURES, flowTypesFor} from "../data";
 
 describe("Schema", () => {
 
@@ -65,10 +65,11 @@ describe("Schema", () => {
                     }
                 ]
             },
-            signature: "(test: HTTP_METHOD): void"
+            type: FLOW_TYPE
         };
 
-        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES, "gid://sagittarius/NodeFunction/2");
+        const result = getSignatureSchema(flow, DATA_TYPES, FUNCTION_SIGNATURES, "gid://sagittarius/NodeFunction/2",
+            flowTypesFor("(test: HTTP_METHOD): void"));
 
         //console.dir(result, {depth: null})
     });
@@ -282,7 +283,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -330,7 +330,6 @@ describe("Schema", () => {
         const buildFlow = (returnValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -454,7 +453,6 @@ describe("Schema", () => {
         const buildFlow = (returnValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -536,7 +534,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -593,7 +590,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/2",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -632,7 +628,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -706,7 +701,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -774,7 +768,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -846,7 +839,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -915,7 +907,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1002,7 +993,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1067,7 +1057,6 @@ describe("Schema", () => {
         const buildPushFlow = (listValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1117,7 +1106,6 @@ describe("Schema", () => {
         const buildPushFlow = (listValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1158,7 +1146,6 @@ describe("Schema", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1203,7 +1190,6 @@ describe("Schema", () => {
         const singleNode = (identifier: string, params: any[]): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1339,11 +1325,13 @@ describe("Schema", () => {
         // REST trigger, whose type parameter is bounded by the (non-generic)
         // TYPE data type and whose payload echoes the bound argument:
         // <T extends TYPE>(input_schema: T, ...): REST_ADAPTER_INPUT<T>.
+        const REST_TRIGGER_TYPES = flowTypesFor(
+            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+        );
         const restTrigger = (inputSchema: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature:
-                "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            type: FLOW_TYPE,
             settings: {
                 nodes: [
                     {value: inputSchema},
@@ -1359,6 +1347,8 @@ describe("Schema", () => {
                 restTrigger({name: "text"}),
                 DATA_TYPES,
                 FUNCTION_SIGNATURES,
+                undefined,
+                REST_TRIGGER_TYPES,
             );
 
             // Flow-level probe → no target node.
@@ -1413,6 +1403,8 @@ describe("Schema", () => {
                 restTrigger(42),
                 DATA_TYPES,
                 FUNCTION_SIGNATURES,
+                undefined,
+                REST_TRIGGER_TYPES,
             );
 
             expect(result.nodeId).toBeUndefined();
@@ -1526,10 +1518,10 @@ describe("Schema", () => {
         const DIRECT_SIG =
             "(input_schema: TYPE, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<TYPE>";
 
-        const flowFor = (signature: string, firstValue: any): Flow => ({
+        const flowFor = (firstValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature,
+            type: FLOW_TYPE,
             settings: {
                 nodes: [
                     {value: firstValue},
@@ -1543,9 +1535,11 @@ describe("Schema", () => {
         // Schema of the first parameter (`input_schema`) at the flow level.
         const paramSchema = (firstValue: any, signature = GENERIC_SIG) =>
             (getSignatureSchema(
-                flowFor(signature, firstValue),
+                flowFor(firstValue),
                 DATA_TYPES,
                 FUNCTION_SIGNATURES,
+                undefined,
+                flowTypesFor(signature),
             ).parameters as any)[0].schema;
 
         // Clone DATA_TYPES, replacing the TYPE entry's `type` (and optionally
@@ -1689,12 +1683,14 @@ describe("Schema", () => {
                     {
                         id: "gid://sagittarius/Flow/1",
                         startingNodeId: "gid://sagittarius/NodeFunction/1",
-                        signature,
+                        type: FLOW_TYPE,
                         settings: {nodes: [{value}]},
                         nodes: {nodes: []},
                     } as Flow,
                     [REAL_TYPE],
                     [],
+                    undefined,
+                    flowTypesFor(signature),
                 ).parameters as any)[0].schema;
 
             for (const signature of [
@@ -1875,19 +1871,21 @@ describe("Schema", () => {
         // A COLOR value is structurally an object, so the value-driven object path
         // could expand it back into a `data` input and lose the custom input — the
         // invariant is that a supplied value never downgrades a color parameter.
-        const colorFlow = (signature: string, values: any[]): Flow => ({
+        const colorFlow = (values: any[]): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature,
+            type: FLOW_TYPE,
             settings: {nodes: values.map((value) => ({value}))},
             nodes: {nodes: []},
         } as Flow);
 
         const colorParams = (signature: string, values: any[]) =>
             (getSignatureSchema(
-                colorFlow(signature, values),
+                colorFlow(values),
                 DATA_TYPES,
                 FUNCTION_SIGNATURES,
+                undefined,
+                flowTypesFor(signature),
             ).parameters as any[]).map((p) => p.schema);
 
         it("resolves a COLOR parameter to a color input with and without a value", () => {
@@ -2040,7 +2038,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2102,7 +2099,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2264,7 +2260,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2313,7 +2308,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2535,7 +2529,6 @@ describe("Schema", () => {
         const buildFlow = (): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -2624,7 +2617,6 @@ describe("Schema", () => {
         const objectGetFlow = (objectValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -2646,7 +2638,6 @@ describe("Schema", () => {
         const listFilterFlow = (listValue: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -2805,7 +2796,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2866,7 +2856,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -2936,7 +2925,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -3044,7 +3032,6 @@ describe("Schema", () => {
             const flow: Flow = {
                 id: "gid://sagittarius/Flow/1",
                 startingNodeId: "gid://sagittarius/NodeFunction/1",
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {

@@ -2,6 +2,7 @@
 import {
     DataType,
     Flow,
+    FlowType,
     FunctionDefinition,
     NodeFunction,
     SubFlowValue,
@@ -325,6 +326,14 @@ const emitLiteralNode = (value: unknown, refExpr: Map<string, string>): string =
 };
 
 /**
+ * Resolves the signature a flow is callable by. A flow carries only the ID of its
+ * flow type, so the signature is looked up in the supplied flow types; a flow
+ * whose type is unknown falls back to the parameterless `(): void`.
+ */
+export const resolveFlowSignature = (flow?: Flow, flowTypes?: FlowType[]): string =>
+    flowTypes?.find(t => t?.id === flow?.type?.id)?.signature ?? "(): void";
+
+/**
  * Generates TypeScript source code for a flow, suitable for validation and type inference.
  */
 export function generateFlowSourceCode(
@@ -332,7 +341,8 @@ export function generateFlowSourceCode(
     functions?: FunctionDefinition[],
     dataTypes?: DataType[],
     isForInference: boolean = false,
-    assertNonNullReferences: boolean = true
+    assertNonNullReferences: boolean = true,
+    flowTypes?: FlowType[]
 ): string {
     const nodes = flow?.nodes?.nodes || [];
     const funcMap = new Map(functions?.map(f => [f.identifier, f]));
@@ -498,7 +508,7 @@ export function generateFlowSourceCode(
     };
 
     const typeDefs = getSharedTypeDeclarations(dataTypes);
-    const flowTypeDeclaration = `declare function flow${flow?.signature ?? "(): void"}`
+    const flowTypeDeclaration = `declare function flow${resolveFlowSignature(flow, flowTypes)}`
     const funcDeclarations = functions?.map(f => `declare function fn_${f.identifier?.replace(/::/g, '_')}${f.signature}`).join('\n');
 
     const nextNodeIds = new Set(nodes.map(n => n?.nextNodeId).filter(id => !!id));

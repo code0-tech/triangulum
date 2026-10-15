@@ -30,7 +30,6 @@ describe("list element producers", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [{
                     id: "gid://sagittarius/NodeFunction/1",

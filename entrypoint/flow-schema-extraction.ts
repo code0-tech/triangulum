@@ -7,7 +7,7 @@ import type {Scalars} from "@code0-tech/sagittarius-graphql-types";
 const data = await readSingleValidation(console);
 const validationInput = mapToFlowValidation(data);
 
-const result = getFlowSchemas(validationInput.flow, validationInput.functions, validationInput.dataTypes)
+const result = getFlowSchemas(validationInput.flow, validationInput.functions, validationInput.dataTypes, validationInput.flowTypes)
 
 if (result) {
     type MappedResult = {

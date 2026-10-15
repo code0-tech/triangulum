@@ -1,5 +1,5 @@
 import ts, {flattenDiagnosticMessageText} from "typescript";
-import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
+import {DataType, Flow, FlowType, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import {createCompilerHost, generateFlowSourceCode, ValidationResult} from "../utils";
 
 // TypeScript diagnostic codes we may soften into warnings for union-branch references.
@@ -83,11 +83,16 @@ const isSoftReferenceMismatch = (
 
 /**
  * Validates a flow by generating virtual TypeScript code and running it through the TS compiler.
+ *
+ * The flow's own signature comes from its flow type: the flow carries only the
+ * type's ID, so `flowTypes` has to contain the type it points at for the flow's
+ * settings and its return to be validated against the real signature.
  */
 export const getFlowValidation = (
     flow?: Flow,
     functions?: FunctionDefinition[],
-    dataTypes?: DataType[]
+    dataTypes?: DataType[],
+    flowTypes?: FlowType[]
 ): ValidationResult => {
 
     if (!flow?.startingNodeId) {
@@ -140,7 +145,7 @@ export const getFlowValidation = (
     // Validation keeps reference nullability (assertNonNullReferences = false) so that a
     // possibly-null reference into a non-null parameter surfaces as a diagnostic, which is
     // then downgraded to a warning below instead of being silently suppressed by a `!`.
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, false);
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, false, flowTypes);
 
     // 3. Virtual TypeScript Compilation
     const fileName = "index.ts";

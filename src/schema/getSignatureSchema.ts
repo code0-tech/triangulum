@@ -1,4 +1,4 @@
-import {DataType, Flow, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
+import {DataType, Flow, FlowType, FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types"
 import {createCompilerHost, generateFlowSourceCode, sanitizeId} from "../utils"
 import ts, {Type} from "typescript"
 import {
@@ -76,6 +76,8 @@ interface ParameterDependency {
  * @param dataTypes - Array of available data type definitions
  * @param functions - Array of available function definitions
  * @param nodeId - Optional specific node ID to analyze; if provided, only that node's schema is processed
+ * @param flowTypes - Array of available flow types; the one the flow points at supplies
+ *                    the flow's own signature, which drives the flow-level schemas
  *
  * @returns Array of NodeSchema objects, each containing a schema and optional blocked dependencies
  *
@@ -90,9 +92,10 @@ export const getSignatureSchema = (
     dataTypes: DataType[],
     functions: FunctionDefinition[],
     nodeId?: NodeFunction["id"],
+    flowTypes?: FlowType[],
 ): SignatureSchema => {
     // Generate TypeScript source code from the flow definition
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes)
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, true, flowTypes)
 
     // Set up the TypeScript compiler environment
     const fileName = "index.ts"
