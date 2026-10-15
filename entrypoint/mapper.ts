@@ -1,7 +1,7 @@
 import {SingleValidationInputData} from "./readSingle";
 import {
     DataType,
-    Flow, FlowSetting,
+    Flow, FlowSetting, FlowType,
     FunctionDefinition,
     NodeFunction,
     NodeParameter,
@@ -27,14 +27,28 @@ import {toAllowedValue} from "@code0-tech/tucana/helpers";
 export type TriangulumFlowValidationInput = {
     flow?: Flow,
     functions?: FunctionDefinition[],
-    dataTypes?: DataType[]
+    dataTypes?: DataType[],
+    flowTypes?: FlowType[]
 }
 
 export function mapToFlowValidation(data: SingleValidationInputData): TriangulumFlowValidationInput {
     return {
         flow: mapFlow(data.flow!),
         functions: data.functions.map(mapFunctionDefinition),
-        dataTypes: data.dataTypes.map(mapDataType)
+        dataTypes: data.dataTypes.map(mapDataType),
+        flowTypes: [mapFlowType(data.flow!)]
+    }
+}
+
+// The validation input carries the flow's signature inline rather than a flow type
+// catalogue, so the flow type the flow points at is reconstructed from it.
+const FLOW_TYPE_ID = gid('FlowType', 1) as FlowType['id'];
+
+function mapFlowType(flow: ValidationFlow): FlowType {
+    return {
+        __typename: "FlowType",
+        id: FLOW_TYPE_ID,
+        signature: flow.signature
     }
 }
 
@@ -46,7 +60,7 @@ function mapFlow(flow: ValidationFlow): Flow {
     return {
         __typename: "Flow",
         id: gid('Flow', flow.flowId) as Flow['id'],
-        signature: flow.signature,
+        type: {__typename: "FlowType", id: FLOW_TYPE_ID},
         startingNodeId: gid('NodeFunction', flow.startingNodeId) as NodeFunction['id'],
         settings: {
             nodes: flow.settings.map(mapFlowSetting)

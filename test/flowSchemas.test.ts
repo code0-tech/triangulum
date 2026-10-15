@@ -2,7 +2,7 @@ import {describe, expect, it} from "vitest";
 import type {Flow, FunctionDefinition, NodeFunction, NodeParameterValue} from "@code0-tech/sagittarius-graphql-types";
 import {getFlowSchemas} from "../src/server";
 import type {JsonSchema, SchematizedSubFlowValue} from "../src/server";
-import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
+import {DATA_TYPES, FLOW_TYPE, FUNCTION_SIGNATURES, flowTypesFor} from "./data";
 
 type NodeId = NonNullable<NodeFunction["id"]>;
 
@@ -52,11 +52,13 @@ const node = (
     parameters: {nodes: parameterValues.map((value) => ({value}))},
 });
 
-const flowWithNodes = (nodes: NodeFunction[], signature = "(): void"): Flow => ({
+// The flow points at the fixture flow type; a test whose schemas depend on the
+// flow's own signature passes that type's signature via `flowTypesFor`.
+const flowWithNodes = (nodes: NodeFunction[]): Flow => ({
     id: FLOW_ID,
     startingNodeId: nodes[0]?.id,
     nodes: {nodes},
-    signature,
+    type: FLOW_TYPE,
 });
 
 /**
@@ -82,9 +84,10 @@ describe("getFlowSchemas", () => {
     });
 
     it("adds input/output schemas derived from the flow signature", () => {
-        const flow = flowWithNodes([], "(method: HTTP_METHOD): NUMBER");
+        const flow = flowWithNodes([]);
 
-        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES,
+            flowTypesFor("(method: HTTP_METHOD): NUMBER"));
 
         // inputSchema is an object keyed by parameter name.
         expect(result?.inputSchema.type).toBe("object");
@@ -104,12 +107,11 @@ describe("getFlowSchemas", () => {
         // Taken from the REST trigger scenario in schema.test.ts: input_schema is
         // the non-generic TYPE data type, echoed by the payload of
         // REST_ADAPTER_INPUT<TYPE>.
-        const flow = flowWithNodes(
-            [],
-            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
-        );
+        const flow = flowWithNodes([]);
 
-        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor(
+            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+        ));
 
         // TYPE is `any` underneath, so it maps to the open object schema; the
         // concrete parameters resolve fully.
@@ -131,9 +133,10 @@ describe("getFlowSchemas", () => {
     });
 
     it("maps the DATE data type to its underlying number type", () => {
-        const flow = flowWithNodes([], "(created: DATE): void");
+        const flow = flowWithNodes([]);
 
-        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowSchemas(flow, FUNCTION_SIGNATURES, DATA_TYPES,
+            flowTypesFor("(created: DATE): void"));
 
         expect(result?.inputSchema.properties?.created).toEqual({type: "number"});
     });

@@ -36,7 +36,6 @@ describe("Suggestion certainty", () => {
     const respondFlow = (): Flow => ({
         id: "gid://sagittarius/Flow/1",
         startingNodeId: "gid://sagittarius/NodeFunction/1",
-        signature: "(): void",
         nodes: {
             nodes: [
                 {
@@ -146,7 +145,6 @@ describe("Suggestion certainty", () => {
         const containsKeyFlow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -241,7 +239,6 @@ describe("Suggestion certainty", () => {
         const flow: Flow = {
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {

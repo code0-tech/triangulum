@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {getFlowValidation} from '../src/validation/getFlowValidation';
 import {DataType, Flow, FunctionDefinition, InlineReferenceValue} from "@code0-tech/sagittarius-graphql-types"; // Pfad ggf. anpassen
 // @ts-ignore
-import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
+import {DATA_TYPES, FUNCTION_SIGNATURES, flowTypesFor} from "./data";
 
 describe('getFlowValidation - Integrationstest', () => {
     it('1', () => {
@@ -261,7 +261,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -359,7 +358,7 @@ describe('getFlowValidation - Integrationstest', () => {
             }
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor("(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>"));
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
@@ -374,7 +373,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-03-17T14:02:31Z",
             "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -532,7 +530,7 @@ describe('getFlowValidation - Integrationstest', () => {
             },
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor("(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<{}>"));
 
         expect(result.isValid).toBe(false);
         result.diagnostics.forEach((error) => {
@@ -547,7 +545,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-04-12T13:46:13Z",
             "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -674,7 +671,7 @@ describe('getFlowValidation - Integrationstest', () => {
             }
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor("(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }"));
 
         expect(result.isValid).toBe(true);
         result.diagnostics.forEach((error) => {
@@ -688,7 +685,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "__typename": "Flow",
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-04-13T19:45:44Z",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { payload: { test: BOOLEAN }, headers: { bla: TEXT } }",
             "disabledReason": null,
             "name": "Test",
             "project": {
@@ -932,7 +928,13 @@ describe('getFlowValidation - Integrationstest', () => {
             }
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        // This flow points at FlowType/2, so only a catalogue entry with that ID
+        // supplies its signature.
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, [{
+            __typename: "FlowType",
+            id: "gid://sagittarius/FlowType/2",
+            signature: "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { payload: { test: BOOLEAN }, headers: { bla: TEXT } }",
+        }]);
 
         expect(result.isValid).toBe(false);
         expect(result.diagnostics).toEqual(expect.arrayContaining([
@@ -956,7 +958,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-04-12T13:46:13Z",
             "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -1083,7 +1084,7 @@ describe('getFlowValidation - Integrationstest', () => {
             }
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor("(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }"));
 
         expect(result.isValid).toBe(false);
         expect(result.diagnostics[0].nodeId).toBe(null)
@@ -1097,7 +1098,6 @@ describe('getFlowValidation - Integrationstest', () => {
             "id": "gid://sagittarius/Flow/1",
             "createdAt": "2026-04-12T13:46:13Z",
             "name": "Test",
-            "signature": "(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }",
             "nodes": {
                 "__typename": "NodeFunctionConnection",
                 "nodes": [
@@ -1216,7 +1216,7 @@ describe('getFlowValidation - Integrationstest', () => {
             }
         };
 
-        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES);
+        const result = getFlowValidation(flow, FUNCTION_SIGNATURES, DATA_TYPES, flowTypesFor("(httpURL: HTTP_URL, httpMethod: HTTP_METHOD): { body: { test: TEXT } }"));
 
         expect(result.isValid).toBe(false);
         expect(result.diagnostics[0].nodeId).toBe(null)
@@ -1364,7 +1364,6 @@ describe('getFlowValidation - Integrationstest', () => {
         const buildFlow = (firstIdentifier: string, valueRef: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1490,7 +1489,6 @@ describe('getFlowValidation - Integrationstest', () => {
         const buildFlow = (valueRef: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1638,7 +1636,6 @@ describe('getFlowValidation - Integrationstest', () => {
         // that carries the given inline references.
         const buildFlow = (sink: string, literal: unknown, references: InlineReferenceValue[]): Flow => ({
             startingNodeId: NODE1,
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -1796,7 +1793,6 @@ describe('getFlowValidation - Integrationstest', () => {
             // name but live in separate scopes, so the LIST<() => NUMBER> is valid.
             const flow: Flow = {
                 startingNodeId: NODE1,
-                signature: "(): void",
                 nodes: {
                     nodes: [
                         {
@@ -1926,7 +1922,6 @@ describe('getFlowValidation - Integrationstest', () => {
         const buildFlow = (firstIdentifier: string, valueRef: any): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {
@@ -2074,7 +2069,6 @@ describe('getFlowValidation - Integrationstest', () => {
         // that carries the inline reference.
         const buildFlow = (sink: string, literal: unknown): Flow => ({
             startingNodeId: NODE1,
-            signature: "(): void",
             nodes: {
                 nodes: [
                     {

@@ -4,7 +4,7 @@ import {generateFlowSourceCode} from "../src/utils";
 import {getFlowValidation} from "../src/validation/getFlowValidation";
 import {getSignatureSchema} from "../src/schema/getSignatureSchema";
 // @ts-ignore
-import {DATA_TYPES, FUNCTION_SIGNATURES} from "./data";
+import {DATA_TYPES, FLOW_TYPE, FUNCTION_SIGNATURES, flowTypesFor} from "./data";
 
 /**
  * A parameter or flow setting may carry a `cast` — the type its value is meant to
@@ -178,11 +178,13 @@ describe("cast handling in the generated flow source", () => {
         // The REST trigger is `<T extends TYPE>(input_schema: T, ...)`: whatever
         // the `input_schema` setting resolves to is what T — and with it the
         // trigger's payload — binds to.
+        const REST_TRIGGER_TYPES = flowTypesFor(
+            "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+        );
         const restTrigger = (cast?: string): Flow => ({
             id: "gid://sagittarius/Flow/1",
             startingNodeId: "gid://sagittarius/NodeFunction/1",
-            signature:
-                "<T extends TYPE>(input_schema: T, httpURL: HTTP_URL, httpMethod: HTTP_METHOD): REST_ADAPTER_INPUT<T>",
+            type: FLOW_TYPE,
             settings: {
                 nodes: [
                     {value: {name: "text"}, cast},
@@ -194,19 +196,19 @@ describe("cast handling in the generated flow source", () => {
         } as Flow);
 
         const cast = "{ name: TEXT, age: NUMBER }";
-        expect(generateFlowSourceCode(restTrigger(cast), FUNCTION_SIGNATURES, DATA_TYPES))
+        expect(generateFlowSourceCode(restTrigger(cast), FUNCTION_SIGNATURES, DATA_TYPES, false, true, REST_TRIGGER_TYPES))
             .toContain(`as unknown as ${cast}`);
 
         // Uncast, T is the shape of the setting value itself. The payload is a
         // return, so it renders that shape as data — never as the `T extends
         // TYPE` picker the parameter side uses.
-        const uncastPayload = (getSignatureSchema(restTrigger(), DATA_TYPES, FUNCTION_SIGNATURES)
+        const uncastPayload = (getSignatureSchema(restTrigger(), DATA_TYPES, FUNCTION_SIGNATURES, undefined, REST_TRIGGER_TYPES)
             .return as { properties: Record<string, any> }).properties.payload;
         expect(uncastPayload.input).toBe("data");
         expect(uncastPayload.type).toBe("{ name: string; }");
 
         // Cast, T is the cast type — the payload gains the declared `age`.
-        const castPayload = (getSignatureSchema(restTrigger(cast), DATA_TYPES, FUNCTION_SIGNATURES)
+        const castPayload = (getSignatureSchema(restTrigger(cast), DATA_TYPES, FUNCTION_SIGNATURES, undefined, REST_TRIGGER_TYPES)
             .return as { properties: Record<string, any> }).properties.payload;
         expect(castPayload.input).toBe("data");
         expect(castPayload.properties.age.input).toBe("number");

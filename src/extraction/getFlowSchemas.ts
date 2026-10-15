@@ -2,6 +2,7 @@ import ts from "typescript"
 import type {
     DataType,
     Flow,
+    FlowType,
     FunctionDefinition,
     NodeFunction,
     NodeParameter,
@@ -66,6 +67,8 @@ export type SchematizedFlow = Flow & SignatureSchemas
  * @param flow - The flow to enrich; returned unchanged when undefined
  * @param functions - Available function definitions (drive the generated code)
  * @param dataTypes - Available data type definitions (drive the type aliases)
+ * @param flowTypes - Available flow types; the one the flow points at supplies
+ *                    the flow's own signature, and with it its input/output schemas
  * @returns The same flow, enriched with input/output schemas, or `undefined`
  *          when no flow was supplied
  */
@@ -73,11 +76,12 @@ export const getFlowSchemas = (
     flow?: Flow,
     functions?: FunctionDefinition[],
     dataTypes?: DataType[],
+    flowTypes?: FlowType[],
 ): SchematizedFlow | undefined => {
     if (!flow) return undefined
 
     const fileName = "index.ts"
-    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes)
+    const sourceCode = generateFlowSourceCode(flow, functions, dataTypes, false, true, flowTypes)
     const host = createCompilerHost(fileName, sourceCode)
     const sourceFile = host.getSourceFile(fileName)!
     const checker = host.languageService.getProgram()!.getTypeChecker()

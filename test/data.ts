@@ -1,7 +1,20 @@
-import {DataType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
+import {DataType, Flow, FlowType, FunctionDefinition} from "@code0-tech/sagittarius-graphql-types";
 // The variants are declared as a `const enum` in a types-only package, so there
 // is no runtime value to reference — the string literals are cast instead.
 import type {DataTypeRulesVariant} from "@code0-tech/sagittarius-graphql-types";
+
+/**
+ * A flow is callable by the signature of its flow type, and carries only that
+ * type's ID — so a fixture flow that needs a signature points its `type` at
+ * {@link FLOW_TYPE} and the call under test gets {@link flowTypesFor} with the
+ * signature itself. A flow whose type is not in the catalogue is `(): void`.
+ */
+export const FLOW_TYPE_ID = "gid://sagittarius/FlowType/1" as FlowType["id"];
+
+export const FLOW_TYPE: Flow["type"] = {__typename: "FlowType", id: FLOW_TYPE_ID};
+
+export const flowTypesFor = (signature: string): FlowType[] =>
+    [{__typename: "FlowType", id: FLOW_TYPE_ID, signature}];
 
 /**
  * Available data types and their TypeScript mappings.
