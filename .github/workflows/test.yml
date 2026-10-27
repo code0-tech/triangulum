@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         ruby:
-          - '3.4.7'
+          - '3.4'
     defaults:
       run:
         working-directory: gem
