@@ -23,12 +23,6 @@ export type {
     SuggestionValue,
 } from "./suggestion.util";
 
-/**
- * Temporary diagnostics for the declared element expansion of a list slot.
- * Flip to `false` (or delete the call) once the scoping is settled.
- */
-const DEBUG_DECLARED_ITEMS = true;
-
 
 /**
  * Maps a data type identifier to a dedicated input kind.
@@ -948,38 +942,10 @@ export const declaredSchema = (
 export const declaredItemsOf = (
     functionItems: Schema[] | undefined,
     anySuggestions: SuggestionCandidate[] | undefined = undefined,
-): Schema[] => {
-    const declared = functionItems && functionItems.length > 0
+): Schema[] =>
+    functionItems && functionItems.length > 0
         ? functionItems.map((item) => declaredSchema(item, anySuggestions))
         : [withSuggestions({input: "generic"} as Schema, anySuggestions)];
-
-    // Temporary diagnostics: whether the element slots a consumer renders a new
-    // element from actually carry suggestions. Delete once settled.
-    if (DEBUG_DECLARED_ITEMS) {
-        const tally = (keys: string[]): string => {
-            const counts = keys.reduce<Record<string, number>>(
-                (totals, key) => ({...totals, [key]: (totals[key] ?? 0) + 1}),
-                {},
-            );
-            return Object.entries(counts).map(([key, count]) => `${key}=${count}`).join(" ") || "-";
-        };
-
-        declared.forEach((item, index) => {
-            // One flat string per item: object logs are collapsed by browser consoles.
-            console.log(`[triangulum:declaredItems] [${index}]`
-                + ` input=${item.input}`
-                + ` suggestions=${item.suggestions?.length ?? 0}`
-                + ` certainties=${item.suggestionCertainty?.length ?? 0}`
-                + ` | match: ${tally((item.suggestionCertainty ?? [])
-                    .map((certainty) => certainty.reason ?? certainty.match))}`
-                + ` | kind: ${tally((item.suggestions ?? [])
-                    .map((suggestion) => suggestion.__typename ?? "?"))}`
-                + ` | type=${item.type}`);
-        });
-    }
-
-    return declared;
-};
 
 export const genericNodeSchema = (
     schema: Schema,

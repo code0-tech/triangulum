@@ -10,13 +10,6 @@ import {
     weakestCertainty
 } from "./suggestion.util";
 
-/**
- * Temporary diagnostics for sub-flow suggestion scoping: logs the slot a
- * binding was matched against and which weakening produced its certainty.
- * Flip to `false` (or delete the calls) once the scoping is settled.
- */
-const DEBUG_SUBFLOW_SUGGESTIONS = true;
-
 /** The return types of every call signature of a callable type. */
 const returnTypes = (checker: ts.TypeChecker, type: ts.Type): ts.Type[] =>
     type.getCallSignatures().map((signature) => checker.getReturnTypeOfSignature(signature));
@@ -49,29 +42,10 @@ export const getSubFlows = (
         return [];
     }
 
-    const candidates = functionDeclarations.flatMap((func) => {
+    return functionDeclarations.flatMap((func) => {
         const candidate = createSubFlowIfCompatible(checker, func, functions, paramType);
         return candidate ? [candidate] : [];
     });
-
-    if (DEBUG_SUBFLOW_SUGGESTIONS) {
-        const slotReturns = returnTypes(checker, paramType);
-        const unconstrained = slotReturns.length > 0 && slotReturns.every(isUnconstrainedReturn);
-        const counts = candidates.reduce<Record<string, number>>((totals, candidate) => {
-            const key = candidate.certainty.reason ?? candidate.certainty.match;
-            return {...totals, [key]: (totals[key] ?? 0) + 1};
-        }, {});
-
-        // One flat string: object logs are collapsed by browser consoles.
-        console.log(`[triangulum:subflow] slot=${checker.typeToString(paramType)}`
-            + ` returns=${slotReturns.map((type) => checker.typeToString(type)).join("|") || "-"}`
-            + ` unconstrained=${unconstrained}`
-            + ` declarations=${functionDeclarations.length}`
-            + ` matched=${candidates.length}`
-            + ` | ${Object.entries(counts).map(([key, count]) => `${key}=${count}`).join(" ") || "-"}`);
-    }
-
-    return candidates;
 
 }
 
@@ -142,16 +116,6 @@ const createSubFlowIfCompatible = (
 
     if (!functionDefinition) {
         return null;
-    }
-
-    // Per-candidate detail only for a slot that actually constrains something: an
-    // unconstrained slot matches nearly every declaration and would bury the log.
-    if (DEBUG_SUBFLOW_SUGGESTIONS && !unconstrainedSlot) {
-        console.log(`[triangulum:subflow]   ${functionName}`
-            + ` :: ${checker.typeToString(functionType)}`
-            + ` | raw=${matched.reason ?? matched.match}`
-            + ` genericBinding=${genericBinding}`
-            + ` -> ${certainty.reason ?? certainty.match}`);
     }
 
     return {value: buildSubFlowValue(functionDefinition), certainty};
