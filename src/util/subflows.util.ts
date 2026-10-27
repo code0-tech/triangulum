@@ -1,7 +1,25 @@
 import ts from "typescript";
 import {FunctionDefinition, SubFlowValue, SubFlowValueSetting} from "@code0-tech/sagittarius-graphql-types";
 import {isSubFlow} from "./schema.util";
-import {SuggestionCandidate, typeMatchCertainty} from "./suggestion.util";
+import {
+    EXACT_MATCH,
+    isUnconstrainedReturn,
+    possibleMatch,
+    SuggestionCandidate,
+    typeMatchCertainty,
+    weakestCertainty
+} from "./suggestion.util";
+
+/**
+ * Temporary diagnostics for sub-flow suggestion scoping: logs the slot a
+ * binding was matched against and which weakening produced its certainty.
+ * Flip to `false` (or delete the calls) once the scoping is settled.
+ */
+const DEBUG_SUBFLOW_SUGGESTIONS = true;
+
+/** The return types of every call signature of a callable type. */
+const returnTypes = (checker: ts.TypeChecker, type: ts.Type): ts.Type[] =>
+    type.getCallSignatures().map((signature) => checker.getReturnTypeOfSignature(signature));
 
 /**
  * Extracts and creates a list of SubFlowValue objects from function declarations
@@ -31,10 +49,29 @@ export const getSubFlows = (
         return [];
     }
 
-    return functionDeclarations.flatMap((func) => {
+    const candidates = functionDeclarations.flatMap((func) => {
         const candidate = createSubFlowIfCompatible(checker, func, functions, paramType);
         return candidate ? [candidate] : [];
     });
+
+    if (DEBUG_SUBFLOW_SUGGESTIONS) {
+        const slotReturns = returnTypes(checker, paramType);
+        const unconstrained = slotReturns.length > 0 && slotReturns.every(isUnconstrainedReturn);
+        const counts = candidates.reduce<Record<string, number>>((totals, candidate) => {
+            const key = candidate.certainty.reason ?? candidate.certainty.match;
+            return {...totals, [key]: (totals[key] ?? 0) + 1};
+        }, {});
+
+        // One flat string: object logs are collapsed by browser consoles.
+        console.log(`[triangulum:subflow] slot=${checker.typeToString(paramType)}`
+            + ` returns=${slotReturns.map((type) => checker.typeToString(type)).join("|") || "-"}`
+            + ` unconstrained=${unconstrained}`
+            + ` declarations=${functionDeclarations.length}`
+            + ` matched=${candidates.length}`
+            + ` | ${Object.entries(counts).map(([key, count]) => `${key}=${count}`).join(" ") || "-"}`);
+    }
+
+    return candidates;
 
 }
 
@@ -70,10 +107,34 @@ const createSubFlowIfCompatible = (
     // match the expected interface — e.g., paramType might be
     // (number: number) => void. A binding that only fits under a condition carries
     // that condition as its certainty (see {@link typeMatchCertainty}).
-    const certainty = typeMatchCertainty(functionType, checker, paramType);
-    if (!certainty) {
+    const matched = typeMatchCertainty(functionType, checker, paramType);
+    if (!matched) {
         return null;
     }
+
+    // The slot is a callable, and {@link isUnconstrainedType} deliberately reports
+    // `false` for one: a callable *does* constrain what is assignable to it, so an
+    // assignability test against it is not vacuous. What it says nothing about is
+    // the value the bound sub-flow *produces* — and a slot whose return type
+    // constrains nothing (`any`, `{}`, a weak object, or a `void` that discards
+    // whatever the binding returns) is served by every binding, which is the same
+    // vacuous match the top-level test catches for a plain slot. Without this a
+    // sub-flow slot reports a wall of `exact` producers — see
+    // {@link isUnconstrainedReturn}.
+    const slotReturns = returnTypes(checker, paramType);
+    const unconstrainedSlot = slotReturns.length > 0 && slotReturns.every(isUnconstrainedReturn);
+
+    // A binding whose own return type is a type parameter only fits because the
+    // target signature instantiated it; the concrete instantiation may be narrower.
+    // This mirrors the weakening {@link createNodeFunctionIfCompatible} applies to
+    // a generic return, which the sub-flow path was missing entirely.
+    const genericBinding = returnTypes(checker, functionType).some((type) => type.isTypeParameter());
+
+    const certainty = weakestCertainty(
+        matched,
+        unconstrainedSlot ? possibleMatch("unconstrained") : EXACT_MATCH,
+        genericBinding ? possibleMatch("generic") : EXACT_MATCH,
+    );
 
     // If type-compatible, find the function definition and create the SubFlowValue
     const functionName = normalizeFunctionName(func.name?.getText());
@@ -81,6 +142,16 @@ const createSubFlowIfCompatible = (
 
     if (!functionDefinition) {
         return null;
+    }
+
+    // Per-candidate detail only for a slot that actually constrains something: an
+    // unconstrained slot matches nearly every declaration and would bury the log.
+    if (DEBUG_SUBFLOW_SUGGESTIONS && !unconstrainedSlot) {
+        console.log(`[triangulum:subflow]   ${functionName}`
+            + ` :: ${checker.typeToString(functionType)}`
+            + ` | raw=${matched.reason ?? matched.match}`
+            + ` genericBinding=${genericBinding}`
+            + ` -> ${certainty.reason ?? certainty.match}`);
     }
 
     return {value: buildSubFlowValue(functionDefinition), certainty};

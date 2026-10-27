@@ -122,10 +122,19 @@ export const weakestCertainty = (...certainties: SuggestionCertainty[]): Suggest
  * the one that would otherwise report a hundred exact "producers" for a slot
  * that simply accepts anything.
  *
- * A callable, an array and anything with properties is excluded: those
- * constrain their values. An index signature is inspected only `depth` levels
- * deep (one, from the outside) because an index type may refer back to its own
- * container (`type Json = {[key: string]: Json}`).
+ * A *weak* object — one whose every property is optional — counts as
+ * unconstrained too: its set of required properties is empty, so structurally
+ * almost any object satisfies it, and TypeScript's "no properties in common"
+ * check cannot be relied on to reject the rest (it needs the source to have
+ * apparent members, which the minimal lib this runs against does not give
+ * primitives — see MINIMAL_LIB). A slot like `{messages?: …; jump_to?: …}` is
+ * therefore served by nearly every candidate, which is exactly the vacuous match
+ * this predicate exists to report.
+ *
+ * A callable, an array and anything with a *required* property is excluded:
+ * those constrain their values. An index signature is inspected only `depth`
+ * levels deep (one, from the outside) because an index type may refer back to
+ * its own container (`type Json = {[key: string]: Json}`).
  */
 export const isUnconstrainedType = (type: ts.Type | undefined, depth: number = 1): boolean => {
     // A missing index signature constrains nothing about values behind it either.
@@ -133,7 +142,8 @@ export const isUnconstrainedType = (type: ts.Type | undefined, depth: number = 1
     if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) return true;
     if ((type.flags & ts.TypeFlags.Object) === 0) return false;
 
-    return type.getProperties().length === 0
+    return type.getProperties().every((property) =>
+            (property.flags & ts.SymbolFlags.Optional) !== 0)
         && type.getCallSignatures().length === 0
         && type.getConstructSignatures().length === 0
         && (depth === 0
@@ -141,6 +151,41 @@ export const isUnconstrainedType = (type: ts.Type | undefined, depth: number = 1
             : isUnconstrainedType(type.getNumberIndexType(), depth - 1)
             && isUnconstrainedType(type.getStringIndexType(), depth - 1));
 };
+
+/**
+ * True for the *return* type of a slot that says nothing about what a binding
+ * produces, so matching against it is vacuous.
+ *
+ * Everything {@link isUnconstrainedType} reports counts here, plus `void`: a
+ * `void` return accepts a binding of *any* return type, because TypeScript
+ * discards the result when the target signature returns `void`. A `RUNNABLE`
+ * (`() => void`) slot is therefore fitted by every function that happens to be
+ * callable with no arguments — the set of those is decided by whether a
+ * function's parameters are optional, which has nothing to do with whether it
+ * belongs in that slot. Reporting them as `exact` producers hands the consumer
+ * an arbitrary handful of actions (`stripe::createCustomer`, `std::number::pi`)
+ * as the dedicated bindings for an `if` body.
+ *
+ * `void` is deliberately *not* folded into {@link isUnconstrainedType}, which is
+ * applied to both sides of a match: as a *candidate* type `void` is the opposite
+ * of open — it is assignable almost nowhere — so calling it unconstrained there
+ * would weaken matches it has no business weakening. Only the slot's return
+ * position has this property, which is why it lives in its own predicate.
+ */
+export const isUnconstrainedReturn = (type: ts.Type | undefined): boolean =>
+    (type !== undefined && (type.flags & ts.TypeFlags.Void) !== 0)
+    || isUnconstrainedType(type);
+
+/**
+ * True for a slot type that is fitted by everything: itself unconstrained, or a
+ * union with an unconstrained member — everything fits that one member, so the
+ * union says nothing either. Nullish members are the caller's concern; see
+ * {@link typeMatchCertainty}, which strips them before asking.
+ */
+const isUnconstrainedSlot = (type: ts.Type): boolean =>
+    type.isUnion()
+        ? type.types.some((member) => isUnconstrainedType(member))
+        : isUnconstrainedType(type);
 
 /**
  * Decides whether a candidate type fits an expected (slot) type, and how
@@ -156,7 +201,13 @@ export const isUnconstrainedType = (type: ts.Type | undefined, depth: number = 1
  *   producer *of this type*, which is the whole point of the distinction. This
  *   only *weakens* the verdict — whether the candidate fits at all is still
  *   decided by assignability, so an open candidate is not waved through into a
- *   slot that would reject it;
+ *   slot that would reject it. The slot is stripped of its nullish part for this
+ *   test alone: an *optional* parameter arrives as `T | undefined`, a union, and
+ *   a union carries no object flag — so without stripping, `headers?: OBJECT<{}>`
+ *   would report a wall of exact producers that the required `headers:
+ *   OBJECT<{}>` correctly reports as vacuous. Accepting `undefined` makes a slot
+ *   wider, never its candidates less certain. A union slot is vacuous as soon as
+ *   *one* member constrains nothing, since everything fits that member;
  * - the candidate is a union and only some members fit → `union-member`. A
  *   union is only assignable as a whole when *every* member is, so the partial
  *   case is exactly the one strict assignability would reject while the slot can
@@ -175,6 +226,7 @@ export const typeMatchCertainty = (
     expectedType: ts.Type,
 ): SuggestionCertainty | null => {
     const nonNullable = checker.getNonNullableType(type);
+    const expectedNonNullable = checker.getNonNullableType(expectedType);
 
     if ((nonNullable.flags & ts.TypeFlags.Never) !== 0) return null;
 
@@ -190,7 +242,7 @@ export const typeMatchCertainty = (
     if (matching.length === 0) return null;
 
     return weakestCertainty(
-        isUnconstrainedType(nonNullable) || isUnconstrainedType(expectedType)
+        isUnconstrainedType(nonNullable) || isUnconstrainedSlot(expectedNonNullable)
             ? possibleMatch("unconstrained")
             : EXACT_MATCH,
         nonNullable !== type && !checker.isTypeAssignableTo(type, expectedType)

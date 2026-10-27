@@ -138,6 +138,42 @@ describe("Suggestion certainty", () => {
             certainty.match === "possible" && certainty.reason === "unconstrained")).toBe(true);
     });
 
+    it("offers no exact producer for an optional slot that accepts anything", () => {
+        // Parameter 7 of http::request::send is `headers?: OBJECT<{}>` — the
+        // optional twin of the slot above. An optional parameter arrives as
+        // `OBJECT<{}> | undefined`, and a union carries no object flag, so the
+        // nullish part has to be stripped before the slot is tested for
+        // openness. Accepting `undefined` makes a slot wider, never its
+        // candidates more certain: the verdict must match the required case.
+        const sendFlow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "http::request::send"},
+                        parameters: {nodes: []},
+                    },
+                ],
+            },
+        };
+
+        const result = getSignatureSchema(
+            sendFlow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        const headers = result.parameters[7].schema;
+
+        expect(headers.input).toBe("data");
+        expect(headers.suggestions?.length).toBeGreaterThan(0);
+        expect(headers.suggestionCertainty?.every((certainty) =>
+            certainty.match === "possible" && certainty.reason === "unconstrained")).toBe(true);
+    });
+
     it("offers no exact producer for a slot typed by an uninstantiated generic object", () => {
         // Parameter 0 of std::object::contains_key is `OBJECT<T>` with T unbound,
         // which resolves to `{[key: string]: any}`: an open index signature every
@@ -216,6 +252,79 @@ describe("Suggestion certainty", () => {
             && value.functionDefinition?.identifier === "custom::maybe::produce");
 
         expect(maybe.map(describeCertainty)).toEqual(["possible:nullable"]);
+    });
+
+    it("offers no exact binding for a RUNNABLE sub-flow slot", () => {
+        // Parameter 1 of std::control::if is a RUNNABLE — `() => void`. A `void`
+        // return discards whatever a binding produces, so the slot is fitted by
+        // every function that happens to be callable with no arguments: which
+        // ones those are is decided by parameter optionality, not by belonging in
+        // an `if` body. The bindings are still offered, but none of them is a
+        // dedicated one, which is what the certainty says.
+        const ifFlow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::control::if"},
+                        parameters: {nodes: []},
+                    },
+                ],
+            },
+        };
+
+        const result = getSignatureSchema(
+            ifFlow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        const runnable = result.parameters[1].schema;
+
+        const subFlows = (runnable.suggestions ?? []).flatMap((value, index) =>
+            (value as any).__typename === "SubFlowValue" ? [runnable.suggestionCertainty![index]] : []);
+
+        expect(subFlows.length).toBeGreaterThan(0);
+        expect(subFlows.map(describeCertainty).every((described) =>
+            described === "possible:unconstrained")).toBe(true);
+    });
+
+    it("keeps exact bindings for a sub-flow slot whose return type constrains", () => {
+        // The counterpart: parameter 1 of std::list::filter is a
+        // PREDICATE<T> — `(item: T) => BOOLEAN`. That return type names a type a
+        // binding either produces or does not, so a BOOLEAN-returning function is
+        // a dedicated binding and stays exact.
+        const filterFlow: Flow = {
+            id: "gid://sagittarius/Flow/1",
+            startingNodeId: "gid://sagittarius/NodeFunction/1",
+            signature: "(): void",
+            nodes: {
+                nodes: [
+                    {
+                        id: "gid://sagittarius/NodeFunction/1",
+                        functionDefinition: {identifier: "std::list::filter"},
+                        parameters: {nodes: [{value: null}, {value: null}]},
+                    },
+                ],
+            },
+        };
+
+        const result = getSignatureSchema(
+            filterFlow,
+            DATA_TYPES,
+            FUNCTION_SIGNATURES,
+            "gid://sagittarius/NodeFunction/1",
+        );
+        const predicate = result.parameters[1].schema;
+
+        const fromNumber = certaintyOf(predicate, (value) =>
+            value.__typename === "SubFlowValue"
+            && value.functionDefinition?.identifier === "std::boolean::from_number");
+
+        expect(fromNumber.map(describeCertainty)).toEqual(["exact"]);
     });
 
     it("marks a reference into a union key as a union-member match", () => {
