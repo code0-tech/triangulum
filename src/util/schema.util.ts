@@ -300,6 +300,40 @@ export interface ListInput extends Input {
 }
 
 /**
+ * Represents a union of *alternative inputs* — a slot whose declared type is a
+ * union whose members are inputs in their own right (e.g. `TEXT | OBJECT<…>`,
+ * `BOOLEAN | COLOR`, `HTTP_METHOD | NUMBER`). The UI renders a choice between
+ * the alternatives in {@link UnionInput.items}, then the input of the one picked.
+ *
+ * Not every union surfaces as one: a union whose members are the *options of a
+ * single input* renders as that input instead — a literal union (`'GET' | 'POST'`)
+ * is one {@link PrimitiveInput} select offering both, and `boolean` (internally
+ * `true | false`) is one boolean input. See {@link isOptionsUnion}.
+ */
+export interface UnionInput extends Input {
+    input?: "union";
+    /**
+     * One schema per alternative this slot accepts, in the union's own member
+     * order — the role {@link ListInput.declaredItems} plays for a list element.
+     *
+     * Each entry is one *input*, not one type: the string/number literal members
+     * are folded into a single `select` entry carrying all of them as its options,
+     * and `boolean`'s internal `true | false` members into a single `boolean`
+     * entry. `undefined` and `null` members are dropped — they make the slot
+     * optional, they are not alternatives to render.
+     *
+     * Every entry's suggestions are those of the whole union, not of the member
+     * alone: an entry describes one option of this one slot, and the slot accepts
+     * whatever any of its members accept. This mirrors a union list element, whose
+     * `declaredItems` scope each option's suggestions to the whole element type.
+     *
+     * Always at least two entries — a union with a single real member collapses to
+     * that member's own schema rather than surfacing as a union input.
+     */
+    items?: Schema[];
+}
+
+/**
  * Represents a type input.
  * Emitted for the TYPE data type so the UI can render a dedicated type picker
  * instead of the plain input its underlying type (`any`) would otherwise
@@ -326,6 +360,7 @@ export type Schema =
     | ListSubFlowInput
     | DataInput
     | ListInput
+    | UnionInput
     | TypeInput
     | SubFlowInput
     | GenericInput;
@@ -710,6 +745,38 @@ export const getSchema = (
         };
     }
 
+    // A union of *alternative inputs* (e.g. `TEXT | OBJECT<…>`, `BOOLEAN | COLOR`):
+    // each member is an input of its own, so the slot surfaces a dedicated union
+    // input enumerating them in `items`.
+    //
+    // Reached only after the unions that render as a *single* input have been
+    // handled above — `boolean` and a literal select — and before the generic
+    // fallback that would otherwise swallow it: a union carries none of its
+    // members' type flags, so not one of the structural checks above can match
+    // one, and every such slot used to come out `{input: "generic"}` with nothing
+    // to render a choice from.
+    if (parameterType.isUnion()) {
+        const items = unionMemberSchemas(
+            checker,
+            node,
+            parameterType,
+            functionDeclarations,
+            functions,
+            suggestions,
+            visited,
+            recursionCache,
+        );
+        // Folding can leave a single input (e.g. `TEXT | 'a'` is one text), and a
+        // slot with one alternative is not a choice: it *is* that input, carrying
+        // the union's own rendered type and suggestion scope.
+        if (items.length === 1) {
+            return {...items[0], type, ...combinedSuggestions};
+        }
+        if (items.length > 1) {
+            return {input: "union", type, items, ...combinedSuggestions};
+        }
+    }
+
     // Fallback for unknown or generic types — still surface any collected
     // suggestions (e.g. references in scope) so the UI is never silently empty.
     return {
@@ -718,6 +785,88 @@ export const getSchema = (
         ...combinedSuggestions,
     };
 };
+
+/**
+ * The alternative-input schemas of a union — what {@link UnionInput.items} carries.
+ *
+ * Members are folded so every entry is one *input* rather than one type:
+ * - all string/number literal members fold into a single `select` entry, because a
+ *   literal union is the option list of one select: `HTTP_METHOD | NUMBER` offers a
+ *   method select and a number input, not six selects and a number;
+ * - `boolean`'s internal `true | false` members fold into a single `boolean` entry;
+ * - every other member yields its own schema.
+ *
+ * Nullish members are dropped: `undefined`/`null` make the slot optional, they are
+ * not alternatives to render. Order follows the union's own member order, each
+ * folded group taking the position of its first member.
+ *
+ * Every entry is built with the *whole* union as its suggestion scope, so an option
+ * offers everything the slot accepts rather than only what its own member does —
+ * the same rule a union list element follows (see the item expansion above). The
+ * folded select is built from its first literal member for exactly that reason,
+ * with only the rendered `type` widened to name every option, since there is no
+ * single type to hand the checker for the folded group.
+ */
+function unionMemberSchemas(
+    checker: ts.TypeChecker,
+    node: ts.VariableDeclaration | undefined,
+    unionType: ts.UnionType,
+    functionDeclarations: FunctionDeclaration[],
+    functions: FunctionDefinition[],
+    suggestions: boolean,
+    visited: Set<ts.Type>,
+    recursionCache: Map<ts.Type, boolean>,
+): Schema[] {
+    const members = unionType.types.filter(
+        (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0,
+    );
+    const literals = members.filter(isStringOrNumberLiteral);
+
+    const memberSchema = (type: ts.Type): Schema =>
+        getSchema(
+            checker,
+            node,
+            type,
+            functionDeclarations,
+            functions,
+            suggestions,
+            unionType,
+            visited,
+            recursionCache,
+        );
+
+    const items: Schema[] = [];
+    let selectEmitted = false;
+    let booleanEmitted = false;
+
+    for (const member of members) {
+        if (isStringOrNumberLiteral(member)) {
+            if (selectEmitted) continue;
+            selectEmitted = true;
+            const select = memberSchema(member);
+            items.push(
+                literals.length === 1
+                    ? select
+                    : {
+                        ...select,
+                        type: literals.map((literal) => checker.typeToString(literal)).join(" | "),
+                    },
+            );
+            continue;
+        }
+
+        if ((member.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !== 0) {
+            if (booleanEmitted) continue;
+            booleanEmitted = true;
+            items.push(memberSchema(checker.getBooleanType()));
+            continue;
+        }
+
+        items.push(memberSchema(member));
+    }
+
+    return items;
+}
 
 /**
  * Merges a function-declared parameter schema with the schema derived from the
@@ -1085,6 +1234,47 @@ export const mergeSchemas = (
                 items,
                 declaredItems: declaredItemsOf(fItems, anySuggestions),
             },
+            suggestions,
+        );
+    }
+
+    // A union of alternative inputs carries its options in `items`, which merge
+    // the same way a list's elements do — pairwise while both sides still list the
+    // same alternatives, which is the unfilled case: the node side resolves such a
+    // slot to the very same union.
+    //
+    // A value in the slot picks one of the alternatives, and the node side then
+    // resolves to that member alone (a `TEXT | OBJECT<…>` holding "y" resolves to
+    // `string`). That member is the one input of the set that describes the value,
+    // so it — not the choice between all of them — is the answer for the slot,
+    // matching how an entered value narrows a union list element or a union
+    // property. The declared option is what is returned, so the shape and
+    // suggestions still come from the declared type; only an unrecognizable node
+    // side leaves the whole choice standing.
+    if (functionSchema.input === "union") {
+        const fItems = (functionSchema as UnionInput).items ?? [];
+        const nItems =
+            nodeSchema.input === "union" ? ((nodeSchema as UnionInput).items ?? []) : [];
+
+        if (fItems.length > 0 && fItems.length === nItems.length) {
+            return withSuggestions(
+                {
+                    ...functionSchema,
+                    items: fItems.map((item, index) =>
+                        mergeSchemas(item, nItems[index], false, anySuggestions, false),
+                    ),
+                },
+                suggestions,
+            );
+        }
+
+        const picked = fItems.find((item) => item.input === nodeSchema.input);
+        if (picked) {
+            return mergeSchemas(picked, nodeSchema, false, anySuggestions, false);
+        }
+
+        return withSuggestions(
+            {...functionSchema, items: fItems.map((item) => declaredSchema(item, anySuggestions))},
             suggestions,
         );
     }
@@ -1457,16 +1647,6 @@ function isString(type: ts.Type): boolean {
 }
 
 /**
- * Checks if a type is any primitive type (string, number, or boolean).
- *
- * @param type - The type to check
- * @returns True if the type is a string, number, or boolean, false otherwise
- */
-function isPrimitive(type: ts.Type): boolean {
-    return isString(type) || isNumber(type) || isBoolean(type);
-}
-
-/**
  * Checks if a type is a single string or number literal (e.g. "GET" or 42).
  * Boolean literals are excluded so that types like `true` continue to render as a boolean input.
  */
@@ -1523,10 +1703,17 @@ export function isOptionsUnion(type: ts.Type): boolean {
 }
 
 /**
- * Checks if a type is a union of primitive types only.
+ * Checks if a type is a union of string/number *literals* only.
  *
  * This function is used to identify union types that can be represented as
  * a select input with predefined options (e.g., "a" | "b" | "c" or 1 | 2 | 3).
+ *
+ * Literals, never the wide primitives they belong to: the members of a select are
+ * its options, and a wide `string` or `number` member contributes no option — it
+ * is a free-form input of its own. A union mixing the two (`TEXT | NUMBER`,
+ * `TEXT | BOOLEAN`, `HTTP_METHOD | NUMBER`) is therefore a union of alternative
+ * inputs, and surfaces as a {@link UnionInput} rather than as a select with
+ * nothing (or only part of itself) to choose from.
  *
  * @param type - The type to check
  * @returns True if the type is a union where all members are primitives, false otherwise
@@ -1536,7 +1723,7 @@ function isPrimitiveLiteralUnion(type: ts.Type): boolean {
     const nonNullish = type.types.filter(
         (t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0
     );
-    return nonNullish.length > 0 && nonNullish.every(isPrimitive);
+    return nonNullish.length > 0 && nonNullish.every(isStringOrNumberLiteral);
 }
 
 /**
