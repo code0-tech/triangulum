@@ -1,5 +1,5 @@
 import ts from "typescript";
-import {FunctionDefinition, SubFlowValue, SubFlowValueSetting} from "@code0-tech/sagittarius-graphql-types";
+import {FunctionDefinition, SubFlowValue, SubFlowValueParameter} from "@code0-tech/sagittarius-graphql-types";
 import {isSubFlow} from "./schema.util";
 import {
     EXACT_MATCH,
@@ -56,7 +56,7 @@ export const getSubFlows = (
  * Type compatibility is checked by comparing the function type against the expected
  * parameter type (e.g., a function signature like (number: number) => void).
  * If compatible, the function is converted into a SubFlowValue object with its
- * associated parameter settings.
+ * associated parameters.
  *
  * @param {ts.TypeChecker} checker - The TypeScript type checker for type analysis
  * @param {ts.FunctionDeclaration} func - The function declaration to check
@@ -153,30 +153,35 @@ const normalizeFunctionName = (rawName: string | undefined): string => {
 /**
  * Constructs a SubFlowValue object from a function definition.
  *
- * This function transforms a FunctionDefinition into a SubFlowValue with all
- * its parameter settings properly configured. Each parameter from the function
- * definition is converted into a SubFlowValueSetting object that includes
- * metadata such as identifier, default values, hidden status, and optional status.
+ * This function transforms a FunctionDefinition into a SubFlowValue with one
+ * SubFlowValueParameter per parameter of the function definition. Each parameter
+ * carries the definition's identifier and, where the definition declares one, its
+ * default value as a LiteralValue — mirroring how {@link buildNodeParameter}
+ * pre-fills a node's parameters. A parameter without a default is left unfilled
+ * (`value: null`) for the consumer to bind.
  *
  * @param {FunctionDefinition} functionDefinition - The function definition to convert
  *
  * @returns {SubFlowValue} A SubFlowValue object with the function definition
- *          and all parameter settings configured
+ *          and all parameters configured
  */
 const buildSubFlowValue = (functionDefinition: FunctionDefinition): SubFlowValue => {
     return {
         __typename: "SubFlowValue",
         functionDefinition: functionDefinition,
         signature: functionDefinition.signature,
-        settings: functionDefinition.parameterDefinitions?.nodes?.map(param => {
-            const setting: SubFlowValueSetting = {
-                __typename: "SubFlowValueSetting",
+        parameters: functionDefinition.parameterDefinitions?.nodes?.map(param => {
+            const parameter: SubFlowValueParameter = {
+                __typename: "SubFlowValueParameter",
                 identifier: param?.identifier,
-                defaultValue: param?.defaultValue ?? null,
-                hidden: param?.hidden ?? false,
-                optional: param?.optional ?? false,
+                value: param?.defaultValue
+                    ? {
+                        __typename: "LiteralValue",
+                        value: param.defaultValue.value,
+                    }
+                    : null,
             }
-            return setting
+            return parameter
         })
     }
 }
