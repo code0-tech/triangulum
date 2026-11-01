@@ -8,7 +8,7 @@ import {
     NodeParameterValue,
     ParameterDefinition,
     SubFlowValue,
-    SubFlowValueSetting,
+    SubFlowValueParameter,
 } from "@code0-tech/sagittarius-graphql-types";
 import {
     DefinitionDataType,
@@ -19,7 +19,7 @@ import {
     FlowSetting as TucanaFlowSetting,
     ValidationFlow,
     SubFlow as TucanaSubFlow,
-    SubFlowSetting as TucanaSubFlowSetting,
+    SubFlowParameters as TucanaSubFlowParameters,
     NodeValue as TucanaNodeValue,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
@@ -149,7 +149,9 @@ function mapSubFlow(subFlow: TucanaSubFlow): SubFlowValue {
     const value: SubFlowValue = {
         __typename: 'SubFlowValue',
         signature: subFlow.signature,
-        settings: subFlow.settings.map(mapSubFlowSetting)
+        name: subFlow.name,
+        description: subFlow.description,
+        parameters: subFlow.parameters.map(mapSubFlowParameter)
     };
 
     if (subFlow.executionReference.oneofKind === 'startingNodeId') {
@@ -163,13 +165,12 @@ function mapSubFlow(subFlow: TucanaSubFlow): SubFlowValue {
     return value;
 }
 
-function mapSubFlowSetting(setting: TucanaSubFlowSetting): SubFlowValueSetting {
+function mapSubFlowParameter(parameter: TucanaSubFlowParameters): SubFlowValueParameter {
     return {
-        __typename: 'SubFlowValueSetting',
-        identifier: setting.identifier,
-        defaultValue: setting.defaultValue ? toAllowedValue(setting.defaultValue) : null,
-        optional: setting.optional,
-        hidden: setting.hidden
+        __typename: 'SubFlowValueParameter',
+        identifier: parameter.identifier,
+        value: parameter.value ? mapNodeValue(parameter.value) : null,
+        cast: parameter.cast
     };
 }
 
