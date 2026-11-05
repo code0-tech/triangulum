@@ -1,0 +1,42 @@
+{
+  "comment": "Shared bun release metadata for the ruby gem (gem/rakelib/bun.rb) and the python package (python/hatch_build.py). Bump the version and ALL checksums together.",
+  "version": "v1.3.11",
+  "platforms": [
+    {
+      "zip": "bun-darwin-aarch64.zip",
+      "sha256": "6f5a3467ed9caec4795bf78cd476507d9f870c7d57b86c945fcb338126772ffc",
+      "gem": "arm64-darwin",
+      "wheel": "macosx_11_0_arm64"
+    },
+    {
+      "zip": "bun-darwin-x64-baseline.zip",
+      "sha256": "fb6739b08bf54550edaa7c824cd5b2dca45b6a06afef408443087a63105f6f8d",
+      "gem": "x86_64-darwin",
+      "wheel": "macosx_10_12_x86_64"
+    },
+    {
+      "zip": "bun-linux-x64-baseline.zip",
+      "sha256": "abe346f63414547cdf6b35b7a649a490c728b93d006226156923918a84c0e59b",
+      "gem": "x86_64-linux-gnu",
+      "wheel": "manylinux_2_17_x86_64"
+    },
+    {
+      "zip": "bun-linux-x64-musl-baseline.zip",
+      "sha256": "2fa2b697f14ada86a28df771d3876ca7606d7453b2339454893b1937aa9c0c7e",
+      "gem": "x86_64-linux-musl",
+      "wheel": "musllinux_1_2_x86_64"
+    },
+    {
+      "zip": "bun-linux-aarch64.zip",
+      "sha256": "d13944da12a53ecc74bf6a720bd1d04c4555c038dfe422365356a7be47691fdf",
+      "gem": "aarch64-linux-gnu",
+      "wheel": "manylinux_2_17_aarch64"
+    },
+    {
+      "zip": "bun-linux-aarch64-musl.zip",
+      "sha256": "0f5bf5dc3f276053196274bb84f90a44e2fa40c9432bd6757e3247a8d9476a3d",
+      "gem": "aarch64-linux-musl",
+      "wheel": "musllinux_1_2_aarch64"
+    }
+  ]
+}
