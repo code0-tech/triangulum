@@ -59,3 +59,38 @@ jobs:
         run: bundle exec rake push:all
       - name: Wait for release
         run: gem exec rubygems-await pkg/*.gem
+
+  pypi:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      # Set up
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".tool-versions"
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.tool-versions'
+          registry-url: 'https://registry.npmjs.org'
+      # uv resolves the python version from python/.python-version itself
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: npm ci
+        working-directory: .
+      - run: npm run build
+        working-directory: .
+      - run: npm ci
+        working-directory: entrypoint
+      - name: Set version
+        run: sed -i "s/^version = \"0.0.0\"/version = \"${GITHUB_REF_NAME#v}\"/" pyproject.toml
+      - name: Install dependencies
+        run: uv sync
+      - name: Build all wheels
+        run: uv run python tasks.py wheels
+
+      # Release
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist

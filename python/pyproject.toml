@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "triangulum"
+version = "0.0.0"
+description = "Triangulum is the CodeZero validation layer"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "CodeZero" }]
+dependencies = [
+    "tucana>=0.0.83",
+]
+
+[project.urls]
+Homepage = "https://github.com/code0-tech/triangulum"
+Changelog = "https://github.com/code0-tech/triangulum/releases"
+
+[dependency-groups]
+dev = [
+    "build>=1.2",
+    "hatchling>=1.27",
+    "pytest>=8.0",
+]
+
+[tool.hatch.build]
+# The bundled JS entrypoints are gitignored build artifacts, but belong into the
+# sdist and every wheel.
+artifacts = ["src/triangulum/js/*.js"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/triangulum"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/triangulum", "tests", "hatch_build.py", "tasks.py", "README.md"]
+
+[tool.pytest.ini_options]
+# Project root on sys.path so ``import tests.factories`` resolves.
+pythonpath = ["."]
+testpaths = ["tests"]

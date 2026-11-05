@@ -1,0 +1,10 @@
+# Bundled JS entrypoints, built by `python tasks.py entrypoints`
+/src/triangulum/js/*.js
+# Bun binaries, downloaded by `python tasks.py download`
+/vendor/
+# Build output
+/dist/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.venv/
