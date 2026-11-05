@@ -53,3 +53,41 @@ jobs:
         run: bundle exec rake
       - name: Build all gems
         run: bundle exec rake package
+
+  python:
+    runs-on: ubuntu-latest
+    name: python ${{ matrix.python }}
+    strategy:
+      matrix:
+        python:
+          - '3.12'
+    defaults:
+      run:
+        working-directory: python
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".tool-versions"
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.tool-versions'
+          registry-url: 'https://registry.npmjs.org'
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - run: npm ci
+        working-directory: .
+      - run: npm run build
+        working-directory: .
+      - run: npm ci
+        working-directory: entrypoint
+      - name: Install dependencies
+        run: uv sync
+      - name: Bundle the entrypoints
+        run: uv run python tasks.py entrypoints
+      - name: Run the tests
+        run: uv run pytest
+      - name: Build all wheels
+        run: uv run python tasks.py wheels
