@@ -74,7 +74,7 @@ jobs:
         with:
           node-version-file: '.tool-versions'
           registry-url: 'https://registry.npmjs.org'
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python }}
       - run: npm ci

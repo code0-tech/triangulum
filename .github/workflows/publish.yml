@@ -76,7 +76,7 @@ jobs:
           node-version-file: '.tool-versions'
           registry-url: 'https://registry.npmjs.org'
       # uv resolves the python version from python/.python-version itself
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
       - run: npm ci
         working-directory: .
       - run: npm run build
