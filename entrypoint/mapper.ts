@@ -3,6 +3,7 @@ import {
     DataType,
     Flow, FlowSetting,
     FunctionDefinition,
+    InlineReferenceValue,
     NodeFunction,
     NodeParameter,
     NodeParameterValue,
@@ -21,6 +22,7 @@ import {
     SubFlow as TucanaSubFlow,
     SubFlowParameters as TucanaSubFlowParameters,
     NodeValue as TucanaNodeValue,
+    InlineReferenceValue as TucanaInlineReferenceValue,
 } from "@code0-tech/tucana/shared";
 import {toAllowedValue} from "@code0-tech/tucana/helpers";
 
@@ -98,10 +100,7 @@ function mapNodeValue(tucanaNodeValue: TucanaNodeValue): NodeParameterValue {
         value = {
             __typename: 'LiteralValue',
             value: toAllowedValue(nodeValue.literalValue.value!),
-            references: nodeValue.literalValue.references.map(r => ({
-                signature: r.signature,
-                value: mapNodeValue(r.value!)
-            })),
+            references: nodeValue.literalValue.references.map(mapInlineReference),
         };
     } else if (nodeValue?.oneofKind === 'referenceValue') {
         const target = nodeValue.referenceValue.target;
@@ -127,6 +126,17 @@ function mapNodeValue(tucanaNodeValue: TucanaNodeValue): NodeParameterValue {
     }
 
     return value;
+}
+
+function mapInlineReference(reference: TucanaInlineReferenceValue): InlineReferenceValue {
+    return {
+        __typename: 'InlineReferenceValue',
+        id: reference.databaseId !== undefined
+            ? gid('InlineReferenceValue', reference.databaseId) as InlineReferenceValue['id']
+            : undefined,
+        signature: reference.signature,
+        value: mapNodeValue(reference.value!)
+    };
 }
 
 function mapFunctionDefinition(functionDefinition: TucanaFunctionDefinition): FunctionDefinition {

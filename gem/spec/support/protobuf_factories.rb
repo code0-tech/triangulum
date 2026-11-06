@@ -22,6 +22,10 @@ module ProtobufFactories
     )
   end
 
+  def inline_reference(signature:, value:, id: nil)
+    Tucana::Shared::InlineReferenceValue.new(database_id: id, signature: signature, value: value)
+  end
+
   def reference_node(node_id: nil, input_type: nil, paths: [])
     Tucana::Shared::NodeValue.new(
       reference_value: Tucana::Shared::ReferenceValue.new(

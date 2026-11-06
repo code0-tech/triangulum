@@ -6,7 +6,7 @@ module Triangulum
   class FlowSchemaExtraction
     include Executor
 
-    Result = Struct.new(:flow, :subflow_parameters, keyword_init: true)
+    Result = Struct.new(:flow, :subflow_parameters, :subflow_references, keyword_init: true)
     SchematizedObject = Struct.new(:id, :input_schema, :output_schema, keyword_init: true)
 
     ENTRYPOINT = File.expand_path('js/flow-schema-extraction.js', __dir__)
@@ -63,6 +63,13 @@ module Triangulum
             id: param[:id],
             input_schema: param[:inputSchema],
             output_schema: param[:outputSchema]
+          )
+        end,
+        subflow_references: json[:subflowReferences].map do |reference|
+          SchematizedObject.new(
+            id: reference[:id],
+            input_schema: reference[:inputSchema],
+            output_schema: reference[:outputSchema]
           )
         end
       )
