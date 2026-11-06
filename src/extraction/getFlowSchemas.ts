@@ -3,6 +3,8 @@ import type {
     DataType,
     Flow,
     FunctionDefinition,
+    InlineReferenceValue,
+    LiteralValue,
     NodeFunction,
     NodeParameter,
     SubFlowValue,
@@ -34,7 +36,8 @@ export type SchematizedSubFlowValue = SubFlowValue & SignatureSchemas
 /**
  * A {@link Flow} enriched with the input/output schemas of its own signature.
  * Every {@link SubFlowValue} nested in a node parameter is additionally enriched
- * in place (see {@link SchematizedSubFlowValue}).
+ * in place (see {@link SchematizedSubFlowValue}) — both a parameter that is a
+ * sub-flow itself and an inline sub-flow sitting in a literal's `references`.
  */
 export type SchematizedFlow = Flow & SignatureSchemas
 
@@ -43,7 +46,8 @@ export type SchematizedFlow = Flow & SignatureSchemas
  * every sub-flow it contains.
  *
  * The same flow is returned back, but with two additional fields on the flow
- * itself and on every {@link SubFlowValue} that appears as a node parameter:
+ * itself and on every {@link SubFlowValue} it contains — whether it fills a node
+ * parameter directly or is an inline reference of a literal parameter:
  * - `inputSchema` — an `object` JSON schema keyed by the signature's parameter names
  * - `outputSchema` — the JSON schema of the signature's return type
  *
@@ -61,6 +65,11 @@ export type SchematizedFlow = Flow & SignatureSchemas
  *   instantiated) argument types the lambda receives, and the output is what the
  *   sub-flow body actually returns (e.g. via a `std::control::return` node),
  *   rather than the `void` the surrounding function merely expects.
+ * - An inline sub-flow — one addressed via `${signature}` from a literal value's
+ *   `references`, the only way to fill e.g. a `LIST` of sub-flows — is treated
+ *   the same way: its schemas come from the expression generated at its position
+ *   inside the literal, so it is contextually typed by the surrounding slot just
+ *   like a sub-flow parameter. Nested literals are followed.
  *
  * The actual JSON Schema generation is delegated to `ts-json-schema-generator`
  * (see {@link generateJsonSchemas}); this function only resolves the real
@@ -121,6 +130,23 @@ const subFlowAlias = (
     parameterIndex: number,
     kind: "input" | "output",
 ): string => `Node_${sanitizeId(nodeId!)}_${parameterIndex}_${kind}`
+
+/**
+ * Alias name under which an *inline* sub-flow's input/output schema is generated.
+ * An inline sub-flow lives inside a literal value's `references`, addressed via
+ * `${signature}`; the `path` is the chain of signatures leading to it (longer
+ * than one entry only when literals are nested), which keeps the alias stable
+ * between type collection and flow re-assembly.
+ */
+const inlineSubFlowAlias = (
+    nodeId: NodeFunction["id"],
+    parameterIndex: number,
+    path: string[],
+    kind: "input" | "output",
+): string =>
+    `Node_${sanitizeId(nodeId!)}_${parameterIndex}_ref_${path
+        .map(sanitizeId)
+        .join("_")}_${kind}`
 
 /**
  * Collects the flow's own input/output type expressions from its signature.
@@ -213,33 +239,180 @@ const collectSubFlowTypeExpressions = (
     for (const node of flow.nodes?.nodes ?? []) {
         if (!node?.id) continue
         const params = node.parameters?.nodes
-        if (!params?.some(isSubFlowParameter)) continue
+        if (!params?.some(carriesSubFlow)) continue
 
         const callExpression = nodeCallExpression(constants, node)
         if (!callExpression) continue
 
         params.forEach((param, index) => {
-            if (!isSubFlowParameter(param)) return
-
             // The generated arguments are positional, so the parameter index maps
-            // straight onto the call argument holding the sub-flow lambda value.
+            // straight onto the call argument holding the sub-flow value(s).
             const argument = callExpression.arguments[index]
-            const valueSignature = argument
-                ? checker.getTypeAtLocation(argument).getCallSignatures()[0]
-                : undefined
-            if (!valueSignature) return
+            if (!argument) return
 
-            const {input, output} = subFlowValueToTypeExpressions(
-                checker,
-                valueSignature,
-                argument!,
-            )
-            typeExpressions[subFlowAlias(node.id, index, "input")] = input
-            typeExpressions[subFlowAlias(node.id, index, "output")] = output
+            if (isSubFlowParameter(param)) {
+                const expressions = signatureTypeExpressionsOf(checker, argument)
+                if (!expressions) return
+                typeExpressions[subFlowAlias(node.id, index, "input")] =
+                    expressions.input
+                typeExpressions[subFlowAlias(node.id, index, "output")] =
+                    expressions.output
+                return
+            }
+
+            // Inline sub-flows: the parameter is a literal whose `references`
+            // carry sub-flows spliced into its string leaves. They are emitted
+            // in the order the literal is walked, so the n-th sub-flow-shaped
+            // expression inside the argument belongs to the n-th path.
+            const paths = inlineSubFlowPaths(param)
+            if (paths.length === 0) return
+
+            const inlineExpressions = collectInlineSubFlowExpressions(argument)
+            paths.forEach((path, position) => {
+                const inlineExpression = inlineExpressions[position]
+                if (!inlineExpression) return
+
+                const expressions = signatureTypeExpressionsOf(
+                    checker,
+                    inlineExpression,
+                )
+                if (!expressions) return
+                typeExpressions[
+                    inlineSubFlowAlias(node.id, index, path, "input")
+                ] = expressions.input
+                typeExpressions[
+                    inlineSubFlowAlias(node.id, index, path, "output")
+                ] = expressions.output
+            })
         })
     }
 
     return typeExpressions
+}
+
+/**
+ * Resolves the input/output type expressions of a generated sub-flow value at
+ * `expression` — either the lambda `(...p) => { …body… }` or, for a sub-flow that
+ * directly maps a function, the `fn_…` reference itself. Returns `undefined` when
+ * the expression has no call signature (an unresolved value).
+ */
+const signatureTypeExpressionsOf = (
+    checker: ts.TypeChecker,
+    expression: ts.Expression,
+): {input: string; output: string} | undefined => {
+    const valueSignature = checker
+        .getTypeAtLocation(expression)
+        .getCallSignatures()[0]
+    if (!valueSignature) return undefined
+    return subFlowValueToTypeExpressions(checker, valueSignature, expression)
+}
+
+/**
+ * Collects, in source order, the sub-flow-shaped expressions emitted inside a
+ * generated literal argument: the lambdas of inline sub-flows with their own node
+ * tree, and the bare `fn_…` references of inline sub-flows that directly map a
+ * function.
+ *
+ * Arrow functions are not descended into — a sub-flow body may itself contain
+ * nodes with sub-flow parameters, and those belong to their own node, not to this
+ * literal. An `fn_…` identifier in callee position is a generated node call
+ * rather than a sub-flow value and is therefore skipped as well.
+ */
+const collectInlineSubFlowExpressions = (
+    argument: ts.Expression,
+): ts.Expression[] => {
+    const expressions: ts.Expression[] = []
+
+    const visit = (child: ts.Node): void => {
+        if (ts.isArrowFunction(child)) {
+            expressions.push(child)
+            return
+        }
+        if (ts.isIdentifier(child) && child.text.startsWith("fn_")) {
+            const parent = child.parent as ts.Node | undefined
+            const isCallee =
+                !!parent &&
+                ts.isCallExpression(parent) &&
+                parent.expression === child
+            if (!isCallee) {
+                expressions.push(child)
+                return
+            }
+        }
+        child.forEachChild(visit)
+    }
+
+    visit(argument)
+    return expressions
+}
+
+/** Matches a `${signature}` inline-reference token inside a literal string leaf. */
+const INLINE_REFERENCE_TOKEN = /\$\{([^}]+)\}/g
+
+/**
+ * Lists the paths of every inline sub-flow of a literal parameter, in the order
+ * the generated code emits them.
+ *
+ * The literal value is walked exactly the way the code generator walks it —
+ * arrays by index, objects by entry order, strings by `${signature}` token order
+ * — so the n-th path lines up with the n-th sub-flow expression in the generated
+ * argument. A reference to a nested literal is descended into, and its signature
+ * becomes a prefix of the paths found inside it.
+ */
+const inlineSubFlowPaths = (
+    param: NodeParameter | null | undefined,
+): string[][] => {
+    if (!isLiteralParameter(param)) return []
+
+    const paths: string[][] = []
+    collectInlineSubFlowPaths(param.value.value, param.value.references, [], paths)
+    return paths
+}
+
+const collectInlineSubFlowPaths = (
+    value: unknown,
+    references: LiteralValue["references"],
+    path: string[],
+    paths: string[][],
+): void => {
+    const referenceBySignature = new Map<string, InlineReferenceValue>()
+    for (const reference of references ?? []) {
+        if (reference?.signature) {
+            referenceBySignature.set(reference.signature, reference)
+        }
+    }
+    if (referenceBySignature.size === 0) return
+
+    const walk = (current: unknown): void => {
+        if (typeof current === "string") {
+            for (const match of current.matchAll(INLINE_REFERENCE_TOKEN)) {
+                const inner = referenceBySignature.get(match[1])?.value
+                if (!inner) continue
+                if (inner.__typename === "SubFlowValue") {
+                    paths.push([...path, match[1]])
+                } else if (inner.__typename === "LiteralValue") {
+                    collectInlineSubFlowPaths(
+                        inner.value,
+                        inner.references,
+                        [...path, match[1]],
+                        paths,
+                    )
+                }
+            }
+            return
+        }
+        if (Array.isArray(current)) {
+            current.forEach((item) => walk(item))
+            return
+        }
+        if (current !== null && typeof current === "object") {
+            Object.values(current as Record<string, unknown>).forEach((item) =>
+                walk(item),
+            )
+        }
+    }
+
+    walk(value)
 }
 
 /**
@@ -373,32 +546,112 @@ const emptyObjectSchema = (): JsonSchema => ({type: "object"})
 const emptySchema = (): JsonSchema => ({})
 
 /**
- * Enriches every SubFlowValue parameter of a single node with its generated
- * input/output schemas, leaving all other parameters untouched.
+ * Enriches every sub-flow of a single node with its generated input/output
+ * schemas, leaving all other parameters untouched. This covers both a parameter
+ * that *is* a {@link SubFlowValue} and the inline sub-flows nested in a literal
+ * parameter's `references` (recursively through nested literals).
  */
 const enrichNode = (
     node: NodeFunction,
     schemas: Record<string, JsonSchema>,
 ): NodeFunction => {
     const params = node.parameters?.nodes
-    if (!params?.some(isSubFlowParameter)) return node
+    if (!params?.some(carriesSubFlow)) return node
 
     const enrichedParams = params.map((param, index) => {
-        if (!isSubFlowParameter(param)) return param
-
-        const value: SchematizedSubFlowValue = {
-            ...param.value,
-            inputSchema:
-                schemas[subFlowAlias(node.id, index, "input")] ??
-                emptyObjectSchema(),
-            outputSchema:
-                schemas[subFlowAlias(node.id, index, "output")] ?? emptySchema(),
+        if (isSubFlowParameter(param)) {
+            const value: SchematizedSubFlowValue = {
+                ...param.value,
+                inputSchema:
+                    schemas[subFlowAlias(node.id, index, "input")] ??
+                    emptyObjectSchema(),
+                outputSchema:
+                    schemas[subFlowAlias(node.id, index, "output")] ??
+                    emptySchema(),
+            }
+            return {...param, value} as NodeParameter
         }
-        return {...param, value} as NodeParameter
+
+        if (!isLiteralParameter(param) || !param.value.references?.length) {
+            return param
+        }
+
+        const references = enrichInlineReferences(
+            param.value.references,
+            node.id,
+            index,
+            [],
+            schemas,
+        )
+        return {
+            ...param,
+            value: {...param.value, references},
+        } as NodeParameter
     })
 
     return {...node, parameters: {...node.parameters, nodes: enrichedParams}}
 }
+
+/**
+ * Enriches the inline sub-flows of a literal's `references` with their generated
+ * schemas, descending into nested literals so a sub-flow at any depth is covered.
+ * References that resolve to anything else are returned untouched.
+ */
+const enrichInlineReferences = (
+    references: NonNullable<LiteralValue["references"]>,
+    nodeId: NodeFunction["id"],
+    parameterIndex: number,
+    path: string[],
+    schemas: Record<string, JsonSchema>,
+): InlineReferenceValue[] =>
+    references.map((reference) => {
+        const inner = reference?.value
+        if (!reference?.signature || !inner) return reference
+        const referencePath = [...path, reference.signature]
+
+        if (inner.__typename === "SubFlowValue") {
+            const value: SchematizedSubFlowValue = {
+                ...inner,
+                inputSchema:
+                    schemas[
+                        inlineSubFlowAlias(
+                            nodeId,
+                            parameterIndex,
+                            referencePath,
+                            "input",
+                        )
+                    ] ?? emptyObjectSchema(),
+                outputSchema:
+                    schemas[
+                        inlineSubFlowAlias(
+                            nodeId,
+                            parameterIndex,
+                            referencePath,
+                            "output",
+                        )
+                    ] ?? emptySchema(),
+            }
+            return {...reference, value}
+        }
+
+        if (inner.__typename === "LiteralValue" && inner.references?.length) {
+            return {
+                ...reference,
+                value: {
+                    ...inner,
+                    references: enrichInlineReferences(
+                        inner.references,
+                        nodeId,
+                        parameterIndex,
+                        referencePath,
+                        schemas,
+                    ),
+                },
+            }
+        }
+
+        return reference
+    })
 
 // --- Shared helpers ---------------------------------------------------------
 
@@ -407,6 +660,19 @@ const isSubFlowParameter = (
     param: NodeParameter | null | undefined,
 ): param is NodeParameter & {value: SubFlowValue} =>
     param?.value?.__typename === "SubFlowValue"
+
+/** True when the parameter carries a {@link LiteralValue}. */
+const isLiteralParameter = (
+    param: NodeParameter | null | undefined,
+): param is NodeParameter & {value: LiteralValue} =>
+    param?.value?.__typename === "LiteralValue"
+
+/**
+ * True when the parameter holds any sub-flow at all — either directly, or inline
+ * inside a literal's `references`.
+ */
+const carriesSubFlow = (param: NodeParameter | null | undefined): boolean =>
+    isSubFlowParameter(param) || inlineSubFlowPaths(param).length > 0
 
 /** True when a parameter is optional (`?`), has a default, or is a rest param. */
 const isOptionalParameter = (parameterSymbol: ts.Symbol): boolean => {

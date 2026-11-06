@@ -455,6 +455,170 @@ describe("getFlowSchemas", () => {
         expect(subFlow.outputSchema).toEqual({type: "number"});
     });
 
+    // --- Inline sub-flow references ------------------------------------------
+
+    /**
+     * A function whose single parameter is a *list* of sub-flows, so the only way
+     * to fill it is a literal list carrying inline sub-flow references — the shape
+     * an AI agent's `tools` parameter has.
+     */
+    const TOOLS_FN: FunctionDefinition = {
+        id: "gid://sagittarius/FunctionDefinition/9401",
+        identifier: "custom::ai::agent",
+        signature: "(tools: LIST<TRANSFORM<NUMBER, TEXT>>): void",
+    };
+
+    /** A literal value carrying inline references, addressable via `${signature}`. */
+    const literalWithReferences = (
+        value: unknown,
+        references: {signature: string; value: NodeParameterValue}[],
+    ): NodeParameterValue =>
+        ({
+            __typename: "LiteralValue",
+            value,
+            references: references.map((reference) => ({
+                __typename: "InlineReferenceValue",
+                ...reference,
+            })),
+        }) as NodeParameterValue;
+
+    /** The inline reference of `nodeId`'s parameter `parameterIndex`, by signature. */
+    const inlineReferenceOf = (
+        flow: Flow | undefined,
+        nodeId: NodeId,
+        parameterIndex: number,
+        signature: string,
+    ): SchematizedSubFlowValue => {
+        const owner = flow?.nodes?.nodes?.find((n) => n?.id === nodeId);
+        const value = owner?.parameters?.nodes?.[parameterIndex]?.value as {
+            references?: {signature?: string; value?: unknown}[];
+        };
+        return value?.references?.find((r) => r?.signature === signature)
+            ?.value as SchematizedSubFlowValue;
+    };
+
+    it("enriches inline sub-flow references inside a list literal", () => {
+        // `tools: ["${item_0}", "${item_1}"]` — one tool directly maps a function,
+        // the other runs its own node tree. Both are SubFlowValues living in the
+        // literal's `references` rather than in a parameter slot of their own, and
+        // both must still be schematized.
+        const flow = flowWithNodes([
+            node(LIST_NODE_ID, "custom::ai::agent", [
+                literalWithReferences(["${item_0}", "${item_1}"], [
+                    {signature: "item_0", value: subFlowCalling("std::number::as_text")},
+                    {signature: "item_1", value: subFlowStartingAt(BODY_NODE_ID)},
+                ]),
+            ]),
+            node(BODY_NODE_ID, "std::number::as_text", [
+                subFlowInputReference(LIST_NODE_ID, 0),
+            ]),
+        ]);
+
+        const result = getFlowSchemas(
+            flow,
+            [...FUNCTION_SIGNATURES, TOOLS_FN],
+            DATA_TYPES,
+        );
+
+        // The direct mapping *is* the function, so its own signature
+        // `(number: NUMBER): TEXT` drives the I/O.
+        const mapped = inlineReferenceOf(result, LIST_NODE_ID, 0, "item_0");
+        expect(mapped.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {number: {type: "number"}},
+            required: ["number"],
+        });
+        expect(mapped.outputSchema).toEqual({type: "string"});
+
+        // The node-tree sub-flow is contextually typed by the list's element type
+        // `TRANSFORM<NUMBER, TEXT>`, so its input is keyed by `item` with T
+        // resolved to NUMBER. Its body only computes a value (no
+        // `std::control::return`), so the generated lambda returns void.
+        const tree = inlineReferenceOf(result, LIST_NODE_ID, 0, "item_1");
+        expect(tree.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {item: {type: "number"}},
+            required: ["item"],
+        });
+        expect(tree.outputSchema).toEqual({type: "null"});
+
+        // The original SubFlowValue fields survive the enrichment.
+        expect(tree.__typename).toBe("SubFlowValue");
+        expect(tree.startingNodeId).toBe(BODY_NODE_ID);
+    });
+
+    it("matches inline sub-flows by their position in the literal, not by reference order", () => {
+        // The references are declared in the reverse order of their appearance in
+        // the list, with two different signatures. Each must get the schemas of
+        // its own function — proving the sub-flows are matched positionally
+        // against the generated code rather than by the order of `references`.
+        const flow = flowWithNodes([
+            node(LIST_NODE_ID, "custom::ai::agent", [
+                literalWithReferences(["${first}", "${second}"], [
+                    {signature: "second", value: subFlowCalling("std::boolean::as_number")},
+                    {signature: "first", value: subFlowCalling("std::number::as_text")},
+                ]),
+            ]),
+        ]);
+
+        const result = getFlowSchemas(
+            flow,
+            [...FUNCTION_SIGNATURES, TOOLS_FN],
+            DATA_TYPES,
+        );
+
+        // `(number: NUMBER): TEXT`
+        const first = inlineReferenceOf(result, LIST_NODE_ID, 0, "first");
+        expect(first.inputSchema.properties).toEqual({number: {type: "number"}});
+        expect(first.outputSchema).toEqual({type: "string"});
+
+        // `(value: BOOLEAN): NUMBER`
+        const second = inlineReferenceOf(result, LIST_NODE_ID, 0, "second");
+        expect(second.inputSchema.properties).toEqual({value: {type: "boolean"}});
+        expect(second.outputSchema).toEqual({type: "number"});
+    });
+
+    it("enriches an inline sub-flow nested in a literal reference", () => {
+        // `tools: "${outer}"` where `outer` is itself a literal `["${inner}"]`
+        // holding the sub-flow — the schemas must reach a sub-flow at any depth.
+        const flow = flowWithNodes([
+            node(LIST_NODE_ID, "custom::ai::agent", [
+                literalWithReferences("${outer}", [
+                    {
+                        signature: "outer",
+                        value: literalWithReferences(["${inner}"], [
+                            {
+                                signature: "inner",
+                                value: subFlowCalling("std::number::as_text"),
+                            },
+                        ]),
+                    },
+                ]),
+            ]),
+        ]);
+
+        const result = getFlowSchemas(
+            flow,
+            [...FUNCTION_SIGNATURES, TOOLS_FN],
+            DATA_TYPES,
+        );
+
+        const outer = inlineReferenceOf(result, LIST_NODE_ID, 0, "outer") as unknown as {
+            references?: {signature?: string; value?: SchematizedSubFlowValue}[];
+        };
+        const inner = outer.references?.find((r) => r?.signature === "inner")?.value;
+
+        expect(inner?.inputSchema).toEqual({
+            type: "object",
+            additionalProperties: false,
+            properties: {number: {type: "number"}},
+            required: ["number"],
+        });
+        expect(inner?.outputSchema).toEqual({type: "string"});
+    });
+
     it("leaves nodes without sub-flow parameters untouched", () => {
         const flow = flowWithNodes([
             node(LIST_NODE_ID, "std::number::add", [literal(1), literal(2)]),
