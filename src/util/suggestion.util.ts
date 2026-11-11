@@ -289,3 +289,27 @@ export const suggestionFields = (
     candidates: SuggestionCandidate[] | undefined,
 ): {suggestions?: SuggestionValue[]; suggestionCertainty?: SuggestionCertainty[]} =>
     candidates && candidates.length > 0 ? suggestionPair(candidates) : {};
+
+/**
+ * The name the flow's own trigger is declared under in the generated source
+ * (`declare function flow<signature>`), see `generateFlowSourceCode`.
+ */
+const FLOW_TRIGGER_NAME = "flow";
+
+/**
+ * True for the declaration of the flow's own trigger.
+ *
+ * The trigger is emitted as a function declaration purely so the flow's settings
+ * and the payload it produces can be type-checked — it is not a function a user
+ * can place. It has no {@link FunctionDefinition} behind it, nothing calls it,
+ * and nothing can bind it: it is what *starts* the flow. Matched by type alone it
+ * would nonetheless fit slots like any other declaration (a `(): NUMBER` trigger
+ * fits every NUMBER slot, a `(): void` one every RUNNABLE), so every
+ * declaration-based suggestion source filters it out explicitly rather than
+ * relying on the missing definition to drop it later.
+ *
+ * The trigger's *value* stays reachable — as a reference onto the flow, which is
+ * what {@link getReferences} offers for it.
+ */
+export const isFlowTriggerDeclaration = (func: ts.FunctionDeclaration): boolean =>
+    func.name?.getText() === FLOW_TRIGGER_NAME;

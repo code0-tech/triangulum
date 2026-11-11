@@ -1,6 +1,7 @@
 import ts from "typescript";
 import {FunctionDefinition, NodeFunction} from "@code0-tech/sagittarius-graphql-types";
 import {
+    isFlowTriggerDeclaration,
     possibleMatch,
     SuggestionCandidate,
     typeMatchCertainty,
@@ -36,6 +37,10 @@ import {
  *          type produces that type, or an empty array if no compatible functions
  *          are found
  *
+ * The flow's own trigger is skipped: it is a declaration in the generated source
+ * but not a function that can be placed as a node — see
+ * {@link isFlowTriggerDeclaration}.
+ *
  * @example
  * const compatibleNodes = getNodes(checker, funcDecls, funcDefs, stringType);
  */
@@ -47,6 +52,9 @@ export const getNodes = (
 ): SuggestionCandidate[] => {
     // Transform each function declaration into a node function if it matches the parameter type
     return functionDeclarations.flatMap((func) => {
+        if (isFlowTriggerDeclaration(func)) {
+            return [];
+        }
         const candidate = createNodeFunctionIfCompatible(checker, func, functions, paramType);
         return candidate ? [candidate] : [];
     });

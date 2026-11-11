@@ -3,6 +3,7 @@ import {FunctionDefinition, SubFlowValue, SubFlowValueParameter} from "@code0-te
 import {isSubFlow} from "./schema.util";
 import {
     EXACT_MATCH,
+    isFlowTriggerDeclaration,
     isUnconstrainedReturn,
     possibleMatch,
     SuggestionCandidate,
@@ -21,6 +22,10 @@ const returnTypes = (checker: ts.TypeChecker, type: ts.Type): ts.Type[] =>
  * This function filters function declarations based on type compatibility and
  * converts matching functions into SubFlowValue objects that can be used as
  * sub-flows in a larger workflow.
+ *
+ * The flow's own trigger is skipped: it is a declaration in the generated source
+ * but not a function that can be bound as a sub-flow — see
+ * {@link isFlowTriggerDeclaration}.
  *
  * @param {ts.TypeChecker} checker - The TypeScript type checker for type analysis
  * @param {ts.FunctionDeclaration[]} functionDeclarations - Array of function declarations to analyze
@@ -43,6 +48,9 @@ export const getSubFlows = (
     }
 
     return functionDeclarations.flatMap((func) => {
+        if (isFlowTriggerDeclaration(func)) {
+            return [];
+        }
         const candidate = createSubFlowIfCompatible(checker, func, functions, paramType);
         return candidate ? [candidate] : [];
     });
