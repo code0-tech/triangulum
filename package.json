@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-3055410528-97409043b783a0f3ceeac6382ea358e2977b3a04",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.9",
     "@typescript/vfs": "^1.6.4",
     "lossless-json": "^4.3.1",
     "ts-json-schema-generator": "^2.9.0",
