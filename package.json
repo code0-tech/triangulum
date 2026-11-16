@@ -43,7 +43,7 @@
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
     "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "@code0-tech/sagittarius-graphql-types": "0.0.0-experimental-3055410528-97409043b783a0f3ceeac6382ea358e2977b3a04",
