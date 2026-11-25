@@ -57,8 +57,6 @@ jobs:
       - uses: rubygems/configure-rubygems-credentials@v2.1.0
       - name: Publish gem
         run: bundle exec rake push:all
-      - name: Wait for release
-        run: gem exec rubygems-await pkg/*.gem
 
   pypi:
     runs-on: ubuntu-latest
